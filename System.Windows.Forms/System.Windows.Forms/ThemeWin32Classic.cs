@@ -690,23 +690,31 @@ namespace System.Windows.Forms
 				else if (button.is_pressed || check_or_radio_checked)
 					Internal_DrawButton (dc, borderRectangle, 1, cpcolor, is_ColorControl, button.BackColor);
 			} else if (button.FlatStyle == FlatStyle.Flat) {
-				if (button.is_entered && !button.is_pressed && !check_or_radio_checked) {
-					if ((button.image == null) && (button.image_list == null)) {
-						Brush brush = is_ColorControl ? SystemBrushes.ControlDark : ResPool.GetSolidBrush (cpcolor.Dark);
-						dc.FillRectangle (brush, borderRectangle);
-					}
-				} else if (button.is_pressed || check_or_radio_checked) {
-					if ((button.image == null) && (button.image_list == null)) {
-						Brush brush = is_ColorControl ? SystemBrushes.ControlLightLight : ResPool.GetSolidBrush (cpcolor.LightLight);
-						dc.FillRectangle (brush, borderRectangle);
-					}
-					
-					Pen pen = is_ColorControl ? SystemPens.ControlDark : ResPool.GetPen (cpcolor.Dark);
-					dc.DrawRectangle (pen, borderRectangle.X + 4, borderRectangle.Y + 4,
-							  borderRectangle.Width - 9, borderRectangle.Height - 9);
-				}
-				
-				Internal_DrawButton (dc, borderRectangle, 3, cpcolor, is_ColorControl, button.BackColor);
+                // Define the radius for the corners.
+                int cornerRadius = 20;
+                // Use a rectangle that's slightly smaller for the border to prevent clipping.
+                Rectangle drawRect = new Rectangle(borderRectangle.X, borderRectangle.Y, borderRectangle.Width - 1, borderRectangle.Height - 1);
+                if (button.is_entered && !button.is_pressed && !check_or_radio_checked)
+                {
+                    Brush brush = is_ColorControl ? SystemBrushes.ControlDark : ResPool.GetSolidBrush(cpcolor.Dark);
+                    RVUtils.FillRoundedRectangle(dc, brush, borderRectangle, cornerRadius);
+                }
+                else if (button.is_pressed || check_or_radio_checked)
+                {
+                    Brush brush = is_ColorControl ? SystemBrushes.ControlLightLight : ResPool.GetSolidBrush(cpcolor.LightLight);
+                    RVUtils.FillRoundedRectangle(dc, brush, borderRectangle, cornerRadius);
+
+                    // Draw the border.
+                    Pen pen = is_ColorControl ? SystemPens.ControlDark : ResPool.GetPen(cpcolor.Dark);
+                    Rectangle innerBorderRect = new Rectangle(borderRectangle.X + 4, borderRectangle.Y + 4,
+                                                             borderRectangle.Width - 9, borderRectangle.Height - 9);
+                    using (var path = RVUtils.CreateRoundedRectanglePath(innerBorderRect, cornerRadius))
+                    {
+                        dc.DrawPath(pen, path);
+                    }
+                }
+
+                Internal_DrawButton (dc, borderRectangle, 3, cpcolor, is_ColorControl, button.BackColor);
 			} else {
 				if ((!button.is_pressed || !button.Enabled) && !check_or_radio_checked)
 					Internal_DrawButton (dc, borderRectangle, 0, cpcolor, is_ColorControl, button.BackColor);
@@ -717,45 +725,63 @@ namespace System.Windows.Forms
 		
 		private void Internal_DrawButton (Graphics dc, Rectangle rect, int state, CPColor cpcolor, bool is_ColorControl, Color backcolor)
 		{
-			switch (state) {
-			case 0: // normal or normal disabled button
-				Pen pen = is_ColorControl ? SystemPens.ControlLightLight : ResPool.GetPen (cpcolor.LightLight);
-				dc.DrawLine (pen, rect.X, rect.Y, rect.X, rect.Bottom - 2);
-				dc.DrawLine (pen, rect.X + 1, rect.Y, rect.Right - 2, rect.Y);
-				
-				pen = is_ColorControl ? SystemPens.Control : ResPool.GetPen (backcolor);
-				dc.DrawLine (pen, rect.X + 1, rect.Y + 1, rect.X + 1, rect.Bottom - 3);
-				dc.DrawLine (pen, rect.X + 2, rect.Y + 1, rect.Right - 3, rect.Y + 1);
-				
-				pen = is_ColorControl ? SystemPens.ControlDark : ResPool.GetPen (cpcolor.Dark);
-				dc.DrawLine (pen, rect.X + 1, rect.Bottom - 2, rect.Right - 2, rect.Bottom - 2);
-				dc.DrawLine (pen, rect.Right - 2, rect.Y + 1, rect.Right - 2, rect.Bottom - 3);
-				
-				pen = is_ColorControl ? SystemPens.ControlDarkDark : ResPool.GetPen (cpcolor.DarkDark);
-				dc.DrawLine (pen, rect.X, rect.Bottom - 1, rect.Right - 1, rect.Bottom - 1);
-				dc.DrawLine (pen, rect.Right - 1, rect.Y, rect.Right - 1, rect.Bottom - 2);
-				break;
-			case 1: // popup button normal (or pressed normal or popup button)
-				pen = is_ColorControl ? SystemPens.ControlDark : ResPool.GetPen (cpcolor.Dark);
-				dc.DrawRectangle (pen, rect.X, rect.Y, rect.Width - 1, rect.Height - 1);
-				break;
-			case 2: // popup button poped up
-				pen = is_ColorControl ? SystemPens.ControlLightLight : ResPool.GetPen (cpcolor.LightLight);
-				dc.DrawLine (pen, rect.X, rect.Y, rect.X, rect.Bottom - 2);
-				dc.DrawLine (pen, rect.X + 1, rect.Y, rect.Right - 2, rect.Y);
-				
-				pen = is_ColorControl ? SystemPens.ControlDark : ResPool.GetPen (cpcolor.Dark);
-				dc.DrawLine (pen, rect.X, rect.Bottom - 1, rect.Right - 1, rect.Bottom - 1);
-				dc.DrawLine (pen, rect.Right - 1, rect.Y, rect.Right - 1, rect.Bottom - 2);
-				break;
-			case 3: // flat button not entered
-				pen = is_ColorControl ? SystemPens.ControlDarkDark : ResPool.GetPen (cpcolor.DarkDark);
-				dc.DrawRectangle (pen, rect.X, rect.Y, rect.Width - 1, rect.Height - 1);
-				break;
-			default:
-				break;
-			}
-		}
+            // --- Start of Augmented Drawing Logic ---
+
+            // Set SmoothingMode to AntiAlias for high-quality, smooth curves.
+            var originalSmoothingMode = dc.SmoothingMode;
+            dc.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+            // Define the radius for the corners. You can adjust this value.
+            int cornerRadius = 20;
+            Pen pen;
+
+            // Use a rectangle that's slightly smaller to prevent the border from being clipped at the edges.
+            Rectangle borderRect = new Rectangle(rect.X, rect.Y, rect.Width - 1, rect.Height - 1);
+            switch (state)
+            {
+                case 0: // normal or normal disabled button
+                        // Draw a single, clean border instead of the complex beveled one.
+                    using (var path = RVUtils.CreateRoundedRectanglePath(borderRect, cornerRadius))
+                    {
+                        pen = is_ColorControl ? SystemPens.ControlDark : ResPool.GetPen(cpcolor.Dark);
+                        dc.DrawPath(pen, path);
+                    }
+                    break;
+
+                case 1: // popup button normal (pressed)
+                        // Use a darker pen for the "pressed" state.
+                    using (var path = RVUtils.CreateRoundedRectanglePath(borderRect, cornerRadius))
+                    {
+                        pen = is_ColorControl ? SystemPens.ControlDarkDark : ResPool.GetPen(cpcolor.DarkDark);
+                        dc.DrawPath(pen, path);
+                    }
+                    break;
+
+                case 2: // popup button popped up
+                        // The original code used a mix of light and dark. We'll use a single dark border for consistency.
+                    using (var path = RVUtils.CreateRoundedRectanglePath(borderRect, cornerRadius))
+                    {
+                        pen = is_ColorControl ? SystemPens.ControlDark : ResPool.GetPen(cpcolor.Dark);
+                        dc.DrawPath(pen, path);
+                    }
+                    break;
+
+                case 3: // flat button not entered
+                    using (var path = RVUtils.CreateRoundedRectanglePath(borderRect, cornerRadius))
+                    {
+                        pen = is_ColorControl ? SystemPens.ControlDarkDark : ResPool.GetPen(cpcolor.DarkDark);
+                        dc.DrawPath(pen, path);
+                    }
+                    break;
+
+                default:
+                    // Let the base method handle it, or do nothing.
+                    break;
+            }
+
+            // IMPORTANT: Restore the original SmoothingMode so we don't affect other drawing operations.
+            dc.SmoothingMode = originalSmoothingMode;
+        }
 		
 		protected virtual void ButtonBase_DrawImage(ButtonBase button, Graphics dc)
 		{
