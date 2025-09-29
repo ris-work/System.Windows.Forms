@@ -6,18 +6,18 @@
 
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Copyright>(c) Various Mono authors, Daniel Van Noord 2019</Copyright>
-    <Description>A .Net Core implementation of the Mono System.Windows.Forms library. This is built on top of System.Drawing.Common.</Description>
-    <Authors>Various Mono authors, Daniel Van Noord</Authors>
-    <PackageProjectUrl>https://github.com/DanielVanNoord/System.Windows.Forms</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/DanielVanNoord/System.Windows.Forms</RepositoryUrl>
+    <Copyright>(c) Rishikeshan Sulochana/Lavakumar 2025, Various Mono authors, Daniel Van Noord 2019</Copyright>
+    <Description>A .Net Core implementation of the Mono System.Windows.Forms library with rounding experiments, Linux/BSD-compatible with libgdiplus. This is built on top of System.Drawing.Common.</Description>
+    <Authors>Various Mono authors, Daniel Van Noord, Rishikeshan Sulochana/Lavakumar</Authors>
+    <PackageProjectUrl>https://github.com/ris-work/System.Windows.Forms</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ris-work/System.Windows.Forms</RepositoryUrl>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <Company>None</Company>
     <PackageLicenseExpression></PackageLicenseExpression>
     <PackageReleaseNotes>Initial Release</PackageReleaseNotes>
     <PackageLicenseFile>License.txt</PackageLicenseFile>
-    <Version>1.0.0-alpha7</Version>
-    <PackageId>Core.System.Windows.Forms</PackageId>
+    <Version>1.0.0-alpha9</Version>
+    <PackageId>Rishi.Core.System.Windows.Forms</PackageId>
   </PropertyGroup>
 
   <ItemGroup>

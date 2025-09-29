@@ -9,6 +9,7 @@ namespace System.Windows.Forms
 {
     public static class RVUtils
     {
+        public static float cornerRadius = 20;
         public static System.Drawing.Drawing2D.GraphicsPath CreateRoundedRectanglePath(Rectangle rect, int cornerRadius)
         {
             // Create a new path
