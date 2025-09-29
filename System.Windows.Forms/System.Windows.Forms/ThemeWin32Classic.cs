@@ -6613,68 +6613,131 @@ namespace System.Windows.Forms
 			CPDrawButtonInternal (dc, rectangle, state, SystemPens.ControlDarkDark, SystemPens.ControlDark, SystemPens.ControlLight);
 		}
 
-		private void CPDrawButtonInternal (Graphics dc, Rectangle rectangle, ButtonState state, Pen DarkPen, Pen NormalPen, Pen LightPen)
-		{
-			// sadly enough, the rectangle gets always filled with a hatchbrush
-			dc.FillRectangle (ResPool.GetHatchBrush (HatchStyle.Percent50,
-								 Color.FromArgb (Clamp (ColorControl.R + 3, 0, 255),
-										 ColorControl.G, ColorControl.B),
-								 ColorControl),
-					  rectangle.X + 1, rectangle.Y + 1, rectangle.Width - 2, rectangle.Height - 2);
-			
-			if ((state & ButtonState.All) == ButtonState.All || ((state & ButtonState.Checked) == ButtonState.Checked && (state & ButtonState.Flat) == ButtonState.Flat)) {
-				dc.FillRectangle (ResPool.GetHatchBrush (HatchStyle.Percent50, ColorControlLight, ColorControl), rectangle.X + 2, rectangle.Y + 2, rectangle.Width - 4, rectangle.Height - 4);
-				
-				dc.DrawRectangle (SystemPens.ControlDark, rectangle.X, rectangle.Y, rectangle.Width - 1, rectangle.Height - 1);
-			} else
-			if ((state & ButtonState.Flat) == ButtonState.Flat) {
-				dc.DrawRectangle (SystemPens.ControlDark, rectangle.X, rectangle.Y, rectangle.Width - 1, rectangle.Height - 1);
-			} else
-			if ((state & ButtonState.Checked) == ButtonState.Checked) {
-				dc.FillRectangle (ResPool.GetHatchBrush (HatchStyle.Percent50, ColorControlLight, ColorControl), rectangle.X + 2, rectangle.Y + 2, rectangle.Width - 4, rectangle.Height - 4);
-				
-				Pen pen = DarkPen;
-				dc.DrawLine (pen, rectangle.X, rectangle.Y, rectangle.X, rectangle.Bottom - 2);
-				dc.DrawLine (pen, rectangle.X + 1, rectangle.Y, rectangle.Right - 2, rectangle.Y);
-				
-				pen = NormalPen;
-				dc.DrawLine (pen, rectangle.X + 1, rectangle.Y + 1, rectangle.X + 1, rectangle.Bottom - 3);
-				dc.DrawLine (pen, rectangle.X + 2, rectangle.Y + 1, rectangle.Right - 3, rectangle.Y + 1);
-				
-				pen = LightPen;
-				dc.DrawLine (pen, rectangle.X, rectangle.Bottom - 1, rectangle.Right - 2, rectangle.Bottom - 1);
-				dc.DrawLine (pen, rectangle.Right - 1, rectangle.Y, rectangle.Right - 1, rectangle.Bottom - 1);
-			} else
-			if (((state & ButtonState.Pushed) == ButtonState.Pushed) && ((state & ButtonState.Normal) == ButtonState.Normal)) {
-				Pen pen = DarkPen;
-				dc.DrawLine (pen, rectangle.X, rectangle.Y, rectangle.X, rectangle.Bottom - 2);
-				dc.DrawLine (pen, rectangle.X + 1, rectangle.Y, rectangle.Right - 2, rectangle.Y);
-				
-				pen = NormalPen;
-				dc.DrawLine (pen, rectangle.X + 1, rectangle.Y + 1, rectangle.X + 1, rectangle.Bottom - 3);
-				dc.DrawLine (pen, rectangle.X + 2, rectangle.Y + 1, rectangle.Right - 3, rectangle.Y + 1);
-				
-				pen = LightPen;
-				dc.DrawLine (pen, rectangle.X, rectangle.Bottom - 1, rectangle.Right - 2, rectangle.Bottom - 1);
-				dc.DrawLine (pen, rectangle.Right - 1, rectangle.Y, rectangle.Right - 1, rectangle.Bottom - 1);
-			} else
-			if (((state & ButtonState.Inactive) == ButtonState.Inactive) || ((state & ButtonState.Normal) == ButtonState.Normal)) {
-				Pen pen = LightPen;
-				dc.DrawLine (pen, rectangle.X, rectangle.Y, rectangle.Right - 2, rectangle.Y);
-				dc.DrawLine (pen, rectangle.X, rectangle.Y, rectangle.X, rectangle.Bottom - 2);
-				
-				pen = NormalPen;
-				dc.DrawLine (pen, rectangle.X + 1, rectangle.Bottom - 2, rectangle.Right - 2, rectangle.Bottom - 2);
-				dc.DrawLine (pen, rectangle.Right - 2, rectangle.Y + 1, rectangle.Right - 2, rectangle.Bottom - 3);
-				
-				pen = DarkPen;
-				dc.DrawLine (pen, rectangle.X, rectangle.Bottom - 1, rectangle.Right - 1, rectangle.Bottom - 1);
-				dc.DrawLine (pen, rectangle.Right - 1, rectangle.Y, rectangle.Right - 1, rectangle.Bottom - 2);
-			}
-		}
+        private void CPDrawButtonInternal(Graphics dc, Rectangle rectangle, ButtonState state, Pen DarkPen, Pen NormalPen, Pen LightPen)
+        {
+            // --- START: New Rounded Drawing Logic ---
+
+            // Define the radius for the corners.
+            int cornerRadius = 8;
+
+            // Set high-quality rendering for smooth curves.
+            var originalSmoothingMode = dc.SmoothingMode;
+            dc.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+            // The initial fill must now use a rounded path.
+            using (var path = CreateRoundedRectanglePath(new Rectangle(rectangle.X + 1, rectangle.Y + 1, rectangle.Width - 2, rectangle.Height - 2), cornerRadius))
+            {
+                using (var brush = ResPool.GetHatchBrush(HatchStyle.Percent50,
+                                         Color.FromArgb(Clamp(ColorControl.R + 3, 0, 255), ColorControl.G, ColorControl.B),
+                                         ColorControl))
+                {
+                    dc.FillPath(brush, path);
+                }
+            }
+
+            if ((state & ButtonState.All) == ButtonState.All || ((state & ButtonState.Checked) == ButtonState.Checked && (state & ButtonState.Flat) == ButtonState.Flat))
+            {
+                using (var innerPath = CreateRoundedRectanglePath(new Rectangle(rectangle.X + 2, rectangle.Y + 2, rectangle.Width - 4, rectangle.Height - 4), cornerRadius > 1 ? cornerRadius - 1 : 1))
+                {
+                    using (var brush = ResPool.GetHatchBrush(HatchStyle.Percent50, ColorControlLight, ColorControl))
+                    {
+                        dc.FillPath(brush, innerPath);
+                    }
+                }
+                using (var borderPath = CreateRoundedRectanglePath(new Rectangle(rectangle.X, rectangle.Y, rectangle.Width - 1, rectangle.Height - 1), cornerRadius))
+                {
+                    dc.DrawPath(SystemPens.ControlDark, borderPath);
+                }
+            }
+            else if ((state & ButtonState.Flat) == ButtonState.Flat)
+            {
+                using (var borderPath = CreateRoundedRectanglePath(new Rectangle(rectangle.X, rectangle.Y, rectangle.Width - 1, rectangle.Height - 1), cornerRadius))
+                {
+                    dc.DrawPath(SystemPens.ControlDark, borderPath);
+                }
+            }
+            else if ((state & ButtonState.Checked) == ButtonState.Checked || ((state & ButtonState.Pushed) == ButtonState.Pushed) && ((state & ButtonState.Normal) == ButtonState.Normal))
+            {
+                // This is a "sunken" or "pushed-in" 3D border.
+                if ((state & ButtonState.Checked) == ButtonState.Checked)
+                { // The Pushed state doesn't have an inner fill.
+                    using (var innerPath = CreateRoundedRectanglePath(new Rectangle(rectangle.X + 2, rectangle.Y + 2, rectangle.Width - 4, rectangle.Height - 4), cornerRadius > 1 ? cornerRadius - 1 : 1))
+                    {
+                        using (var brush = ResPool.GetHatchBrush(HatchStyle.Percent50, ColorControlLight, ColorControl))
+                        {
+                            dc.FillPath(brush, innerPath);
+                        }
+                    }
+                }
+
+                using (var outerPath = CreateRoundedRectanglePath(new Rectangle(rectangle.X, rectangle.Y, rectangle.Width - 1, rectangle.Height - 1), cornerRadius))
+                using (var innerPath = CreateRoundedRectanglePath(new Rectangle(rectangle.X + 1, rectangle.Y + 1, rectangle.Width - 3, rectangle.Height - 3), cornerRadius > 1 ? cornerRadius - 1 : 1))
+                {
+                    // Draw top-left shadow using a clip.
+                    using (var clipPath = new System.Drawing.Drawing2D.GraphicsPath())
+                    {
+                        clipPath.AddPolygon(new Point[] { rectangle.Location, new Point(rectangle.Right, rectangle.Top), new Point(rectangle.Left, rectangle.Bottom) });
+                        using (var clipRegion = new Region(clipPath))
+                        {
+                            dc.SetClip(clipRegion, System.Drawing.Drawing2D.CombineMode.Intersect);
+                            dc.DrawPath(DarkPen, outerPath);
+                            dc.DrawPath(NormalPen, innerPath);
+                            dc.ResetClip();
+                        }
+                    }
+
+                    // Draw bottom-right highlight using a clip.
+                    using (var clipPath = new System.Drawing.Drawing2D.GraphicsPath())
+                    {
+                        clipPath.AddPolygon(new Point[] { new Point(rectangle.Right, rectangle.Top), new Point(rectangle.Right, rectangle.Bottom), new Point(rectangle.Left, rectangle.Bottom) });
+                        using (var clipRegion = new Region(clipPath))
+                        {
+                            dc.SetClip(clipRegion, System.Drawing.Drawing2D.CombineMode.Intersect);
+                            dc.DrawPath(LightPen, outerPath); // Note: This state only has one pen for the highlight side.
+                            dc.ResetClip();
+                        }
+                    }
+                }
+            }
+            else if (((state & ButtonState.Inactive) == ButtonState.Inactive) || ((state & ButtonState.Normal) == ButtonState.Normal))
+            {
+                // This is a "raised" 3D border.
+                using (var outerPath = CreateRoundedRectanglePath(new Rectangle(rectangle.X, rectangle.Y, rectangle.Width - 1, rectangle.Height - 1), cornerRadius))
+                using (var innerPath = CreateRoundedRectanglePath(new Rectangle(rectangle.X + 1, rectangle.Y + 1, rectangle.Width - 3, rectangle.Height - 3), cornerRadius > 1 ? cornerRadius - 1 : 1))
+                {
+                    // Draw top-left highlight using a clip.
+                    using (var clipPath = new System.Drawing.Drawing2D.GraphicsPath())
+                    {
+                        clipPath.AddPolygon(new Point[] { rectangle.Location, new Point(rectangle.Right, rectangle.Top), new Point(rectangle.Left, rectangle.Bottom) });
+                        using (var clipRegion = new Region(clipPath))
+                        {
+                            dc.SetClip(clipRegion, System.Drawing.Drawing2D.CombineMode.Intersect);
+                            dc.DrawPath(LightPen, outerPath);
+                            dc.ResetClip();
+                        }
+                    }
+
+                    // Draw bottom-right shadow using a clip.
+                    using (var clipPath = new System.Drawing.Drawing2D.GraphicsPath())
+                    {
+                        clipPath.AddPolygon(new Point[] { new Point(rectangle.Right, rectangle.Top), new Point(rectangle.Right, rectangle.Bottom), new Point(rectangle.Left, rectangle.Bottom) });
+                        using (var clipRegion = new Region(clipPath))
+                        {
+                            dc.SetClip(clipRegion, System.Drawing.Drawing2D.CombineMode.Intersect);
+                            dc.DrawPath(DarkPen, outerPath);
+                            dc.DrawPath(NormalPen, innerPath);
+                            dc.ResetClip();
+                        }
+                    }
+                }
+            }
+
+            // Restore the original graphics state.
+            dc.SmoothingMode = originalSmoothingMode;
+        }
 
 
-		public override void CPDrawCaptionButton (Graphics graphics, Rectangle rectangle, CaptionButton button, ButtonState state) {
+        public override void CPDrawCaptionButton (Graphics graphics, Rectangle rectangle, CaptionButton button, ButtonState state) {
 			Rectangle	captionRect;
 			int			lineWidth;
 
@@ -7824,33 +7887,47 @@ namespace System.Windows.Forms
 				area.Y + 2, area.Width - 4, area.Height - 4);
 			
 		}
-		
-		public override void CPDrawBorderStyle (Graphics dc, Rectangle area, BorderStyle border_style) {
-			switch (border_style){
-			case BorderStyle.Fixed3D:
-				dc.DrawLine (ResPool.GetPen (ColorControlDark), area.X, area.Y, area.X +area.Width, area.Y);
-				dc.DrawLine (ResPool.GetPen (ColorControlDark), area.X, area.Y, area.X, area.Y + area.Height);
-				dc.DrawLine (ResPool.GetPen (ColorControlLight), area.X , area.Y + area.Height - 1, area.X + area.Width , 
-					area.Y + area.Height - 1);
-				dc.DrawLine (ResPool.GetPen (ColorControlLight), area.X + area.Width -1 , area.Y, area.X + area.Width -1, 
-					area.Y + area.Height);
 
-				dc.DrawLine (ResPool.GetPen (ColorActiveBorder), area.X + 1, area.Bottom - 2, area.Right - 2, area.Bottom - 2);
-				dc.DrawLine (ResPool.GetPen (ColorActiveBorder), area.Right - 2, area.Top + 1, area.Right - 2, area.Bottom - 2);
-				dc.DrawLine (ResPool.GetPen (ColorControlDarkDark), area.X + 1, area.Top + 1, area.X + 1, area.Bottom - 3);
-				dc.DrawLine (ResPool.GetPen (ColorControlDarkDark), area.X + 1, area.Top + 1, area.Right - 3, area.Top + 1);
-				break;
-			case BorderStyle.FixedSingle:
-				dc.DrawRectangle (ResPool.GetPen (ColorWindowFrame), area.X, area.Y, area.Width - 1, area.Height - 1);
-				break;
-			case BorderStyle.None:
-			default:
-				break;
-			}
-			
-		}
-		#endregion	// ControlPaint
+        public override void CPDrawBorderStyle(Graphics dc, Rectangle area, BorderStyle border_style)
+        {
+            // Get the corner radius from the utility class, casting to int as required by CreateRoundedRectanglePath.
+            int radius = (int)RVUtils.cornerRadius;
+
+            switch (border_style)
+            {
+                case BorderStyle.Fixed3D:
+                    // The Fixed3D style uses specific line drawing for a bevel effect. 
+                    // We maintain the original line-drawing logic here, as converting a multi-line 3D effect 
+                    // to rounded paths is a complex operation beyond simple path creation.
+                    dc.DrawLine(ResPool.GetPen(ColorControlDark), area.X, area.Y, area.X + area.Width, area.Y);
+                    dc.DrawLine(ResPool.GetPen(ColorControlDark), area.X, area.Y, area.X, area.Y + area.Height);
+                    dc.DrawLine(ResPool.GetPen(ColorControlLight), area.X, area.Y + area.Height - 1, area.X + area.Width, area.Y + area.Height - 1);
+                    dc.DrawLine(ResPool.GetPen(ColorControlLight), area.X + area.Width - 1, area.Y, area.X + area.Width - 1, area.Y + area.Height);
+
+                    dc.DrawLine(ResPool.GetPen(ColorActiveBorder), area.X + 1, area.Bottom - 2, area.Right - 2, area.Bottom - 2);
+                    dc.DrawLine(ResPool.GetPen(ColorActiveBorder), area.Right - 2, area.Top + 1, area.Right - 2, area.Bottom - 2);
+                    dc.DrawLine(ResPool.GetPen(ColorControlDarkDark), area.X + 1, area.Top + 1, area.X + 1, area.Bottom - 3);
+                    dc.DrawLine(ResPool.GetPen(ColorControlDarkDark), area.X + 1, area.Top + 1, area.Right - 3, area.Top + 1);
+                    break;
+
+                case BorderStyle.FixedSingle:
+                    // REWRITE: Draw a rounded single-line border using the utility functions.
+                    using (var pen = ResPool.GetPen(ColorWindowFrame))
+                    using (var path = RVUtils.CreateRoundedRectanglePath(area, radius))
+                    {
+                        // Draw the border using the rounded path.
+                        dc.DrawPath(pen, path);
+                    }
+                    break;
+
+                case BorderStyle.None:
+                default:
+                    break;
+            }
+        }
+
+        #endregion // ControlPaint                 
 
 
-	} //class
+    } //class
 }
