@@ -16,7 +16,7 @@
     <PackageLicenseExpression></PackageLicenseExpression>
     <PackageReleaseNotes>Initial Release</PackageReleaseNotes>
     <PackageLicenseFile>License.txt</PackageLicenseFile>
-    <Version>1.0.0-alpha11</Version>
+    <Version>1.0.0-alpha12</Version>
     <PackageId>Rishi.Core.System.Windows.Forms</PackageId>
   </PropertyGroup>
 
