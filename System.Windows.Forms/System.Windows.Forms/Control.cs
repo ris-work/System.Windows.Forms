@@ -1407,7 +1407,7 @@ namespace System.Windows.Forms
 			if (background_image == null) {
 				if (!tbstyle_flat) {
 					Rectangle paintRect = pevent.ClipRectangle;
-					pevent.Graphics.FillRectangle(BackColorBrush, paintRect);
+					pevent.Graphics.FillRoundedRect(BackColorBrush, paintRect);
 				}
 				return;
 			}
@@ -1417,13 +1417,13 @@ namespace System.Windows.Forms
 
 		void DrawBackgroundImage (Graphics g) {
 			Rectangle drawing_rectangle = new Rectangle ();
-			g.FillRectangle (BackColorBrush, ClientRectangle);
+			g.FillRoundedRect (BackColorBrush, ClientRectangle);
 			
 			switch (backgroundimage_layout)
 			{
 			case ImageLayout.Tile:
 				using (TextureBrush b = new TextureBrush (background_image, WrapMode.Tile)) {
-					g.FillRectangle (b, ClientRectangle);
+					g.FillRoundedRect (b, ClientRectangle);
 				}
 				return;
 			case ImageLayout.Center:
