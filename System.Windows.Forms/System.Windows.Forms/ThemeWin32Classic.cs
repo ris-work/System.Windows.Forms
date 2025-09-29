@@ -143,11 +143,11 @@ namespace System.Windows.Forms
 		public  override void DrawOwnerDrawBackground (DrawItemEventArgs e)
 		{
 			if ((e.State & DrawItemState.Selected) == DrawItemState.Selected) {
-				e.Graphics.FillRectangle (SystemBrushes.Highlight, e.Bounds);
+				e.Graphics.FillRoundedRect (SystemBrushes.Highlight, e.Bounds);
 				return;
 			}
 
-			e.Graphics.FillRectangle (ResPool.GetSolidBrush(e.BackColor), e.Bounds);
+			e.Graphics.FillRoundedRect (ResPool.GetSolidBrush(e.BackColor), e.Bounds);
 		}
 
 		public  override void DrawOwnerDrawFocusRectangle (DrawItemEventArgs e)
@@ -1443,15 +1443,15 @@ namespace System.Windows.Forms
 				if (checkbox.is_entered || checkbox.Capture) {
 					// decide on which background color to use
 					if (checkbox.FlatStyle == FlatStyle.Popup && checkbox.is_entered && checkbox.Capture) {
-						graphics.FillRectangle(ResPool.GetSolidBrush (checkbox.BackColor), fill_rectangle);
+						graphics.FillRoundedRect(ResPool.GetSolidBrush (checkbox.BackColor), fill_rectangle);
 					} else if (checkbox.FlatStyle == FlatStyle.Flat) { 
 						if (!checkbox.is_pressed) {
-							graphics.FillRectangle(ResPool.GetSolidBrush (checkbox.BackColor), fill_rectangle);
+							graphics.FillRoundedRect(ResPool.GetSolidBrush (checkbox.BackColor), fill_rectangle);
 						} else
-							graphics.FillRectangle(ResPool.GetSolidBrush (ControlPaint.LightLight (checkbox.BackColor)), fill_rectangle);
+							graphics.FillRoundedRect(ResPool.GetSolidBrush (ControlPaint.LightLight (checkbox.BackColor)), fill_rectangle);
 					} else {
 						// use regular window background color
-						graphics.FillRectangle(ResPool.GetSolidBrush (ControlPaint.LightLight (checkbox.BackColor)), fill_rectangle);
+						graphics.FillRoundedRect(ResPool.GetSolidBrush (ControlPaint.LightLight (checkbox.BackColor)), fill_rectangle);
 					}
 					
 					// render the outer border
@@ -1462,7 +1462,7 @@ namespace System.Windows.Forms
 						CPDrawBorder3D (graphics, checkbox_rectangle, Border3DStyle.SunkenInner, Border3DSide.Left | Border3DSide.Right | Border3DSide.Top | Border3DSide.Bottom, checkbox.BackColor);
 					}
 				} else {
-					graphics.FillRectangle(ResPool.GetSolidBrush (ControlPaint.LightLight (checkbox.BackColor)), fill_rectangle);				
+					graphics.FillRoundedRect(ResPool.GetSolidBrush (ControlPaint.LightLight (checkbox.BackColor)), fill_rectangle);				
 					
 					if (checkbox.FlatStyle == FlatStyle.Flat) {
 						ControlPaint.DrawBorder(graphics, checkbox_rectangle, checkbox.ForeColor, ButtonBorderStyle.Solid);
@@ -1473,7 +1473,7 @@ namespace System.Windows.Forms
 				}
 			} else {
 				if (checkbox.FlatStyle == FlatStyle.Popup) {
-					graphics.FillRectangle(SystemBrushes.Control, fill_rectangle);
+					graphics.FillRoundedRect(SystemBrushes.Control, fill_rectangle);
 				}	
 			
 				// draw disabled state,
@@ -1570,7 +1570,7 @@ namespace System.Windows.Forms
 				fore_color = e.ForeColor;
 			}
 			
-			e.Graphics.FillRectangle (ResPool.GetSolidBrush
+			e.Graphics.FillRoundedRect (ResPool.GetSolidBrush
 				(back_color), item_rect);
 
 			e.Graphics.DrawString (ctrl.GetItemText (ctrl.Items[e.Index]), e.Font,
@@ -1605,7 +1605,7 @@ namespace System.Windows.Forms
 			if (!ctrl.Enabled)
 				fore_color = ColorInactiveCaptionText;
 							
-			e.Graphics.FillRectangle (ResPool.GetSolidBrush (back_color), e.Bounds);
+			e.Graphics.FillRoundedRect (ResPool.GetSolidBrush (back_color), e.Bounds);
 
 			if (e.Index != -1) {
 				e.Graphics.DrawString (ctrl.GetItemText (ctrl.Items[e.Index]), e.Font,
@@ -1686,10 +1686,10 @@ namespace System.Windows.Forms
 		public override void ComboBoxDrawBackground (ComboBox comboBox, Graphics g, Rectangle clippingArea, FlatStyle style)
 		{
 			if (!comboBox.Enabled)
-				g.FillRectangle (ResPool.GetSolidBrush (ColorControl), comboBox.ClientRectangle);
+				g.FillRoundedRect (ResPool.GetSolidBrush (ColorControl), comboBox.ClientRectangle);
 
 			if (comboBox.DropDownStyle == ComboBoxStyle.Simple)
-				g.FillRectangle (ResPool.GetSolidBrush (comboBox.Parent.BackColor), comboBox.ClientRectangle);
+				g.FillRoundedRect (ResPool.GetSolidBrush (comboBox.Parent.BackColor), comboBox.ClientRectangle);
 
 			if (style == FlatStyle.Popup && (comboBox.Entered || comboBox.Focused)) {
 				Rectangle area = comboBox.TextArea;
@@ -2600,7 +2600,7 @@ namespace System.Windows.Forms
 			int		width;
 			int		y;
 
-			dc.FillRectangle (GetControlBackBrush (box.BackColor), box.ClientRectangle);
+			dc.FillRoundedRect (GetControlBackBrush (box.BackColor), box.ClientRectangle);
 			
 			text_format = new StringFormat();
 			text_format.HotkeyPrefix = HotkeyPrefix.Show;
