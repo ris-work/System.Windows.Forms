@@ -9,7 +9,7 @@ namespace System.Windows.Forms
 {
     public static class RVUtils
     {
-        public static float cornerRadius = 20;
+        public static int cornerRadius = 20;
         public static System.Drawing.Drawing2D.GraphicsPath CreateRoundedRectanglePath(Rectangle rect, int cornerRadius)
         {
             // Create a new path
@@ -50,46 +50,9 @@ namespace System.Windows.Forms
 
         public static void FillRoundedRect(this Graphics g, Brush brush, Rectangle rect, int? cornerRadius = null)
         {
-            int radius = cornerRadius ?? (int)RVUtils.cornerRadius;
-            // Clamp radius to valid value
-            int diameter = Math.Min(Math.Min(rect.Width, rect.Height), radius * 2);
-            if (diameter <= 0)
+            using (var path = CreateRoundedRectanglePath(rect, cornerRadius ?? RVUtils.cornerRadius))
             {
-                g.FillRectangle(brush, rect);
-                return;
-            }
-
-            using (var path = new System.Drawing.Drawing2D.GraphicsPath())
-            {
-                var arcRect = new RectangleF(rect.Location, new SizeF(diameter, diameter));
-
-                // top-left
-                path.AddArc(arcRect, 180, 90);
-
-                // top-right
-                arcRect.X = rect.Right - diameter;
-                path.AddArc(arcRect, 270, 90);
-
-                // bottom-right
-                arcRect.Y = rect.Bottom - diameter;
-                path.AddArc(arcRect, 0, 90);
-
-                // bottom-left
-                arcRect.X = rect.Left;
-                path.AddArc(arcRect, 90, 90);
-
-                path.CloseFigure();
-
-                var oldSmoothing = g.SmoothingMode;
-                try
-                {
-                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                    g.FillPath(brush, path);
-                }
-                finally
-                {
-                    g.SmoothingMode = oldSmoothing;
-                }
+                g.FillPath(brush, path);
             }
         }
 
