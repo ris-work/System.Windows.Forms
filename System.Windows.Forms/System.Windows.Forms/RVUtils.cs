@@ -126,12 +126,12 @@ namespace System.Windows.Forms
         /// </summary>
         public static void EnableOptimizedCustomPainting(this Control control)
         {
-            control.SetStyle(ControlStyles.Opaque, true);
-            control.SetStyle(ControlStyles.UserPaint, true);
+            control.SetStyle(ControlStyles.Opaque, false);
+            control.SetStyle(ControlStyles.UserPaint, false);
             control.SetStyle(ControlStyles.AllPaintingInWmPaint, true); // Reduces flicker
             control.SetStyle(ControlStyles.ResizeRedraw, true);
             control.SetStyle(ControlStyles.SupportsTransparentBackColor, true);
-            control.SetStyle(ControlStyles.Opaque | ControlStyles.UserPaint |
+            control.SetStyle(ControlStyles.UserPaint |
               ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw |
               ControlStyles.OptimizedDoubleBuffer, true);
         }

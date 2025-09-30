@@ -87,7 +87,6 @@ namespace System.Windows.Forms {
 			text_format_flags |= TextFormatFlags.TextBoxControl;
 
 			SetStyle (ControlStyles.ResizeRedraw | 
-				ControlStyles.Opaque | 
 				ControlStyles.UserMouse | 
 				ControlStyles.SupportsTransparentBackColor | 
 				ControlStyles.CacheText |

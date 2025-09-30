@@ -391,6 +391,7 @@ namespace System.Windows.Forms {
 			CreateDockPadding ();
 			InternalClientSize = new Size (this.Width - (SystemInformation.FrameBorderSize.Width * 2), this.Height - (SystemInformation.FrameBorderSize.Height * 2) - SystemInformation.CaptionHeight);
 			restore_bounds = Bounds;
+			RVUtils.SetParentBackgroundColor(this.BackColor);
 		}
 		#endregion // Public Constructor & Destructor
 
@@ -566,6 +567,7 @@ namespace System.Windows.Forms {
 			}
 			set {
 				base.BackColor = value;
+				RVUtils.SetParentBackgroundColor(base.BackColor);
 			}
 		}
 

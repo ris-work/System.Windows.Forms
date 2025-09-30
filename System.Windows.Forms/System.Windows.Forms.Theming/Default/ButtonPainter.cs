@@ -47,7 +47,7 @@ namespace System.Windows.Forms.Theming.Default
 			CPColor cpcolor = is_themecolor ? CPColor.Empty : ResPool.GetCPColor (backColor);
 			//Pen pen;
 
-            int cornerRadius = 20;
+            int cornerRadius = RVUtils.cornerRadius;
             var originalSmoothingMode = g.SmoothingMode;
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
             Rectangle borderRect = new Rectangle(bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
@@ -94,7 +94,7 @@ namespace System.Windows.Forms.Theming.Default
 			Pen pen;
             
 
-            int cornerRadius = 20;
+            int cornerRadius = RVUtils.cornerRadius;
             switch (state)
             {
                 case ButtonThemeState.Normal:
@@ -143,7 +143,7 @@ namespace System.Windows.Forms.Theming.Default
             // --- START: New Rounded Drawing Logic ---
 
             // Define the radius for the corners.
-            int cornerRadius = 6;
+            int cornerRadius = RVUtils.cornerRadius;
 
             // Set high-quality rendering for smooth curves.
             var originalSmoothingMode = g.SmoothingMode;

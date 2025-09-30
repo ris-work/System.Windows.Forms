@@ -154,6 +154,7 @@ namespace System.Windows.Forms {
 		
 			// initialise the month calendar
 			month_calendar = new MonthCalendar (this);
+			month_calendar.border_style = BorderStyle.FixedSingle;
 			month_calendar.CalendarDimensions = new Size (1, 1);
 			month_calendar.MaxSelectionCount = 1;
 			month_calendar.ForeColor = Control.DefaultForeColor;

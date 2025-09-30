@@ -38,7 +38,8 @@ namespace SimpleTest
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            RVUtils.SetParentBackgroundColor(System.Drawing.Color.FromKnownColor(System.Drawing.KnownColor.DarkSlateGray));
+            this.AutoScaleBaseSize = new System.Drawing.Size(1, 1);
+            //RVUtils.SetParentBackgroundColor(System.Drawing.Color.FromKnownColor(System.Drawing.KnownColor.DarkSlateGray));
             //More fun
             //RVUtils.SetCaptureOrigin(1, 1);
             //RVUtils.SetCaptureLocalOrigin(this);
