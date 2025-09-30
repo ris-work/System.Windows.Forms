@@ -11,6 +11,43 @@ namespace System.Windows.Forms
     {
         public static int cornerRadius = 100;
 
+        // near the top of RVUtils
+        private static volatile int _captureOriginX = -1;
+        private static volatile int _captureOriginY = -1;
+
+        // ParentBackgroundColor: plain static nullable Color plus a simple lock for thread-safety
+        private static readonly object _parentBgLock = new object();
+        private static Color? _parentBackgroundColor = null;
+
+        public static void SetCaptureOrigin(int screenX, int screenY)
+        {
+            _captureOriginX = screenX;
+            _captureOriginY = screenY;
+        }
+
+        public static void ClearCaptureOrigin()
+        {
+            _captureOriginX = -1;
+            _captureOriginY = -1;
+        }
+
+        public static void SetParentBackgroundColor(Color? color)
+        {
+            lock (_parentBgLock) { _parentBackgroundColor = color; }
+        }
+
+        public static void ClearParentBackgroundColor()
+        {
+            lock (_parentBgLock) { _parentBackgroundColor = null; }
+        }
+
+        // internal helper to read the value in a thread-safe way
+        private static Color? GetParentBackgroundColor()
+        {
+            lock (_parentBgLock) { return _parentBackgroundColor; }
+        }
+
+
         // Draw the parent's pixels into this control's graphics so no real transparency is left.
         public static void DrawParentBackgroundToGraphics(Control ctrl, Graphics g)
         {
@@ -94,18 +131,77 @@ namespace System.Windows.Forms
         }
         public static void FillRoundedRectangle(Graphics g, Brush brush, Rectangle rect, int cornerRadius)
         {
+            if (g == null) return;
+
+            bool paintedBackground = false;
+
+            // 1) Try screen capture if origin set
+            if (_captureOriginX != -1 && _captureOriginY != -1)
+            {
+                try
+                {
+                    var srcPoint = new Point(_captureOriginX + rect.Left, _captureOriginY + rect.Top);
+                    g.CopyFromScreen(srcPoint, rect.Location, rect.Size);
+                    paintedBackground = true;
+                }
+                catch
+                {
+                    paintedBackground = false;
+                }
+            }
+
+            // 2) Use explicit parent background color if provided
+            if (!paintedBackground)
+            {
+                var parentColor = GetParentBackgroundColor();
+                if (parentColor.HasValue)
+                {
+                    var c = parentColor.Value;
+                    using (var bg = new SolidBrush(Color.FromArgb(255, c.R, c.G, c.B)))
+                    {
+                        g.FillRectangle(bg, rect);
+                    }
+                    paintedBackground = true;
+                }
+            }
+
+            // 3) Fallback opaque fill
+            if (!paintedBackground)
+            {
+                if (brush is SolidBrush sb)
+                {
+                    var c = sb.Color;
+                    using (var opaque = new SolidBrush(Color.FromArgb(255, c.R, c.G, c.B)))
+                        g.FillRectangle(opaque, rect);
+                }
+                else
+                {
+                    using (var opaque = new SolidBrush(Color.FromArgb(255, 255, 255, 255)))
+                        g.FillRectangle(opaque, rect);
+                }
+            }
+
+            // 4) Draw anti-aliased rounded path on top
             using (var path = CreateRoundedRectanglePath(rect, cornerRadius))
             {
-                g.FillPath(brush, path);
+                var oldSmoothing = g.SmoothingMode;
+                try
+                {
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    g.FillPath(brush, path);
+                }
+                finally
+                {
+                    g.SmoothingMode = oldSmoothing;
+                }
             }
         }
 
+
+
         public static void FillRoundedRect(this Graphics g, Brush brush, Rectangle rect, int? cornerRadius = null)
         {
-            using (var path = CreateRoundedRectanglePath(rect, cornerRadius ?? RVUtils.cornerRadius))
-            {
-                g.FillPath(brush, path);
-            }
+            FillRoundedRectangle(g, brush, rect, cornerRadius ?? RVUtils.cornerRadius);
         }
 
     }

@@ -1,4 +1,6 @@
-﻿namespace SimpleTest
+﻿using System.Windows.Forms;
+
+namespace SimpleTest
 {
     partial class Form1
     {
@@ -28,6 +30,9 @@
         /// </summary>
         private void InitializeComponent()
         {
+            RVUtils.SetParentBackgroundColor(System.Drawing.Color.FromKnownColor(System.Drawing.KnownColor.DarkSlateGray));
+            //More fun
+            RVUtils.SetCaptureOrigin(1, 1);
             this.BackColor = System.Drawing.Color.FromKnownColor(System.Drawing.KnownColor.DeepSkyBlue);
             AllowTransparency = false;
             this.button1 = new System.Windows.Forms.Button();
@@ -69,6 +74,7 @@
             this.button1.Text = "button1";
             this.button1.UseVisualStyleBackColor = true;
             this.button1.Click += new System.EventHandler(this.button1_Click);
+            this.button1.BackColor = System.Drawing.Color.FromArgb(150, 255,255, 255);
             // 
             // label1
             // 
@@ -211,6 +217,7 @@
             this.tabControl1.SelectedIndex = 0;
             this.tabControl1.Size = new System.Drawing.Size(432, 119);
             this.tabControl1.TabIndex = 15;
+            this.tabControl1.BackColor = System.Drawing.Color.FromArgb(150, 255, 255, 255);
             // 
             // tabPage1
             // 
@@ -225,6 +232,7 @@
             this.tabPage1.TabIndex = 0;
             this.tabPage1.Text = "tabPage1";
             this.tabPage1.UseVisualStyleBackColor = true;
+            this.tabPage1.BackColor = System.Drawing.Color.FromArgb(100, 50, 255, 255);
             // 
             // tabPage2
             // 
@@ -235,6 +243,7 @@
             this.tabPage2.TabIndex = 1;
             this.tabPage2.Text = "tabPage2";
             this.tabPage2.UseVisualStyleBackColor = true;
+            this.tabPage2.BackColor = System.Drawing.Color.FromArgb(100, 50, 255, 255);
             // 
             // dataGridView1
             // 
