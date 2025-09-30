@@ -30,9 +30,20 @@ namespace SimpleTest
         /// </summary>
         private void InitializeComponent()
         {
+
+            this.AutoScaleMode = AutoScaleMode.None;
+            
+            // Make the app DPI-unaware (no automatic scaling)
+            //Application.SetHighDpiMode(HighDpiMode.DpiUnaware);
+
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
             RVUtils.SetParentBackgroundColor(System.Drawing.Color.FromKnownColor(System.Drawing.KnownColor.DarkSlateGray));
             //More fun
-            RVUtils.SetCaptureOrigin(1, 1);
+            //RVUtils.SetCaptureOrigin(1, 1);
+            //RVUtils.SetCaptureLocalOrigin(this);
+
+            this.Resize += (_, __) => { this.Invalidate(true); };
             this.BackColor = System.Drawing.Color.FromKnownColor(System.Drawing.KnownColor.DeepSkyBlue);
             AllowTransparency = false;
             this.button1 = new System.Windows.Forms.Button();

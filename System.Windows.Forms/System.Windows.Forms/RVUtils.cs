@@ -47,6 +47,42 @@ namespace System.Windows.Forms
             lock (_parentBgLock) { return _parentBackgroundColor; }
         }
 
+        // Place these in RVUtils (alongside SetCaptureOrigin, ClearCaptureOrigin, etc.)
+        public static void SetCaptureLocalOrigin(Form form, Point localPoint)
+        {
+            if (form == null) { ClearCaptureOrigin(); return; }
+            // localPoint is in form client coordinates (0,0 is top-left of form client area)
+            var screen = form.PointToScreen(localPoint);
+            SetCaptureOrigin(screen.X, screen.Y);
+        }
+
+        public static void SetCaptureLocalOrigin(Control control, Point localPoint)
+        {
+            if (control == null) { ClearCaptureOrigin(); return; }
+            // Convert localPoint (relative to control) to form client coords then to screen
+            var form = control.FindForm();
+            if (form == null) { ClearCaptureOrigin(); return; }
+
+            // Convert point from control-client to screen:
+            // 1) control.PointToScreen(localPoint) gives screen directly
+            var screen = control.PointToScreen(localPoint);
+            SetCaptureOrigin(screen.X, screen.Y);
+        }
+
+        // Convenience overloads for the common case of using the control's top-left
+        public static void SetCaptureLocalOrigin(Control control)
+        {
+            if (control == null) { ClearCaptureOrigin(); return; }
+            SetCaptureLocalOrigin(control, Point.Empty);
+        }
+
+        public static void SetCaptureLocalOrigin(Form form)
+        {
+            if (form == null) { ClearCaptureOrigin(); return; }
+            SetCaptureLocalOrigin(form, Point.Empty);
+        }
+
+
 
         // Draw the parent's pixels into this control's graphics so no real transparency is left.
         public static void DrawParentBackgroundToGraphics(Control ctrl, Graphics g)
