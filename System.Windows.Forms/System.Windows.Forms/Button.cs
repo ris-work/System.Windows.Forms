@@ -42,6 +42,8 @@ namespace System.Windows.Forms {
 		#region Public Constructors
 		public Button ()
 		{
+			this.EnableOptimizedCustomPainting();
+			this.FlatStyle = FlatStyle.Flat;
 			dialog_result = DialogResult.None;
 			SetStyle (ControlStyles.StandardDoubleClick, false);
 		}

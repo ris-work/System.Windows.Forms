@@ -200,6 +200,8 @@ namespace System.Windows.Forms {
 			SetStyle (ControlStyles.UserPaint | ControlStyles.StandardClick, false);
 			SetStyle (ControlStyles.FixedHeight, true);
 			SetStyle (ControlStyles.Selectable, true);
+			this.EnableOptimizedCustomPainting();
+			this.border_style = BorderStyle.FixedSingle;
 
 			CalculateFormats ();
 		}

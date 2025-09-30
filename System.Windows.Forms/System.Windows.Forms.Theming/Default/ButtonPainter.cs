@@ -92,6 +92,7 @@ namespace System.Windows.Forms.Theming.Default
 			bool is_themecolor = backColor.ToArgb () == ThemeEngine.Current.ColorControl.ToArgb () || backColor == Color.Empty ? true : false;
 			CPColor cpcolor = is_themecolor ? CPColor.Empty : ResPool.GetCPColor (backColor);
 			Pen pen;
+            
 
             int cornerRadius = 20;
             switch (state)

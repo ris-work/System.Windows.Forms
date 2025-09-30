@@ -9,7 +9,59 @@ namespace System.Windows.Forms
 {
     public static class RVUtils
     {
-        public static int cornerRadius = 20;
+        public static int cornerRadius = 100;
+
+        // Draw the parent's pixels into this control's graphics so no real transparency is left.
+        public static void DrawParentBackgroundToGraphics(Control ctrl, Graphics g)
+        {
+            if (ctrl == null || g == null) return;
+
+            var parent = ctrl.Parent;
+            if (parent == null)
+            {
+                // No parent: just fill with the control BackColor
+                using (var b = new SolidBrush(ctrl.BackColor))
+                    g.FillRectangle(b, ctrl.ClientRectangle);
+                return;
+            }
+
+            try
+            {
+                // Capture parent into bitmap (size = parent client size)
+                using (var parentBmp = new Bitmap(parent.ClientSize.Width, parent.ClientSize.Height))
+                {
+                    parent.DrawToBitmap(parentBmp, new Rectangle(Point.Empty, parent.ClientSize));
+
+                    // Source rectangle inside parent bitmap that corresponds to this control's bounds
+                    var srcRect = new Rectangle(ctrl.Left, ctrl.Top, ctrl.Width, ctrl.Height);
+
+                    // Draw that portion into the control's client rectangle
+                    g.DrawImage(parentBmp, ctrl.ClientRectangle, srcRect, GraphicsUnit.Pixel);
+                }
+            }
+            catch
+            {
+                // If DrawToBitmap fails on some controls/platforms, fallback to BackColor fill
+                using (var b = new SolidBrush(ctrl.BackColor))
+                    g.FillRectangle(b, ctrl.ClientRectangle);
+            }
+        }
+
+
+        /// <summary>
+        /// Applies a standard set of ControlStyles for custom-painted, opaque controls to ensure smooth rendering and prevent transparency artifacts.
+        /// </summary>
+        public static void EnableOptimizedCustomPainting(this Control control)
+        {
+            control.SetStyle(ControlStyles.Opaque, true);
+            control.SetStyle(ControlStyles.UserPaint, true);
+            control.SetStyle(ControlStyles.AllPaintingInWmPaint, true); // Reduces flicker
+            control.SetStyle(ControlStyles.ResizeRedraw, true);
+            control.SetStyle(ControlStyles.SupportsTransparentBackColor, true);
+            control.SetStyle(ControlStyles.Opaque | ControlStyles.UserPaint |
+              ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw |
+              ControlStyles.OptimizedDoubleBuffer, true);
+        }
         public static System.Drawing.Drawing2D.GraphicsPath CreateRoundedRectanglePath(Rectangle rect, int cornerRadius)
         {
             // Create a new path

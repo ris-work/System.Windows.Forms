@@ -28,6 +28,8 @@
         /// </summary>
         private void InitializeComponent()
         {
+            this.BackColor = System.Drawing.Color.FromKnownColor(System.Drawing.KnownColor.DeepSkyBlue);
+            AllowTransparency = false;
             this.button1 = new System.Windows.Forms.Button();
             this.label1 = new System.Windows.Forms.Label();
             this.checkBox1 = new System.Windows.Forms.CheckBox();
