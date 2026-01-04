@@ -135,13 +135,13 @@ namespace System.Windows.Forms
               ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw |
               ControlStyles.OptimizedDoubleBuffer, true);
         }
-        public static System.Drawing.Drawing2D.GraphicsPath CreateRoundedRectanglePath(Rectangle rect, int cornerRadius)
+        public static System.Drawing.Drawing2D.GraphicsPath CreateRoundedRectanglePath(Rectangle rect, float cornerRadius)
         {
             // Create a new path
             var path = new System.Drawing.Drawing2D.GraphicsPath();
 
             // To prevent an exception, the corner radius can't be larger than half the rectangle's smallest side.
-            int diameter = Math.Min(Math.Min(rect.Width, rect.Height), cornerRadius * 2);
+            float diameter = Math.Min(Math.Min(rect.Width, rect.Height), cornerRadius * 2);
 
             // If the radius is 0, just return a standard rectangle path
             if (diameter <= 0)
@@ -151,7 +151,7 @@ namespace System.Windows.Forms
             }
 
             // Define the rectangle for the arcs
-            RectangleF arcRect = new RectangleF(rect.Location, new Size(diameter, diameter));
+            RectangleF arcRect = new RectangleF(rect.Location, new Size((int)diameter, (int)diameter));
 
             // Add the arcs for each corner
             path.AddArc(arcRect, 180, 90); // Top-left
