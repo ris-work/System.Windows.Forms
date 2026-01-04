@@ -4135,8 +4135,8 @@ namespace System.Windows.Forms
 					Math.Max(button_size.Width - 1, 0),
 					Math.Max(button_size.Height - 1, 0));
 
-				arrow_center = new PointF (button_rect.X + ((button_rect.Width + arrow_width) / 2.0f), 
-											rectangle.Y + ((button_rect.Height + arrow_height) / 2) + 1);
+				arrow_center = new PointF (button_rect.X + ((button_rect.Width + arrow_width) / 2f), 
+											rectangle.Y + ((button_rect.Height + arrow_height) / 1.5f) + 1);
 				if (is_clicked) {
 					arrow_center.X += 1;
 					arrow_center.Y += 1;
@@ -4160,7 +4160,7 @@ namespace System.Windows.Forms
 					Math.Max(button_size.Height - 1, 0));
 
 				arrow_center = new PointF (button_rect.X + ((button_rect.Width + arrow_width) / 2.0f), 
-											rectangle.Y + ((button_rect.Height + arrow_height) / 2) + 1);
+											rectangle.Y + ((button_rect.Height + arrow_height) / 1.5f) + 1);
 				if (is_clicked) {
 					arrow_center.X += 1;
 					arrow_center.Y += 1;
@@ -4181,7 +4181,7 @@ namespace System.Windows.Forms
 				dc.DrawRectangle (SystemPens.ControlDark, button_rect);
 			}
 			else {
-				CPDrawBorder3D (dc, button_rect, Border3DStyle.Raised, Border3DSide.Left | Border3DSide.Right | Border3DSide.Top | Border3DSide.Bottom);
+				CPDrawBorder3D (dc, button_rect, Border3DStyle.Etched, Border3DSide.Left | Border3DSide.Right | Border3DSide.Top | Border3DSide.Bottom);
 			}
 			// draw the arrow
 			dc.FillPolygon (SystemBrushes.ControlText, arrow_path);			

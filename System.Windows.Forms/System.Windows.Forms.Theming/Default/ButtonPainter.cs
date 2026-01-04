@@ -49,7 +49,7 @@ namespace System.Windows.Forms.Theming.Default
 
             int cornerRadius = RVUtils.cornerRadius;
             var originalSmoothingMode = g.SmoothingMode;
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
             Rectangle borderRect = new Rectangle(bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
 
             switch (state)
@@ -92,7 +92,9 @@ namespace System.Windows.Forms.Theming.Default
 			bool is_themecolor = backColor.ToArgb () == ThemeEngine.Current.ColorControl.ToArgb () || backColor == Color.Empty ? true : false;
 			CPColor cpcolor = is_themecolor ? CPColor.Empty : ResPool.GetCPColor (backColor);
 			Pen pen;
-            
+            var originalSmoothingMode = g.SmoothingMode;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+
 
             int cornerRadius = RVUtils.cornerRadius;
             switch (state)
@@ -130,7 +132,8 @@ namespace System.Windows.Forms.Theming.Default
 				
 			if (appearance.BorderSize > 0)
 				g.DrawRectangle (pen, bounds);
-		}
+            g.SmoothingMode = originalSmoothingMode;
+        }
         #endregion
 
         #region Popup Button

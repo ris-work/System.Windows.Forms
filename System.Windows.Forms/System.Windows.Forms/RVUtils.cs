@@ -9,7 +9,7 @@ namespace System.Windows.Forms
 {
     public static class RVUtils
     {
-        public static int cornerRadius = 100;
+        public static int cornerRadius = 5;
 
         // near the top of RVUtils
         private static volatile int _captureOriginX = -1;
