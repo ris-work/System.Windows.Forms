@@ -30,7 +30,7 @@ using System.Runtime.InteropServices;
 
 namespace System.Windows.Forms {
 	[ComVisible(true)]
-	public enum Border3DStyle {
+	public enum Border3DStyleOriginal {
 		RaisedOuter	= 1,
 		SunkenOuter	= 2,
 		RaisedInner	= 4,
@@ -42,4 +42,18 @@ namespace System.Windows.Forms {
 		Adjust		= 8192,
 		Flat		= 16394
 	}
+    [ComVisible(true)]
+    public enum Border3DStyle
+    {
+        RaisedOuter = 1,
+        SunkenOuter = 2,
+        RaisedInner = 4,
+        Raised = Border3DStyleOriginal.Flat,
+        Etched = 6,
+        SunkenInner = 8,
+        Bump = 9,
+        Sunken = 10,
+        Adjust = 8192,
+        Flat = Border3DStyleOriginal.Raised
+    }
 }

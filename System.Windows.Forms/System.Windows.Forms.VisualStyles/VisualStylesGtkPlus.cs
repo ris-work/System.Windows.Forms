@@ -876,14 +876,14 @@ namespace System.Windows.Forms.VisualStyles
 			case ThemeHandle.TRACKBAR:
 				switch ((TRACKBARPARTS)part) {
 				case TRACKBARPARTS.TKP_TRACK:
-					result = new Size (0, ThemeWin32Classic.TrackBarHorizontalTrackHeight);
+					result = new Size (0, ThemeWin32New.TrackBarHorizontalTrackHeight);
 					return true;
 				case TRACKBARPARTS.TKP_TRACKVERT:
-					result = new Size (ThemeWin32Classic.TrackBarVerticalTrackWidth, 0);
+					result = new Size (ThemeWin32New.TrackBarVerticalTrackWidth, 0);
 					return true;
 				case TRACKBARPARTS.TKP_THUMB:
 				case TRACKBARPARTS.TKP_THUMBVERT:
-					result = ThemeWin32Classic.TrackBarGetThumbSize ();
+					result = ThemeWin32New.TrackBarGetThumbSize ();
 					if ((TRACKBARPARTS)part == TRACKBARPARTS.TKP_THUMBVERT) {
 						int temporary = result.Width;
 						result.Width = result.Height;
