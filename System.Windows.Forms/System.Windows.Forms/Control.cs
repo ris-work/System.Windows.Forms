@@ -107,7 +107,7 @@ namespace System.Windows.Forms
 		internal                BorderStyle		border_style;		// Border style of control
 		bool                    show_keyboard_cues; // Current keyboard cues 
 		internal bool           show_focus_cues; // Current focus cues 
-		internal bool		force_double_buffer;	// Always doublebuffer regardless of ControlStyle
+		internal bool		force_double_buffer = true;	// Always doublebuffer regardless of ControlStyle
 
 		// Layout
 		internal int layout_suspended;

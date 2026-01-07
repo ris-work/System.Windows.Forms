@@ -31,13 +31,13 @@ namespace SimpleTest
         /// </summary>
         private void InitializeComponent()
         {
-
+            this.DoubleBuffered = true;
             this.AutoScaleMode = AutoScaleMode.None;
 
             // Make the app DPI-unaware (no automatic scaling)
             //Application.SetHighDpiMode(HighDpiMode.DpiUnaware);
 
-            Application.EnableVisualStyles();
+            //Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             this.AutoScaleBaseSize = new System.Drawing.Size(1, 1);
             //RVUtils.SetParentBackgroundColor(System.Drawing.Color.FromKnownColor(System.Drawing.KnownColor.DarkSlateGray));
@@ -97,6 +97,7 @@ namespace SimpleTest
             ((System.ComponentModel.ISupportInitialize)(this.numericUpDown1)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.trackBar1)).BeginInit();
+            
             this.menuStrip1.SuspendLayout();
             this.panel1.SuspendLayout();
             this.groupBox1.SuspendLayout();
