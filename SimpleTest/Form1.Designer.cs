@@ -115,6 +115,7 @@ namespace SimpleTest
             // 
             // button1
             // 
+            
             this.button1.Location = new System.Drawing.Point(36, 64);
             this.button1.Name = "button1";
             this.button1.Size = new System.Drawing.Size(75, 23);
@@ -122,7 +123,7 @@ namespace SimpleTest
             this.button1.Text = "button1";
             this.button1.UseVisualStyleBackColor = true;
             this.button1.Click += new System.EventHandler(this.button1_Click);
-            this.button1.BackColor = System.Drawing.Color.FromArgb(150, 255, 255, 255);
+            this.button1.BackColor = System.Drawing.Color.FromArgb(255, 255, 255, 255);
             // 
             // label1
             // 
@@ -178,6 +179,7 @@ namespace SimpleTest
             this.numericUpDown1.Name = "numericUpDown1";
             this.numericUpDown1.Size = new System.Drawing.Size(120, 20);
             this.numericUpDown1.TabIndex = 7;
+            
             // 
             // radioButton1
             // 
@@ -267,7 +269,7 @@ namespace SimpleTest
             this.tabControl1.SelectedIndex = 0;
             this.tabControl1.Size = new System.Drawing.Size(432, 119);
             this.tabControl1.TabIndex = 15;
-            this.tabControl1.BackColor = System.Drawing.Color.FromArgb(150, 255, 255, 255);
+            this.tabControl1.BackColor = System.Drawing.Color.FromArgb(0, 255, 255, 255);
             // 
             // tabPage1
             // 
@@ -282,7 +284,8 @@ namespace SimpleTest
             this.tabPage1.TabIndex = 0;
             this.tabPage1.Text = "tabPage1";
             this.tabPage1.UseVisualStyleBackColor = true;
-            this.tabPage1.BackColor = System.Drawing.Color.FromArgb(100, 50, 255, 255);
+            this.tabPage1.BackColor = System.Drawing.Color.FromArgb(0, 50, 255, 255);
+            this.BackColor = System.Drawing.Color.FromArgb(255, 50, 255, 255);
             // 
             // tabPage2
             // 

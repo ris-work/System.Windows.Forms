@@ -93,8 +93,8 @@ namespace System.Windows.Forms
             if (parent == null)
             {
                 // No parent: just fill with the control BackColor
-                using (var b = new SolidBrush(ctrl.BackColor))
-                    g.FillRectangle(b, ctrl.ClientRectangle);
+                /*using (var b = new SolidBrush(ctrl.BackColor))
+                    g.FillRectangle(b, ctrl.ClientRectangle);*/
                 return;
             }
 
@@ -109,14 +109,14 @@ namespace System.Windows.Forms
                     var srcRect = new Rectangle(ctrl.Left, ctrl.Top, ctrl.Width, ctrl.Height);
 
                     // Draw that portion into the control's client rectangle
-                    g.DrawImage(parentBmp, ctrl.ClientRectangle, srcRect, GraphicsUnit.Pixel);
+                    //g.DrawImage(parentBmp, ctrl.ClientRectangle, srcRect, GraphicsUnit.Pixel);
                 }
             }
             catch
             {
                 // If DrawToBitmap fails on some controls/platforms, fallback to BackColor fill
                 using (var b = new SolidBrush(ctrl.BackColor))
-                    g.FillRectangle(b, ctrl.ClientRectangle);
+                    g.FillRoundedRect(b, ctrl.ClientRectangle);
             }
         }
 
