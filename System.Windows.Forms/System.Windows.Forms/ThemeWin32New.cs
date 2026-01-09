@@ -349,7 +349,7 @@ namespace System.Windows.Forms
 		{
 			if (!button.Pressed) {
 				Color focus_color = ControlPaint.Dark (button.BackColor);
-				g.DrawRectangle (ResPool.GetPen (focus_color), new Rectangle (button.ClientRectangle.Left + 4, button.ClientRectangle.Top + 4, button.ClientRectangle.Width - 9, button.ClientRectangle.Height - 9));
+				g.DrawRoundedRectangle (ResPool.GetPen (focus_color), new Rectangle (button.ClientRectangle.Left + 4, button.ClientRectangle.Top + 4, button.ClientRectangle.Width - 9, button.ClientRectangle.Height - 9));
 			}
 		}
 
@@ -978,7 +978,7 @@ namespace System.Windows.Forms
 				if (button.FlatStyle == FlatStyle.Popup && !button.is_pressed)
 					focus_color = ControlPaint.Dark(button.BackColor);
 				
-				dc.DrawRectangle (ResPool.GetPen (focus_color), button.ClientRectangle.X, button.ClientRectangle.Y, 
+				dc.DrawRoundedRectangle (ResPool.GetPen (focus_color), button.ClientRectangle.X, button.ClientRectangle.Y, 
 						  button.ClientRectangle.Width - 1, button.ClientRectangle.Height - 1);
 			}
 			
@@ -1864,7 +1864,7 @@ namespace System.Windows.Forms
 				Rectangle area = comboBox.TextArea;
 				area.Height -= 1;
 				area.Width -= 1;
-				g.DrawRectangle (ResPool.GetPen (SystemColors.ControlDark), area);
+				g.DrawRoundedRectangle (ResPool.GetPen (SystemColors.ControlDark), area);
 				g.DrawLine (ResPool.GetPen (SystemColors.ControlDark), comboBox.ButtonArea.X - 1, comboBox.ButtonArea.Top, comboBox.ButtonArea.X - 1, comboBox.ButtonArea.Bottom);
 			}
 			bool is_flat = style == FlatStyle.Flat || style == FlatStyle.Popup;
@@ -2309,7 +2309,7 @@ namespace System.Windows.Forms
 				icon_bounds.Width = 8;
 				icon_bounds.Height = 8;
 
-				g.DrawRectangle (pen, icon_bounds);
+				g.DrawRoundedRectangle (pen, icon_bounds);
 
 				/* the - part of the icon */
 				g.DrawLine (pen,
@@ -2385,7 +2385,7 @@ namespace System.Windows.Forms
 					    icon_bounds.X + icon_bounds.Width / 2, outline.Y + outline.Height / 2,
 					    outline.X, outline.Y + outline.Height / 2);
 
-				g.DrawRectangle (pen, outline);
+				g.DrawRoundedRectangle (pen, outline);
 
 				g.DrawString (relation_text, grid.LinkFont, ResPool.GetSolidBrush (grid.LinkColor),
 					      outline, string_format);
@@ -2934,7 +2934,7 @@ namespace System.Windows.Forms
 
 			Rectangle box_select_rect = control.item_control.BoxSelectRectangle;
 			if (!box_select_rect.Size.IsEmpty)
-				dc.DrawRectangle (ResPool.GetDashPen (ColorControlText, DashStyle.Dot), box_select_rect);
+				dc.DrawRoundedRectangle (ResPool.GetDashPen (ColorControlText, DashStyle.Dot), box_select_rect);
 
 		}
 
@@ -3110,7 +3110,7 @@ namespace System.Windows.Forms
 									rect_checkrect.Width - 4,
 									rect_checkrect.Height - 4);
 					Pen pen = ResPool.GetSizedPen (this.ColorWindowText, 2);
-					dc.DrawRectangle (pen, rect);
+					dc.DrawRoundedRectangle (pen, rect);
 
 					// Need to draw a check-mark
 					if (item.Checked) {
@@ -4180,7 +4180,7 @@ namespace System.Windows.Forms
 			dc.FillRectangle (SystemBrushes.Control, button_rect);
 			// draw the border
 			if (is_clicked) {
-				dc.DrawRectangle (SystemPens.ControlDark, button_rect);
+				dc.DrawRoundedRectangle (SystemPens.ControlDark, button_rect);
 			}
 			else {
 				CPDrawBorder3D (dc, button_rect, Border3DStyle.Etched, Border3DSide.Left | Border3DSide.Right | Border3DSide.Top | Border3DSide.Bottom);
@@ -4271,7 +4271,7 @@ namespace System.Windows.Forms
 			// draw the selection grid
 			if (mc.is_date_clicked && mc.clicked_date == date) {
 				Pen pen = ResPool.GetDashPen (Color.Black, DashStyle.Dot);
-				dc.DrawRectangle (pen, interior);
+				dc.DrawRoundedRectangle (pen, interior);
 			}
 		}
 
@@ -5575,7 +5575,7 @@ namespace System.Windows.Forms
 		{
 			Brush back_brush = ResPool.GetSolidBrush (control.BackColor);
 			dc.FillRectangle (back_brush, control.ClientRectangle);
-			dc.DrawRectangle (SystemPens.WindowFrame, 0, 0, control.Width - 1, control.Height - 1);
+			dc.DrawRoundedRectangle (SystemPens.WindowFrame, 0, 0, control.Width - 1, control.Height - 1);
 		}
 
 		public override Size ToolTipSize(ToolTip.ToolTipWindow tt, string text)
@@ -5686,7 +5686,7 @@ namespace System.Windows.Forms
 			
 			// Rectangle borders and background.
 			dc.FillRectangle (ResPool.GetSolidBrush (ColorInfo), rect);
-			dc.DrawRectangle (ResPool.GetPen (ColorWindowFrame), 0, 0, rect.Width - 1, rect.Height - 1);
+			dc.DrawRoundedRectangle (ResPool.GetPen (ColorWindowFrame), 0, 0, rect.Width - 1, rect.Height - 1);
 
 			// Icon
 			Image image;
@@ -6372,7 +6372,7 @@ namespace System.Windows.Forms
 			int height = treeView.ActualItemHeight - 2;
 			dc.FillRectangle (ResPool.GetSolidBrush (treeView.BackColor), (x + 4) - (height / 2), node.GetY() + 1, height, height);
 			
-			dc.DrawRectangle (SystemPens.ControlDarkDark, x, middle - 4, 8, 8);
+			dc.DrawRoundedRectangle (SystemPens.ControlDarkDark, x, middle - 4, 8, 8);
 
 			if (node.IsExpanded) {
 				dc.DrawLine (SystemPens.ControlDarkDark, x + 2, middle, x + 6, middle); 
@@ -6511,7 +6511,7 @@ namespace System.Windows.Forms
 			// The 3d border is only 2 pixels wide, so we draw the innermost pixels ourselves
 			borders = new Rectangle (2, 2, form.Width - 5, form.Height - 5);
 			for (int i = 2; i < bdwidth; i++) {
-				dc.DrawRectangle (pen, borders);
+				dc.DrawRoundedRectangle (pen, borders);
 				borders.Inflate (-1, -1);
 			}				
 
@@ -6938,7 +6938,7 @@ namespace System.Windows.Forms
 				cb_rect.Height -= 2;
 				
 				dc.FillRectangle (SystemBrushes.Control, cb_rect.X, cb_rect.Y, cb_rect.Width - 1, cb_rect.Height - 1);
-				dc.DrawRectangle (SystemPens.ControlDark, cb_rect.X, cb_rect.Y, cb_rect.Width - 1, cb_rect.Height - 1);
+				dc.DrawRoundedRectangle (SystemPens.ControlDark, cb_rect.X, cb_rect.Y, cb_rect.Width - 1, cb_rect.Height - 1);
 				
 				check_pen = SystemPens.ControlDark;
 			} else
@@ -6950,7 +6950,7 @@ namespace System.Windows.Forms
 					dc.FillRectangle (SystemBrushes.ControlLight, cb_rect.X, cb_rect.Y, cb_rect.Width - 1, cb_rect.Height - 1);
 				else
 					dc.FillRectangle (Brushes.White, cb_rect.X, cb_rect.Y, cb_rect.Width - 1, cb_rect.Height - 1);
-				dc.DrawRectangle (SystemPens.ControlDark, cb_rect.X, cb_rect.Y, cb_rect.Width - 1, cb_rect.Height - 1);
+				dc.DrawRoundedRectangle (SystemPens.ControlDark, cb_rect.X, cb_rect.Y, cb_rect.Width - 1, cb_rect.Height - 1);
 			} else {
 				cb_rect.Width -= 1;
 				cb_rect.Height -= 1;
@@ -7051,7 +7051,7 @@ namespace System.Windows.Forms
 					// this needs to render like a pushed button - jba
 					// CPDrawBorder3D(graphics, rectangle, Border3DStyle.Sunken, Border3DSide.Left | Border3DSide.Top | Border3DSide.Right | Border3DSide.Bottom, ColorControl);
 					Rectangle trace_rectangle = new Rectangle(rectangle.X, rectangle.Y, Math.Max (rectangle.Width-1, 0), Math.Max (rectangle.Height-1, 0));
-					graphics.DrawRectangle (SystemPens.ControlDark, trace_rectangle);
+					graphics.DrawRoundedRectangle (SystemPens.ControlDark, trace_rectangle);
 				} else {
 					CPDrawBorder3D(graphics, rectangle, Border3DStyle.Raised, Border3DSide.Left | Border3DSide.Top | Border3DSide.Right | Border3DSide.Bottom, ColorControl);
 				}
@@ -7106,7 +7106,7 @@ namespace System.Windows.Forms
 			int			Y;
 			
 			graphics.FillRectangle (SystemBrushes.ControlLightLight, rect);
-			graphics.DrawRectangle (pen, rect);
+			graphics.DrawRoundedRectangle (pen, rect);
 			
 			X = rect.X + rect.Width / 2;
 			Y = rect.Y + rect.Height / 2;
@@ -7135,7 +7135,7 @@ namespace System.Windows.Forms
 			}
 			
 			// draw the outer rectangle
-			graphics.DrawRectangle (ResPool.GetPen (outerColor), trace_rectangle);			
+			graphics.DrawRoundedRectangle (ResPool.GetPen (outerColor), trace_rectangle);			
 			
 			// draw the inner rectangle						
 			if (button.FlatStyle == FlatStyle.Popup) {
@@ -7143,7 +7143,7 @@ namespace System.Windows.Forms
 			} else {
 				// draw a flat inner rectangle
 				Pen pen = ResPool.GetPen (ControlPaint.LightLight (backColor));
-				graphics.DrawRectangle(pen, Rectangle.Inflate (trace_rectangle, -4, -4));				
+				graphics.DrawRoundedRectangle(pen, Rectangle.Inflate (trace_rectangle, -4, -4));				
 			}
 		}
 		
@@ -7160,7 +7160,7 @@ namespace System.Windows.Forms
 			oldStyle = pen.DashStyle; 
 			pen.DashStyle = DashStyle.Dot;
 
-			graphics.DrawRectangle (pen, trace_rectangle);
+			graphics.DrawRoundedRectangle (pen, trace_rectangle);
 			pen.DashStyle = oldStyle;
 #else
 			CPDrawFocusRectangle(graphics, trace_rectangle, Color.Wheat, backColor);
@@ -7186,10 +7186,10 @@ namespace System.Windows.Forms
 			brush = ResPool.GetHatchBrush (HatchStyle.Percent50, backColor, foreColor);
 			pen = new Pen (brush, 1);
 						
-			rect.Width--;
-			rect.Height--;			
+			rect.Width-=2;
+			rect.Height-=2;			
 			
-			graphics.DrawRectangle (pen, rect);
+			graphics.DrawRoundedRectangle (pen, rect);
 			pen.Dispose ();
 		}
 		
@@ -7214,7 +7214,7 @@ namespace System.Windows.Forms
 				}
 			}
 			graphics.FillRectangle (sb, rectangle);
-			graphics.DrawRectangle (pen, rectangle);			
+			graphics.DrawRoundedRectangle (pen, rectangle);			
 		}
 
 
@@ -7292,8 +7292,8 @@ namespace System.Windows.Forms
 			penBorder.Alignment=PenAlignment.Inset;
 			penInside.Alignment=PenAlignment.Inset;
 
-			graphics.DrawRectangle(penBorder, rectangle);
-			graphics.DrawRectangle(penInside, rectangle.X+2, rectangle.Y+2, rectangle.Width-5, rectangle.Height-5);
+			graphics.DrawRoundedRectangle(penBorder, rectangle);
+			graphics.DrawRoundedRectangle(penInside, rectangle.X+2, rectangle.Y+2, rectangle.Width-5, rectangle.Height-5);
 		}
 
 
@@ -7692,7 +7692,7 @@ namespace System.Windows.Forms
 
 		public override void CPDrawVisualStyleBorder (Graphics graphics, Rectangle bounds)
 		{
-			graphics.DrawRectangle (SystemPens.ControlDarkDark, bounds);
+			graphics.DrawRoundedRectangle (SystemPens.ControlDarkDark, bounds);
 		}
 
 		private static void DrawBorderInternal (Graphics graphics, int startX, int startY, int endX, int endY,
@@ -7984,7 +7984,7 @@ namespace System.Windows.Forms
 				dc.FillRectangle (SystemBrushes.Control, area.X + 1,
 					area.Y + 1, area.Width - 2 , area.Height - 2);
 
-				dc.DrawRectangle (SystemPens.ControlDark, area.X,
+				dc.DrawRoundedRectangle (SystemPens.ControlDark, area.X,
 					area.Y, area.Width, area.Height);
 
 				return;

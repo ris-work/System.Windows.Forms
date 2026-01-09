@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -169,14 +170,15 @@ namespace System.Windows.Forms
         {
             if (g == null) return;
 
+            if (rect.Width <= 0 || rect.Height <= 0) return;
+
             bool paintedBackground = false;
 
-            // 1) Try screen capture if origin set
             if (_captureOriginX != -1 && _captureOriginY != -1)
             {
                 try
                 {
-                    var srcPoint = new Point(_captureOriginX + rect.Left, _captureOriginY + rect.Top);
+                    var srcPoint = new Point(_captureOriginX + rect.Left - 1, _captureOriginY + rect.Top - 1);
                     g.CopyFromScreen(srcPoint, rect.Location, rect.Size);
                     paintedBackground = true;
                 }
@@ -186,14 +188,13 @@ namespace System.Windows.Forms
                 }
             }
 
-            // 2) Use explicit parent background color if provided
             if (!paintedBackground)
             {
                 var parentColor = GetParentBackgroundColor();
                 if (parentColor.HasValue)
                 {
                     var c = parentColor.Value;
-                    using (var bg = new SolidBrush(Color.FromArgb(255, c.R, c.G, c.B)))
+                    using (var bg = new SolidBrush(Color.FromArgb(250, c.R, c.G, c.B)))
                     {
                         g.FillRectangle(bg, rect);
                     }
@@ -201,30 +202,69 @@ namespace System.Windows.Forms
                 }
             }
 
-            // 3) Fallback opaque fill
             if (!paintedBackground)
             {
                 if (brush is SolidBrush sb)
                 {
                     var c = sb.Color;
-                    using (var opaque = new SolidBrush(Color.FromArgb(255, c.R, c.G, c.B)))
+                    using (var opaque = new SolidBrush(Color.FromArgb(250, c.R, c.G, c.B)))
                         g.FillRectangle(opaque, rect);
                 }
-                else
+                else if (brush != null)
                 {
-                    using (var opaque = new SolidBrush(Color.FromArgb(255, 255, 255, 255)))
+                    using (var opaque = new SolidBrush(Color.FromArgb(250, 255, 255, 255)))
                         g.FillRectangle(opaque, rect);
                 }
             }
 
-            // 4) Draw anti-aliased rounded path on top
             using (var path = CreateRoundedRectanglePath(rect, cornerRadius))
             {
                 var oldSmoothing = g.SmoothingMode;
                 try
                 {
-                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                    g.FillPath(brush, path);
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+                    var plusminus = 5;
+
+                    if (brush is SolidBrush solidBrush)
+                    {
+                        /*var c = solidBrush.Color;
+                        using (var gradientBrush = new LinearGradientBrush(
+                            new Point(rect.Left, rect.Top),
+                            new Point(rect.Right, rect.Bottom),
+                            Color.FromArgb(150, Math.Min(255, c.R + plusminus), Math.Min(255, c.G + plusminus), Math.Min(255, c.B + plusminus)),
+                            Color.FromArgb(150, Math.Max(0, c.R -plusminus), Math.Max(0, c.G - plusminus), Math.Max(0, c.B - plusminus))))
+                        {
+                            g.FillPath(gradientBrush, path);
+                        }
+                        using (var gradientBrush = new LinearGradientBrush(
+                            new Point(rect.Right, rect.Bottom),
+                            new Point(rect.Left, rect.Top),
+                            
+                            Color.FromArgb(50, Math.Min(255, c.R + plusminus), Math.Min(255, c.G + plusminus), Math.Min(255, c.B + plusminus)),
+                            Color.FromArgb(50, Math.Max(0, c.R - plusminus), Math.Max(0, c.G - plusminus), Math.Max(0, c.B - plusminus))))
+                        {
+                            g.FillPath(gradientBrush, path);
+                        }*/
+                        using(var gradientBrush = brush)
+                        {
+                            g.FillPath(gradientBrush, path);
+                        }
+                    }
+                    else if (brush != null)
+                    {
+                        /*using (var gradientBrush = new LinearGradientBrush(
+                            new Point(rect.Left, rect.Top),
+                            new Point(rect.Left, rect.Bottom),
+                            Color.FromArgb(255, 220, 220, 220),
+                            Color.FromArgb(255, 180, 180, 180)))
+                        {
+                            g.FillPath(gradientBrush, path);
+                        }*/
+                        using (var gradientBrush = brush)
+                        {
+                            g.FillPath(gradientBrush, path);
+                        }
+                    }
                 }
                 finally
                 {
@@ -239,6 +279,73 @@ namespace System.Windows.Forms
         {
             FillRoundedRectangle(g, brush, rect, cornerRadius ?? RVUtils.cornerRadius);
         }
+        /// <summary>
+        /// Creates a GraphicsPath representing a rounded rectangle.
+        /// </summary>
+        public static GraphicsPath CreateRoundedRectanglePath(Rectangle rect, int radius)
+        {
+            GraphicsPath path = new GraphicsPath();
+            if (radius <= 0)
+            {
+                path.AddRectangle(rect);
+                return path;
+            }
+
+            int diameter = radius * 2;
+            Size size = new Size(diameter, diameter);
+            Rectangle arc = new Rectangle(rect.Location, size);
+
+            
+
+            // Top left
+            path.AddArc(arc, 180, 90);
+
+            // Top right
+            arc.X = rect.Right - diameter;
+            path.AddArc(arc, 270, 90);
+
+            // Bottom right
+            arc.Y = rect.Bottom - diameter;
+            path.AddArc(arc, 0, 90);
+
+            // Bottom left
+            arc.X = rect.Left;
+            path.AddArc(arc, 90, 90);
+
+            path.CloseFigure();
+            return path;
+        }
+
+        #region DrawRoundedRect (Outline Only) - Default Radius 5
+
+        public static void DrawRoundedRectangle(this Graphics g, Pen pen, Rectangle rect, int radius = 5)
+        {
+            if (g == null) return;
+            using (GraphicsPath path = CreateRoundedRectanglePath(rect, radius))
+            {
+                g.DrawPath(pen, path);
+            }
+        }
+
+        public static void DrawRoundedRectangle(this Graphics g, Pen pen, int x, int y, int width, int height, int radius = 5)
+        {
+            DrawRoundedRectangle(g, pen, new Rectangle(x, y, width, height), radius);
+        }
+
+        public static void DrawRoundedRect(Graphics g, Pen pen, Rectangle rect, int radius = 5)
+        {
+            DrawRoundedRectangle(g, pen, rect, radius);
+        }
+
+        public static void DrawRoundedRect(Graphics g, Pen pen, int x, int y, int width, int height, int radius = 5)
+        {
+            DrawRoundedRectangle(g, pen, new Rectangle(x, y, width, height), radius);
+        }
+
+        #endregion
+
+        
 
     }
 }
+
