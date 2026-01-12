@@ -106,19 +106,19 @@ namespace System.Windows.Forms.Theming.Default
                 case ButtonThemeState.Entered:
                 case ButtonThemeState.Default | ButtonThemeState.Entered:
                     if (appearance.MouseOverBackColor != Color.Empty)
-                        RVUtils.FillRoundedRectangle(g, ResPool.GetSolidBrush(appearance.MouseOverBackColor), bounds, cornerRadius);
+                        RVUtils.FillRoundedRectangle(g, ResPool.GetSolidBrush(appearance.MouseOverBackColor), bounds, cornerRadius, RVUtils.DefaultInnerBrush);
                     else
-                        RVUtils.FillRoundedRectangle(g, ResPool.GetSolidBrush(ChangeIntensity(backColor, .9F)), bounds, cornerRadius);
+                        RVUtils.FillRoundedRectangle(g, ResPool.GetSolidBrush(ChangeIntensity(backColor, .9F)), bounds, cornerRadius, RVUtils.DefaultInnerBrush);
                     break;
                 case ButtonThemeState.Pressed:
                     if (appearance.MouseDownBackColor != Color.Empty)
-                        RVUtils.FillRoundedRectangle(g, ResPool.GetSolidBrush(appearance.MouseDownBackColor), bounds, cornerRadius);
+                        RVUtils.FillRoundedRectangle(g, ResPool.GetSolidBrush(appearance.MouseDownBackColor), bounds, cornerRadius, RVUtils.DefaultInnerBrush);
                     else
-                        RVUtils.FillRoundedRectangle(g, ResPool.GetSolidBrush(ChangeIntensity(backColor, .95F)), bounds, cornerRadius);
+                        RVUtils.FillRoundedRectangle(g, ResPool.GetSolidBrush(ChangeIntensity(backColor, .95F)), bounds, cornerRadius, RVUtils.DefaultInnerBrush);
                     break;
                 case ButtonThemeState.Default:
                     if (appearance.CheckedBackColor != Color.Empty)
-                        RVUtils.FillRoundedRectangle(g, ResPool.GetSolidBrush(appearance.CheckedBackColor), bounds, cornerRadius);
+                        RVUtils.FillRoundedRectangle(g, ResPool.GetSolidBrush(appearance.CheckedBackColor), bounds, cornerRadius, RVUtils.DefaultInnerBrush);
                     break;
             }
 

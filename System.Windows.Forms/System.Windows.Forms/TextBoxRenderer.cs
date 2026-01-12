@@ -88,7 +88,7 @@ namespace System.Windows.Forms
 
             using (Brush backgroundBrush = new SolidBrush(backColor))
             {
-                RVUtils.FillRoundedRectangle(g, backgroundBrush, bounds, cornerRadius);
+                RVUtils.FillRoundedRectangle(g, backgroundBrush, bounds, cornerRadius, RVUtils.DefaultInnerBrush);
             }
 
 // Draw the rounded border based on the state.

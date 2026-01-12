@@ -144,11 +144,11 @@ namespace System.Windows.Forms
         {
             if ((e.State & DrawItemState.Selected) == DrawItemState.Selected)
             {
-                e.Graphics.FillRoundedRect(SystemBrushes.Highlight, e.Bounds);
+                e.Graphics.FillRoundedRect(SystemBrushes.Highlight, e.Bounds, innerBrush: RVUtils.DefaultInnerBrush);
                 return;
             }
 
-            e.Graphics.FillRoundedRect(ResPool.GetSolidBrush(e.BackColor), e.Bounds);
+            e.Graphics.FillRoundedRect(ResPool.GetSolidBrush(e.BackColor), e.Bounds, innerBrush: RVUtils.DefaultInnerBrush);
         }
 
         public  override void DrawOwnerDrawFocusRectangle (DrawItemEventArgs e)
@@ -1611,15 +1611,15 @@ namespace System.Windows.Forms
 				if (checkbox.is_entered || checkbox.Capture) {
 					// decide on which background color to use
 					if (checkbox.FlatStyle == FlatStyle.Popup && checkbox.is_entered && checkbox.Capture) {
-						graphics.FillRoundedRect(ResPool.GetSolidBrush (checkbox.BackColor), fill_rectangle);
+						graphics.FillRoundedRect(ResPool.GetSolidBrush (checkbox.BackColor), fill_rectangle, innerBrush: RVUtils.DefaultInnerBrush);
 					} else if (checkbox.FlatStyle == FlatStyle.Flat) { 
 						if (!checkbox.is_pressed) {
-							graphics.FillRoundedRect(ResPool.GetSolidBrush (checkbox.BackColor), fill_rectangle);
+							graphics.FillRoundedRect(ResPool.GetSolidBrush (checkbox.BackColor), fill_rectangle, innerBrush: RVUtils.DefaultInnerBrush);
 						} else
-							graphics.FillRoundedRect(ResPool.GetSolidBrush (ControlPaint.LightLight (checkbox.BackColor)), fill_rectangle);
+							graphics.FillRoundedRect(ResPool.GetSolidBrush (ControlPaint.LightLight (checkbox.BackColor)), fill_rectangle, innerBrush: RVUtils.DefaultInnerBrush);
 					} else {
 						// use regular window background color
-						graphics.FillRoundedRect(ResPool.GetSolidBrush (ControlPaint.LightLight (checkbox.BackColor)), fill_rectangle);
+						graphics.FillRoundedRect(ResPool.GetSolidBrush (ControlPaint.LightLight (checkbox.BackColor)), fill_rectangle, innerBrush: RVUtils.DefaultInnerBrush);
 					}
 					
 					// render the outer border
@@ -1630,7 +1630,7 @@ namespace System.Windows.Forms
 						CPDrawBorder3D (graphics, checkbox_rectangle, Border3DStyle.SunkenInner, Border3DSide.Left | Border3DSide.Right | Border3DSide.Top | Border3DSide.Bottom, checkbox.BackColor);
 					}
 				} else {
-					graphics.FillRoundedRect(ResPool.GetSolidBrush (ControlPaint.LightLight (checkbox.BackColor)), fill_rectangle);				
+					graphics.FillRoundedRect(ResPool.GetSolidBrush (ControlPaint.LightLight (checkbox.BackColor)), fill_rectangle, innerBrush: RVUtils.DefaultInnerBrush);				
 					
 					if (checkbox.FlatStyle == FlatStyle.Flat) {
 						ControlPaint.DrawBorder(graphics, checkbox_rectangle, checkbox.ForeColor, ButtonBorderStyle.Solid);
@@ -1641,7 +1641,7 @@ namespace System.Windows.Forms
 				}
 			} else {
 				if (checkbox.FlatStyle == FlatStyle.Popup) {
-					graphics.FillRoundedRect(SystemBrushes.Control, fill_rectangle);
+					graphics.FillRoundedRect(SystemBrushes.Control, fill_rectangle, innerBrush: RVUtils.DefaultInnerBrush);
 				}	
 			
 				// draw disabled state,
@@ -1739,7 +1739,7 @@ namespace System.Windows.Forms
 			}
 			
 			e.Graphics.FillRoundedRect (ResPool.GetSolidBrush
-				(back_color), item_rect);
+				(back_color), item_rect, innerBrush: RVUtils.DefaultInnerBrush);
 
 			e.Graphics.DrawString (ctrl.GetItemText (ctrl.Items[e.Index]), e.Font,
 				ResPool.GetSolidBrush (fore_color),

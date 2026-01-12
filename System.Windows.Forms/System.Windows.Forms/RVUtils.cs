@@ -262,9 +262,9 @@ namespace System.Windows.Forms
                     //brush3.Tra
 
                     //g.SetClip(CreateRoundedRectanglePath(rect, cornerRadius));
-                    g.FillRectangle(innerBrush, new Rectangle(rect.Left-1, rect.Top-1, rect.Width+1, rect.Height+1));
+                    g.FillRectangle(brush, new Rectangle(rect.Left-1, rect.Top-1, rect.Width+1, rect.Height+1));
                     //g.ResetClip();
-                    g.FillPath(brush, path);
+                    g.FillPath(innerBrush, path);
                     
                 }
                 finally
@@ -277,9 +277,9 @@ namespace System.Windows.Forms
 
 
 
-        public static void FillRoundedRect(this Graphics g, Brush brush, Rectangle rect, int? cornerRadius = null)
+        public static void FillRoundedRect(this Graphics g, Brush brush, Rectangle rect, int? cornerRadius = null, Brush? innerBrush = null)
         {
-            FillRoundedRectangle(g, brush, rect, cornerRadius ?? RVUtils.cornerRadius);
+            FillRoundedRectangle(g, brush, rect, cornerRadius ?? RVUtils.cornerRadius, innerBrush);
         }
 
     }

@@ -1408,8 +1408,12 @@ namespace System.Windows.Forms
 			if (background_image == null) {
 				if (!tbstyle_flat) {
 					Rectangle paintRect = pevent.ClipRectangle;
-					pevent.Graphics.FillRoundedRect(BackColorBrush, paintRect);
-				}
+					if (this is Button)
+					{
+						pevent.Graphics.FillRoundedRect(BackColorBrush, paintRect, innerBrush: RVUtils.DefaultInnerBrush);
+					}
+                    else pevent.Graphics.FillRoundedRect(BackColorBrush, paintRect, innerBrush: null);
+                }
 				return;
 			}
 
