@@ -1,6 +1,8 @@
-﻿using System;
+﻿using ColorUtils;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -18,7 +20,8 @@ namespace System.Windows.Forms
     }
     public static class RVUtils
     {
-        public static Brush DefaultInnerBrush = new SolidBrush(Color.BlueViolet) {  };
+        public static Brush DefaultInnerBrush = ColorUtils.CielRandomGradientGenerator.Generate(3, RandomColorMode.EquiSat, GradientDirection.ForwardDiagonal);
+        public static Brush DefaultInnerBrushD = new LinearGradientBrush(new Rectangle(0, 0, 100, 100), CielColorGenerator.RandomColorWithLightnessAndChroma(40, 65), CielColorGenerator.RandomColorWithLightnessAndChroma(40, 65), LinearGradientMode.Vertical) { WrapMode = WrapMode.Tile, GammaCorrection=true };
         public static SolidBrush DefaultInnerBrushHover = new SolidBrush(Color.LightGoldenrodYellow) { };
         public static int cornerRadius = 10;
 
@@ -181,8 +184,9 @@ namespace System.Windows.Forms
         public static void FillRoundedRectangle(Graphics g, Brush brush, Rectangle rect, int cornerRadius, Brush? innerBrush = null)
 
         {
-            
-            if(innerBrush == null) { innerBrush = brush; }
+            DefaultInnerBrush = ColorUtils.CielRandomGradientGenerator.Generate(3, RandomColorMode.EquiSat, GradientDirection.ForwardDiagonal);
+
+            if (innerBrush == null) { innerBrush = brush; }
             if (g == null) return;
 
             bool paintedBackground = false;

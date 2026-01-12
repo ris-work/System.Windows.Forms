@@ -34,6 +34,7 @@ namespace SimpleTest
         /// </summary>
         private void InitializeComponent()
         {
+            this.GotFocus += (_, __) => { this.Invalidate(true); };
             this.DoubleBuffered = true;
             this.AutoScaleMode = AutoScaleMode.None;
 
@@ -124,7 +125,7 @@ namespace SimpleTest
             //this.button1.UseVisualStyleBackColor = true;
             this.button1.Click += new System.EventHandler(this.button1_Click);
             // Note: Setting Color.Transparent on a standard Button has no effect usually.
-            this.button1.BackColor = System.Drawing.Color.FromArgb(0, 255, 255, 255);
+            this.button1.BackColor = Color.Transparent;
             // 
             // label1
             // 
