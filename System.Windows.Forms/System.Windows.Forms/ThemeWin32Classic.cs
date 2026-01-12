@@ -272,8 +272,15 @@ namespace System.Windows.Forms
                 clipRectangle.Height - 1
             );
 
+
             var originalSmoothing = g.SmoothingMode;
             g.SmoothingMode = SmoothingMode.AntiAlias;
+
+			// If we have text, draw it
+			/*if (textBounds != Rectangle.Empty)
+				DrawButtonText (g, b, textBounds);*/
+		
+
 
             try
             {

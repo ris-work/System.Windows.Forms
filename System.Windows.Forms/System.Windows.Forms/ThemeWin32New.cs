@@ -173,8 +173,9 @@ namespace System.Windows.Forms
 			if (b.Focused && b.Enabled && b.ShowFocusCues)
 				DrawButtonFocus (g, b);
 
-			// If we have text, draw it
-			if (textBounds != Rectangle.Empty)
+            //DrawButtonText(g, b, textBounds);
+            // If we have text, draw it
+            if (textBounds != Rectangle.Empty)
 				DrawButtonText (g, b, textBounds);
 		}
 
@@ -325,6 +326,8 @@ namespace System.Windows.Forms
             {
                 g.SmoothingMode = originalSmoothing;
             }
+            if (textBounds != Rectangle.Empty)
+                DrawButtonText(g, button, textBounds);
         }
 
         public virtual void DrawFlatButtonBackground (Graphics g, ButtonBase button, Rectangle clipArea)
