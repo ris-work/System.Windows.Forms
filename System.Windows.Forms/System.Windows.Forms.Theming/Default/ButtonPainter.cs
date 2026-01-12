@@ -59,6 +59,7 @@ namespace System.Windows.Forms.Theming.Default
                 case ButtonThemeState.Disabled:
                     // Draw a single, smooth, rounded border.
                     Pen pen = is_themecolor ? SystemPens.ControlDark : ResPool.GetPen(cpcolor.Dark);
+                    pen = new Pen(RVUtils.NewGradientPen());
                     using (var path = RVUtils.CreateRoundedRectanglePath(borderRect, cornerRadius))
                     {
                         g.DrawPath(pen, path);
@@ -68,6 +69,7 @@ namespace System.Windows.Forms.Theming.Default
                 case ButtonThemeState.Default:
                     // Draw the outer rounded border.
                     Pen outerPen = is_themecolor ? SystemPens.ControlDarkDark : ResPool.GetPen(cpcolor.DarkDark);
+                    outerPen = new Pen(RVUtils.NewGradientPen());
                     using (var path = RVUtils.CreateRoundedRectanglePath(borderRect, cornerRadius))
                     {
                         g.DrawPath(outerPen, path);
@@ -76,6 +78,7 @@ namespace System.Windows.Forms.Theming.Default
                     // Inflate the bounds to get the inner rectangle for the inset look.
                     Rectangle innerRect = new Rectangle(bounds.X + 2, bounds.Y + 2, bounds.Width - 5, bounds.Height - 5);
                     Pen innerPen = is_themecolor ? SystemPens.ControlDark : ResPool.GetPen(cpcolor.Dark);
+                    innerPen = new Pen(RVUtils.NewGradientPen());
                     using (var path = RVUtils.CreateRoundedRectanglePath(innerRect, cornerRadius - 2))
                     {
                         g.DrawPath(innerPen, path);
@@ -126,8 +129,9 @@ namespace System.Windows.Forms.Theming.Default
 				pen = is_themecolor ? SystemPens.ControlDarkDark : ResPool.GetSizedPen (cpcolor.DarkDark, appearance.BorderSize);
 			else
 				pen = ResPool.GetSizedPen (appearance.BorderColor, appearance.BorderSize);
-				
-			bounds.Width -= 1;
+            pen = new Pen(RVUtils.NewGradientPen());
+
+            bounds.Width -= 1;
 			bounds.Height -= 1;
 				
 			if (appearance.BorderSize > 0)
@@ -159,6 +163,7 @@ namespace System.Windows.Forms.Theming.Default
                 case ButtonThemeState.Pressed:
                 case ButtonThemeState.Default:
                     pen = is_themecolor ? SystemPens.ControlDarkDark : ResPool.GetPen(cpcolor.DarkDark);
+                    pen = new Pen(RVUtils.NewGradientPen());
 
                     Rectangle outerBounds = new Rectangle(bounds.Location, new Size(bounds.Width - 1, bounds.Height - 1));
 
@@ -187,6 +192,7 @@ namespace System.Windows.Forms.Theming.Default
                     {
                         // Draw the top-left highlight using a diagonal clip.
                         pen = is_themecolor ? SystemPens.ControlLightLight : ResPool.GetPen(cpcolor.LightLight);
+                        pen = new Pen(RVUtils.NewGradientPen());
                         using (var clipPath = new System.Drawing.Drawing2D.GraphicsPath())
                         {
                             clipPath.AddPolygon(new Point[] {
@@ -204,6 +210,7 @@ namespace System.Windows.Forms.Theming.Default
 
                         // Draw the bottom-right shadow using an inverted diagonal clip.
                         pen = is_themecolor ? SystemPens.ControlDark : ResPool.GetPen(cpcolor.Dark);
+                        pen = new Pen(RVUtils.NewGradientPen());
                         using (var clipPath = new System.Drawing.Drawing2D.GraphicsPath())
                         {
                             clipPath.AddPolygon(new Point[] {
