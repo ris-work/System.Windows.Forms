@@ -16,11 +16,16 @@ namespace SimpleTest
         public Form1()
         {
             InitializeComponent();
+            Resize += (_, __) => { 
+                //this.Invalidate(); 
+            };
         }
 
         private void button1_Click(object sender, EventArgs e)
         {
             label1.Text = i++.ToString();
+            //this.webBrowser1.Navigate("https://google.com");
+            MessageBox.Show(Logger.Log);
         }
     }
 }

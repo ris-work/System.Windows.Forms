@@ -7,9 +7,17 @@ using System.Threading.Tasks;
 
 namespace System.Windows.Forms
 {
+    public static class Logger
+    {
+        public static string Log = "";
+        public static void AddLog(string Entry)
+        {
+            Log = Log + Environment.NewLine + Entry;
+        }
+    }
     public static class RVUtils
     {
-        public static int cornerRadius = 5;
+        public static int cornerRadius = 10;
 
         // near the top of RVUtils
         private static volatile int _captureOriginX = -1;
@@ -126,7 +134,7 @@ namespace System.Windows.Forms
         /// </summary>
         public static void EnableOptimizedCustomPainting(this Control control)
         {
-            control.SetStyle(ControlStyles.Opaque, false);
+            control.SetStyle(ControlStyles.Opaque, true);
             control.SetStyle(ControlStyles.UserPaint, false);
             control.SetStyle(ControlStyles.AllPaintingInWmPaint, true); // Reduces flicker
             control.SetStyle(ControlStyles.ResizeRedraw, true);
@@ -149,6 +157,8 @@ namespace System.Windows.Forms
                 path.AddRectangle(rect);
                 return path;
             }
+            //path.AddRectangle(rect);
+            //return path;
 
             // Define the rectangle for the arcs
             RectangleF arcRect = new RectangleF(rect.Location, new Size((int)diameter, (int)diameter));
@@ -187,17 +197,26 @@ namespace System.Windows.Forms
             }
 
             // 2) Use explicit parent background color if provided
-            if (!paintedBackground)
+            /*if (!paintedBackground)
             {
                 var parentColor = GetParentBackgroundColor();
+                
                 if (parentColor.HasValue)
                 {
+                    var oldSmoothing = g.SmoothingMode;
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    Logger.AddLog($"Painting (1) {rect.Top}-{rect.Left}-{rect.Top+rect.Height}-{rect.Left+rect.Width}");
                     var c = parentColor.Value;
-                    using (var bg = new SolidBrush(Color.FromArgb(255, c.R, c.G, c.B)))
+                    using (var bg = new SolidBrush(Color.FromArgb(0, c.R, c.G, c.B)))
+                    //using (var bg = new SolidBrush(Color.Transparent))
                     {
-                        g.FillRectangle(bg, rect);
+                        var p = new System.Drawing.Drawing2D.GraphicsPath();
+                        p.AddRectangle(rect);
+                        g.FillPath(bg, p);
+                        g.FillPath(bg, p);
                     }
                     paintedBackground = true;
+                    g.SmoothingMode = oldSmoothing;
                 }
             }
 
@@ -206,16 +225,18 @@ namespace System.Windows.Forms
             {
                 if (brush is SolidBrush sb)
                 {
+                    Logger.AddLog("Painting (2)");
                     var c = sb.Color;
                     using (var opaque = new SolidBrush(Color.FromArgb(255, c.R, c.G, c.B)))
                         g.FillRectangle(opaque, rect);
                 }
                 else
                 {
+                    Logger.AddLog("Painting (3)");
                     using (var opaque = new SolidBrush(Color.FromArgb(255, 255, 255, 255)))
                         g.FillRectangle(opaque, rect);
                 }
-            }
+            }*/
 
             // 4) Draw anti-aliased rounded path on top
             using (var path = CreateRoundedRectanglePath(rect, cornerRadius))
@@ -223,11 +244,15 @@ namespace System.Windows.Forms
                 var oldSmoothing = g.SmoothingMode;
                 try
                 {
+                    Logger.AddLog("Painting (4)");
                     g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    g.FillRectangle(brush, rect);
                     g.FillPath(brush, path);
+                    
                 }
                 finally
                 {
+                    Logger.AddLog("Painting (5)");
                     g.SmoothingMode = oldSmoothing;
                 }
             }

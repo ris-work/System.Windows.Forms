@@ -945,7 +945,8 @@ namespace System.Windows.Forms
 			explicit_bounds = bounds;
 			explicit_bounds_valid = false;
 			cached_preferred_size = Size.Empty;
-		}
+            SetStyle(ControlStyles.SupportsTransparentBackColor, true);
+        }
 
 		public Control (Control parent, string text) : this()
 		{
@@ -1341,9 +1342,9 @@ namespace System.Windows.Forms
 		internal virtual void PaintControlBackground (PaintEventArgs pevent) {
 
 			bool tbstyle_flat = ((CreateParams.Style & (int) ToolBarStyles.TBSTYLE_FLAT) != 0);
-
-			// If we have transparent background
-			if (((BackColor.A != 0xff) && GetStyle(ControlStyles.SupportsTransparentBackColor)) || tbstyle_flat) {
+			
+            // If we have transparent background
+            if (((BackColor.A != 0xff) && GetStyle(ControlStyles.SupportsTransparentBackColor)) || tbstyle_flat) {
 				if (parent != null) {
 					PaintEventArgs	parent_pe;
 					GraphicsState	state;
@@ -3337,8 +3338,8 @@ namespace System.Windows.Forms
 
 				create_params.ClassName = XplatUI.GetDefaultClassName (GetType ());
 				create_params.ClassStyle = (int)(XplatUIWin32.ClassStyle.CS_OWNDC | XplatUIWin32.ClassStyle.CS_DBLCLKS);
-				create_params.ExStyle = 0;
-				create_params.Param = 0;
+				create_params.ExStyle = 0x20;
+				create_params.Param = 0x0;
 
 				if (allow_drop) {
 					create_params.ExStyle |= (int)WindowExStyles.WS_EX_ACCEPTFILES;

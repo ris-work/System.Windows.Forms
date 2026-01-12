@@ -1,4 +1,7 @@
-﻿using System.Windows.Forms;
+﻿using System;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Windows.Forms;
 using System.Data;
 
 namespace SimpleTest
@@ -34,22 +37,12 @@ namespace SimpleTest
             this.DoubleBuffered = true;
             this.AutoScaleMode = AutoScaleMode.None;
 
-            // Make the app DPI-unaware (no automatic scaling)
-            //Application.SetHighDpiMode(HighDpiMode.DpiUnaware);
-
-            //Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            this.AutoScaleBaseSize = new System.Drawing.Size(1, 1);
-            //RVUtils.SetParentBackgroundColor(System.Drawing.Color.FromKnownColor(System.Drawing.KnownColor.DarkSlateGray));
-            //More fun
-            //RVUtils.SetCaptureOrigin(1, 1);
-            //RVUtils.SetCaptureLocalOrigin(this);
-
-            this.Resize += (_, __) => { this.Invalidate(true); };
+            // 1. Expand the form size to use more area
+            this.ClientSize = new System.Drawing.Size(1200, 800);
             this.BackColor = System.Drawing.Color.FromKnownColor(System.Drawing.KnownColor.DeepSkyBlue);
-            AllowTransparency = false;
+            this.AllowTransparency = false;
 
-            // --- Existing Controls Initialization ---
+            // --- Existing Controls Initialization (Shifted/Adjusted slightly) ---
             this.button1 = new System.Windows.Forms.Button();
             this.label1 = new System.Windows.Forms.Label();
             this.checkBox1 = new System.Windows.Forms.CheckBox();
@@ -72,7 +65,6 @@ namespace SimpleTest
             this.tabPage2 = new System.Windows.Forms.TabPage();
             this.dataGridView1 = new System.Windows.Forms.DataGridView();
 
-            // --- New Controls Initialization ---
             this.listBox1 = new System.Windows.Forms.ListBox();
             this.richTextBox1 = new System.Windows.Forms.RichTextBox();
             this.pictureBox1 = new System.Windows.Forms.PictureBox();
@@ -94,10 +86,16 @@ namespace SimpleTest
             this.tabPage4 = new System.Windows.Forms.TabPage();
             this.groupBox2 = new System.Windows.Forms.GroupBox();
             this.splitContainer1 = new System.Windows.Forms.SplitContainer();
+
+            // --- NEW Controls Initialization (Transparency Test) ---
+            this.grpTransparency = new System.Windows.Forms.GroupBox();
+            this.picStar = new System.Windows.Forms.PictureBox();
+            this.lblTransparent = new System.Windows.Forms.Label();
+            this.btnTransparent = new TransparentButton(); // Using the custom class defined below
+
             ((System.ComponentModel.ISupportInitialize)(this.numericUpDown1)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.trackBar1)).BeginInit();
-            
             this.menuStrip1.SuspendLayout();
             this.panel1.SuspendLayout();
             this.groupBox1.SuspendLayout();
@@ -111,28 +109,31 @@ namespace SimpleTest
             this.splitContainer1.Panel1.SuspendLayout();
             this.splitContainer1.Panel2.SuspendLayout();
             this.splitContainer1.SuspendLayout();
+            this.grpTransparency.SuspendLayout();
             this.SuspendLayout();
+
             // 
             // button1
             // 
-            
             this.button1.Location = new System.Drawing.Point(36, 64);
             this.button1.Name = "button1";
-            this.button1.Size = new System.Drawing.Size(75, 23);
+            this.button1.Size = new System.Drawing.Size(120, 23);
             this.button1.TabIndex = 0;
-            this.button1.Text = "button1";
+            this.button1.Text = "Std Transparent Btn";
             this.button1.UseVisualStyleBackColor = true;
             this.button1.Click += new System.EventHandler(this.button1_Click);
-            this.button1.BackColor = System.Drawing.Color.FromArgb(255, 255, 255, 255);
+            // Note: Setting Color.Transparent on a standard Button has no effect usually.
+            this.button1.BackColor = System.Drawing.Color.FromArgb(0, 255, 255, 255);
             // 
             // label1
             // 
             this.label1.AutoSize = true;
-            this.label1.Location = new System.Drawing.Point(322, 69);
+            this.label1.Location = new System.Drawing.Point(180, 69);
             this.label1.Name = "label1";
             this.label1.Size = new System.Drawing.Size(35, 13);
             this.label1.TabIndex = 1;
             this.label1.Text = "label1";
+            this.label1.BackColor = System.Drawing.Color.FromArgb(128, 255, 0, 0);
             // 
             // checkBox1
             // 
@@ -169,7 +170,7 @@ namespace SimpleTest
             // 
             // monthCalendar1
             // 
-            this.monthCalendar1.Location = new System.Drawing.Point(60, 263);
+            this.monthCalendar1.Location = new System.Drawing.Point(60, 350);
             this.monthCalendar1.Name = "monthCalendar1";
             this.monthCalendar1.TabIndex = 6;
             // 
@@ -179,12 +180,12 @@ namespace SimpleTest
             this.numericUpDown1.Name = "numericUpDown1";
             this.numericUpDown1.Size = new System.Drawing.Size(120, 20);
             this.numericUpDown1.TabIndex = 7;
-            
+
             // 
             // radioButton1
             // 
             this.radioButton1.AutoSize = true;
-            this.radioButton1.Location = new System.Drawing.Point(151, 67);
+            this.radioButton1.Location = new System.Drawing.Point(170, 67);
             this.radioButton1.Name = "radioButton1";
             this.radioButton1.Size = new System.Drawing.Size(85, 17);
             this.radioButton1.TabIndex = 8;
@@ -206,6 +207,7 @@ namespace SimpleTest
             this.webBrowser1.Name = "webBrowser1";
             this.webBrowser1.Size = new System.Drawing.Size(143, 193);
             this.webBrowser1.TabIndex = 10;
+
             // 
             // menuStrip1
             // 
@@ -213,7 +215,7 @@ namespace SimpleTest
             this.helloToolStripMenuItem});
             this.menuStrip1.Location = new System.Drawing.Point(0, 0);
             this.menuStrip1.Name = "menuStrip1";
-            this.menuStrip1.Size = new System.Drawing.Size(800, 24);
+            this.menuStrip1.Size = new System.Drawing.Size(1200, 24);
             this.menuStrip1.TabIndex = 11;
             this.menuStrip1.Text = "menuStrip1";
             // 
@@ -233,9 +235,9 @@ namespace SimpleTest
             // 
             // statusStrip1
             // 
-            this.statusStrip1.Location = new System.Drawing.Point(0, 585);
+            this.statusStrip1.Location = new System.Drawing.Point(0, 778);
             this.statusStrip1.Name = "statusStrip1";
-            this.statusStrip1.Size = new System.Drawing.Size(800, 22);
+            this.statusStrip1.Size = new System.Drawing.Size(1200, 22);
             this.statusStrip1.TabIndex = 12;
             this.statusStrip1.Text = "statusStrip1";
             // 
@@ -243,14 +245,14 @@ namespace SimpleTest
             // 
             this.panel1.Controls.Add(this.treeView1);
             this.panel1.Controls.Add(this.checkedListBox1);
-            this.panel1.Location = new System.Drawing.Point(432, 29);
+            this.panel1.Location = new System.Drawing.Point(500, 29);
             this.panel1.Name = "panel1";
-            this.panel1.Size = new System.Drawing.Size(368, 179);
+            this.panel1.Size = new System.Drawing.Size(200, 150);
             this.panel1.TabIndex = 13;
             // 
             // groupBox1
             // 
-            this.groupBox1.Controls.Add(this.webBrowser1);
+            //this.groupBox1.Controls.Add(this.webBrowser1);
             this.groupBox1.Location = new System.Drawing.Point(34, 29);
             this.groupBox1.Name = "groupBox1";
             this.groupBox1.Size = new System.Drawing.Size(239, 231);
@@ -264,12 +266,12 @@ namespace SimpleTest
             this.tabControl1.Controls.Add(this.tabPage2);
             this.tabControl1.Controls.Add(this.tabPage3);
             this.tabControl1.Controls.Add(this.tabPage4);
-            this.tabControl1.Location = new System.Drawing.Point(346, 290);
+            this.tabControl1.Location = new System.Drawing.Point(300, 400);
             this.tabControl1.Name = "tabControl1";
             this.tabControl1.SelectedIndex = 0;
-            this.tabControl1.Size = new System.Drawing.Size(432, 119);
+            this.tabControl1.Size = new System.Drawing.Size(450, 150);
             this.tabControl1.TabIndex = 15;
-            this.tabControl1.BackColor = System.Drawing.Color.FromArgb(0, 255, 255, 255);
+            this.tabControl1.BackColor = System.Drawing.Color.FromArgb(255, 255, 255, 255);
             // 
             // tabPage1
             // 
@@ -280,12 +282,11 @@ namespace SimpleTest
             this.tabPage1.Location = new System.Drawing.Point(4, 22);
             this.tabPage1.Name = "tabPage1";
             this.tabPage1.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage1.Size = new System.Drawing.Size(424, 93);
+            this.tabPage1.Size = new System.Drawing.Size(442, 124);
             this.tabPage1.TabIndex = 0;
             this.tabPage1.Text = "tabPage1";
             this.tabPage1.UseVisualStyleBackColor = true;
             this.tabPage1.BackColor = System.Drawing.Color.FromArgb(0, 50, 255, 255);
-            this.BackColor = System.Drawing.Color.FromArgb(255, 50, 255, 255);
             // 
             // tabPage2
             // 
@@ -301,13 +302,12 @@ namespace SimpleTest
             // dataGridView1
             // 
             this.dataGridView1.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-            this.dataGridView1.Location = new System.Drawing.Point(350, 415);
+            this.dataGridView1.Location = new System.Drawing.Point(34, 650);
             this.dataGridView1.Name = "dataGridView1";
-            this.dataGridView1.Size = new System.Drawing.Size(240, 150);
+            this.dataGridView1.Size = new System.Drawing.Size(350, 100);
             this.dataGridView1.TabIndex = 16;
             this.dataGridView1.AutoGenerateColumns = true;
 
-            // Populate with dummy data to ensure it shows up
             System.Data.DataTable dt = new System.Data.DataTable();
             dt.Columns.Add("ID", typeof(int));
             dt.Columns.Add("Name", typeof(string));
@@ -454,7 +454,7 @@ namespace SimpleTest
             this.tabPage3.Location = new System.Drawing.Point(4, 22);
             this.tabPage3.Name = "tabPage3";
             this.tabPage3.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage3.Size = new System.Drawing.Size(424, 93);
+            this.tabPage3.Size = new System.Drawing.Size(442, 124);
             this.tabPage3.TabIndex = 2;
             this.tabPage3.Text = "Split & List";
             this.tabPage3.UseVisualStyleBackColor = true;
@@ -466,7 +466,7 @@ namespace SimpleTest
             this.tabPage4.Location = new System.Drawing.Point(4, 22);
             this.tabPage4.Name = "tabPage4";
             this.tabPage4.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage4.Size = new System.Drawing.Size(424, 93);
+            this.tabPage4.Size = new System.Drawing.Size(442, 124);
             this.tabPage4.TabIndex = 3;
             this.tabPage4.Text = "Misc";
             this.tabPage4.UseVisualStyleBackColor = true;
@@ -474,7 +474,7 @@ namespace SimpleTest
             // groupBox2
             // 
             this.groupBox2.Controls.Add(this.listBox1);
-            this.groupBox2.Location = new System.Drawing.Point(34, 450);
+            this.groupBox2.Location = new System.Drawing.Point(400, 650);
             this.groupBox2.Name = "groupBox2";
             this.groupBox2.Size = new System.Drawing.Size(143, 129);
             this.groupBox2.TabIndex = 17;
@@ -494,15 +494,67 @@ namespace SimpleTest
             // splitContainer1.Panel2
             // 
             this.splitContainer1.Panel2.Controls.Add(this.richTextBox1);
-            this.splitContainer1.Size = new System.Drawing.Size(418, 87);
+            this.splitContainer1.Size = new System.Drawing.Size(436, 118);
             this.splitContainer1.SplitterDistance = 139;
             this.splitContainer1.TabIndex = 0;
+            // 
+            // grpTransparency
+            // 
+            this.grpTransparency.Controls.Add(this.picStar);
+            this.grpTransparency.Location = new System.Drawing.Point(820, 50);
+            this.grpTransparency.Name = "grpTransparency";
+            this.grpTransparency.Size = new System.Drawing.Size(350, 400);
+            this.grpTransparency.TabIndex = 18;
+            this.grpTransparency.TabStop = false;
+            this.grpTransparency.Text = "Transparency Test (Star Image)";
+
+            // 
+            // picStar
+            // 
+            this.picStar.Location = new System.Drawing.Point(10, 20);
+            this.picStar.Name = "picStar";
+            this.picStar.Size = new System.Drawing.Size(320, 320);
+            this.picStar.TabIndex = 0;
+            this.picStar.TabStop = false;
+            this.picStar.BorderStyle = BorderStyle.Fixed3D;
+            this.picStar.BackColor = Color.LightGray; // Background behind the star image
+            this.picStar.SizeMode = PictureBoxSizeMode.CenterImage;
+
+            // --- Child Controls of picStar ---
+            // Adding controls to picStar.Controls makes them children visually sitting on top of the image
+
+            // 
+            // lblTransparent (Child of picStar)
+            // 
+            this.lblTransparent.Text = "I am a Transparent Label";
+            this.lblTransparent.Location = new System.Drawing.Point(50, 50);
+            this.lblTransparent.AutoSize = true;
+            this.lblTransparent.Font = new Font("Microsoft Sans Serif", 12F, FontStyle.Bold);
+            this.lblTransparent.ForeColor = Color.White;
+            this.lblTransparent.BackColor = Color.Transparent; // This shows the Star through the text
+
+            // 
+            // btnTransparent (Child of picStar)
+            // 
+            this.btnTransparent.Text = "Transparent Button";
+            this.btnTransparent.Location = new System.Drawing.Point(50, 100);
+            this.btnTransparent.Size = new System.Drawing.Size(180, 40);
+            this.btnTransparent.BackColor = Color.Transparent; // Supported by our custom TransparentButton class
+            this.btnTransparent.ForeColor = Color.White;
+            this.btnTransparent.FlatAppearance.BorderSize = 1;
+            this.btnTransparent.FlatAppearance.BorderColor = Color.White;
+            this.btnTransparent.FlatStyle = FlatStyle.Flat;
+
+            // Add children to the PictureBox
+            this.picStar.Controls.Add(this.lblTransparent);
+            this.picStar.Controls.Add(this.btnTransparent);
+
             // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(800, 607);
+            this.Controls.Add(this.grpTransparency);
             this.Controls.Add(this.groupBox2);
             this.Controls.Add(this.dataGridView1);
             this.Controls.Add(this.tabControl1);
@@ -519,7 +571,6 @@ namespace SimpleTest
             this.Text = "Form1";
             this.ContextMenuStrip = this.contextMenuStrip1;
 
-            // Assign ToolTips to some controls
             this.toolTip1.SetToolTip(this.button1, "Click me!");
             this.toolTip1.SetToolTip(this.label1, "I am a label");
 
@@ -541,9 +592,12 @@ namespace SimpleTest
             this.splitContainer1.Panel1.ResumeLayout(false);
             this.splitContainer1.Panel2.ResumeLayout(false);
             this.splitContainer1.ResumeLayout(false);
+            this.grpTransparency.ResumeLayout(false);
             this.ResumeLayout(false);
             this.PerformLayout();
 
+            // After layout is done, generate and assign the star image
+            this.picStar.Image = CreateStarBitmap(300, 300);
         }
 
         #endregion
@@ -590,5 +644,75 @@ namespace SimpleTest
         private System.Windows.Forms.TabPage tabPage4;
         private System.Windows.Forms.GroupBox groupBox2;
         private System.Windows.Forms.SplitContainer splitContainer1;
+
+        // New Fields
+        private System.Windows.Forms.GroupBox grpTransparency;
+        private System.Windows.Forms.PictureBox picStar;
+        private System.Windows.Forms.Label lblTransparent;
+        private Button btnTransparent; // Custom type
+
+        // Helper method to create a star shape bitmap
+        private Bitmap CreateStarBitmap(int width, int height)
+        {
+            Bitmap bmp = new Bitmap(width, height);
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.Clear(Color.Transparent); // Transparent background
+
+                // Calculate star points
+                PointF center = new PointF(width / 2, height / 2);
+                float outerRadius = width / 2.5f;
+                float innerRadius = width / 5.5f;
+                int points = 5;
+
+                PointF[] starPoints = new PointF[points * 2];
+                float angle = (float)(-Math.PI / 2); // Start at top
+                float step = (float)(Math.PI / points);
+
+                for (int i = 0; i < points * 2; i++)
+                {
+                    float r = (i % 2 == 0) ? outerRadius : innerRadius;
+                    starPoints[i] = new PointF(
+                        center.X + (float)Math.Cos(angle) * r,
+                        center.Y + (float)Math.Sin(angle) * r
+                    );
+                    angle += step;
+                }
+
+                // Draw the star
+                using (SolidBrush brush = new SolidBrush(Color.Gold))
+                {
+                    g.FillPolygon(brush, starPoints);
+                }
+
+                using (Pen pen = new Pen(Color.OrangeRed, 3))
+                {
+                    g.DrawPolygon(pen, starPoints);
+                }
+            }
+            return bmp;
+        }
+    }
+
+    // Custom Button class that supports transparency
+    public class TransparentButton : Button
+    {
+        public TransparentButton()
+        {
+            // Enable support for transparent backcolor
+            this.SetStyle(ControlStyles.SupportsTransparentBackColor, true);
+            this.SetStyle(ControlStyles.Opaque, false); // Don't paint background
+            this.BackColor = Color.Transparent;
+        }
+
+        protected override void OnPaint(PaintEventArgs pevent)
+        {
+            // Optional: Custom paint logic here if you want total control
+            // For now, we rely on standard button painting which respects the flat style
+            // and our transparent backcolor setting (mostly).
+            // Note: Windows strictly draws the text, and potentially a border if set.
+            base.OnPaint(pevent);
+        }
     }
 }
