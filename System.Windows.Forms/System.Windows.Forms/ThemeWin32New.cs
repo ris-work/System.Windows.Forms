@@ -292,7 +292,7 @@ namespace System.Windows.Forms
                     }
                     else if (isHovered)
                     {
-                        backColor = SystemColors.ControlLight;
+                        backColor = RVUtils.DefaultInnerBrushHover.Color;
                     }
                     else
                     {

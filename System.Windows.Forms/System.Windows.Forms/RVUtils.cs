@@ -19,6 +19,7 @@ namespace System.Windows.Forms
     public static class RVUtils
     {
         public static Brush DefaultInnerBrush = new SolidBrush(Color.BlueViolet) {  };
+        public static SolidBrush DefaultInnerBrushHover = new SolidBrush(Color.LightGoldenrodYellow) { };
         public static int cornerRadius = 10;
 
         // near the top of RVUtils
