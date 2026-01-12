@@ -787,12 +787,12 @@ namespace System.Windows.Forms
                 if (button.is_entered && !button.is_pressed && !check_or_radio_checked)
                 {
                     Brush brush = is_ColorControl ? SystemBrushes.ControlDark : ResPool.GetSolidBrush(cpcolor.Dark);
-                    RVUtils.FillRoundedRectangle(dc, brush, borderRectangle, cornerRadius);
+                    RVUtils.FillRoundedRectangle(dc, brush, borderRectangle, cornerRadius, RVUtils.DefaultInnerBrush);
                 }
                 else if (button.is_pressed || check_or_radio_checked)
                 {
                     Brush brush = is_ColorControl ? SystemBrushes.ControlLightLight : ResPool.GetSolidBrush(cpcolor.LightLight);
-                    RVUtils.FillRoundedRectangle(dc, brush, borderRectangle, cornerRadius);
+                    RVUtils.FillRoundedRectangle(dc, brush, borderRectangle, cornerRadius, RVUtils.DefaultInnerBrush);
 
                     // Draw the border.
                     Pen pen = is_ColorControl ? SystemPens.ControlDark : ResPool.GetPen(cpcolor.Dark);

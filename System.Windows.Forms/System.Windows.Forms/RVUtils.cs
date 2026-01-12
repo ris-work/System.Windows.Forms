@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 
 namespace System.Windows.Forms
 {
+    
     public static class Logger
     {
         public static string Log = "";
@@ -17,6 +18,7 @@ namespace System.Windows.Forms
     }
     public static class RVUtils
     {
+        public static Brush DefaultInnerBrush = new SolidBrush(Color.BlueViolet) {  };
         public static int cornerRadius = 10;
 
         // near the top of RVUtils
@@ -175,8 +177,11 @@ namespace System.Windows.Forms
             path.CloseFigure();
             return path;
         }
-        public static void FillRoundedRectangle(Graphics g, Brush brush, Rectangle rect, int cornerRadius)
+        public static void FillRoundedRectangle(Graphics g, Brush brush, Rectangle rect, int cornerRadius, Brush? innerBrush = null)
+
         {
+            
+            if(innerBrush == null) { innerBrush = brush; }
             if (g == null) return;
 
             bool paintedBackground = false;
@@ -244,9 +249,21 @@ namespace System.Windows.Forms
                 var oldSmoothing = g.SmoothingMode;
                 try
                 {
-                    Logger.AddLog("Painting (4)");
+                    Logger.AddLog($"Painting (4) {brush.GetType().Name}");
                     g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                    g.FillRectangle(brush, rect);
+                    SolidBrush brush2 = (SolidBrush)brush.Clone();
+                    Logger.AddLog($"brush2: {(brush2 is SolidBrush sb ? $"SolidBrush [A:{sb.Color.A} R:{sb.Color.R} G:{sb.Color.G} B:{sb.Color.B}]" : $"Type={brush2?.GetType().Name ?? "NULL"}")}");
+                    // 2. Extract the RGB components from the original brush
+                    Color c = ((SolidBrush)brush).Color;
+
+                    // 3. Construct brush3: Same Color, but Alpha = 0 (Transparent)
+                    // This is effectively "Color to Alpha" like in Photoshop or Krita
+                    SolidBrush brush3 = new SolidBrush(Color.FromArgb(0, c.R, c.G, c.B));
+                    //brush3.Tra
+
+                    //g.SetClip(CreateRoundedRectanglePath(rect, cornerRadius));
+                    g.FillRectangle(innerBrush, new Rectangle(rect.Left-1, rect.Top-1, rect.Width+1, rect.Height+1));
+                    //g.ResetClip();
                     g.FillPath(brush, path);
                     
                 }

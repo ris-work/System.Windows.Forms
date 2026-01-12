@@ -120,7 +120,7 @@ namespace SimpleTest
             this.button1.Size = new System.Drawing.Size(120, 23);
             this.button1.TabIndex = 0;
             this.button1.Text = "Std Transparent Btn";
-            this.button1.UseVisualStyleBackColor = true;
+            //this.button1.UseVisualStyleBackColor = true;
             this.button1.Click += new System.EventHandler(this.button1_Click);
             // Note: Setting Color.Transparent on a standard Button has no effect usually.
             this.button1.BackColor = System.Drawing.Color.FromArgb(0, 255, 255, 255);
@@ -266,7 +266,7 @@ namespace SimpleTest
             this.tabControl1.Controls.Add(this.tabPage2);
             this.tabControl1.Controls.Add(this.tabPage3);
             this.tabControl1.Controls.Add(this.tabPage4);
-            this.tabControl1.Location = new System.Drawing.Point(300, 400);
+            this.tabControl1.Location = new System.Drawing.Point(350, 400);
             this.tabControl1.Name = "tabControl1";
             this.tabControl1.SelectedIndex = 0;
             this.tabControl1.Size = new System.Drawing.Size(450, 150);
