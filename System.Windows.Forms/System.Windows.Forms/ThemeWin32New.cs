@@ -1914,7 +1914,7 @@ namespace System.Windows.Forms
 								  grid.VScrollBar.Width, grid.HScrollBar.Height);
 
 				if (pe.ClipRectangle.IntersectsWith (corner)) {
-					pe.Graphics.FillRectangle (ResPool.GetSolidBrush (grid.ParentRowsBackColor),
+					pe.Graphics.FillRoundedRect (ResPool.GetSolidBrush (grid.ParentRowsBackColor),
 								   corner);
 				}
 			}
@@ -2565,13 +2565,13 @@ namespace System.Windows.Forms
 		#region DateTimePicker
 		protected virtual void DateTimePickerDrawBorder (DateTimePicker dateTimePicker, Graphics g, Rectangle clippingArea)
 		{
-			this.CPDrawBorder3D (g, dateTimePicker.ClientRectangle, Border3DStyle.Sunken, Border3DSide.Left | Border3DSide.Right | Border3DSide.Top | Border3DSide.Bottom, dateTimePicker.BackColor);
+			this.CPDrawBorder3D (g, dateTimePicker.ClientRectangle, Border3DStyle.Flat, Border3DSide.Left | Border3DSide.Right | Border3DSide.Top | Border3DSide.Bottom, dateTimePicker.BackColor);
 		}
 
 		protected virtual void DateTimePickerDrawDropDownButton (DateTimePicker dateTimePicker, Graphics g, Rectangle clippingArea)
 		{
 			ButtonState state = dateTimePicker.is_drop_down_visible ? ButtonState.Pushed : ButtonState.Normal;
-			g.FillRectangle (ResPool.GetSolidBrush (ColorControl), dateTimePicker.drop_down_arrow_rect);
+			g.FillRoundedRect (ResPool.GetSolidBrush (ColorControl), dateTimePicker.drop_down_arrow_rect);
 			this.CPDrawComboButton ( 
 			  g, 
 			  dateTimePicker.drop_down_arrow_rect, 
@@ -2932,12 +2932,12 @@ namespace System.Windows.Forms
 				rect.Width = control.v_scroll.Width;
 				rect.Y = control.v_scroll.Location.Y + control.v_scroll.Height;
 				rect.Height = control.h_scroll.Height;
-				dc.FillRectangle (SystemBrushes.Control, rect);
+				dc.FillRoundedRect (SystemBrushes.Control, rect);
 			}
 
 			Rectangle box_select_rect = control.item_control.BoxSelectRectangle;
 			if (!box_select_rect.Size.IsEmpty)
-				dc.DrawRectangle (ResPool.GetDashPen (ColorControlText, DashStyle.Dot), box_select_rect);
+				dc.DrawRoundedRectangle (ResPool.GetDashPen (ColorControlText, DashStyle.Dot), box_select_rect);
 
 		}
 
@@ -4950,7 +4950,7 @@ namespace System.Windows.Forms
 					VerticalBrush = ResPool.GetHatchBrush (HatchStyle.Percent50, ColorScrollBar, Color.White);
 				Rectangle UpperTrack = new Rectangle (0, 0, bar.ClientRectangle.Width, bar.ThumbPos.Bottom);
 				if (clip.IntersectsWith (UpperTrack))
-					dc.FillRectangle (VerticalBrush, UpperTrack);
+					dc.FillRoundedRect (VerticalBrush, UpperTrack);
 
 				/* Background, lower track */
 				if (bar.thumb_moving == ScrollBar.ThumbMoving.Forward)
@@ -4959,7 +4959,7 @@ namespace System.Windows.Forms
 					VerticalBrush = ResPool.GetHatchBrush (HatchStyle.Percent50, ColorScrollBar, Color.White);
 				Rectangle LowerTrack = new Rectangle (0, bar.ThumbPos.Bottom, bar.ClientRectangle.Width, bar.ClientRectangle.Height - bar.ThumbPos.Bottom);
 				if (clip.IntersectsWith (LowerTrack))
-					dc.FillRectangle (VerticalBrush, LowerTrack);
+					dc.FillRoundedRect (VerticalBrush, LowerTrack);
 
 				/* Buttons */
 				if (clip.IntersectsWith (first_arrow_area))
@@ -4984,7 +4984,7 @@ namespace System.Windows.Forms
 					HorizontalBrush = ResPool.GetHatchBrush (HatchStyle.Percent50, ColorScrollBar, Color.White);
 				Rectangle LeftTrack = new Rectangle (0, 0, bar.ThumbPos.Right, bar.ClientRectangle.Height);
 				if (clip.IntersectsWith (LeftTrack))
-					dc.FillRectangle (HorizontalBrush, LeftTrack);
+					dc.FillRoundedRect (HorizontalBrush, LeftTrack);
 
 				//Background, right track
 				if (bar.thumb_moving == ScrollBar.ThumbMoving.Forward)
@@ -4993,7 +4993,7 @@ namespace System.Windows.Forms
 					HorizontalBrush = ResPool.GetHatchBrush (HatchStyle.Percent50, ColorScrollBar, Color.White);
 				Rectangle RightTrack = new Rectangle (bar.ThumbPos.Right, 0, bar.ClientRectangle.Width - bar.ThumbPos.Right, bar.ClientRectangle.Height);
 				if (clip.IntersectsWith (RightTrack))
-					dc.FillRectangle (HorizontalBrush, RightTrack);
+					dc.FillRoundedRect (HorizontalBrush, RightTrack);
 
 				/* Buttons */
 				if (clip.IntersectsWith (first_arrow_area))
@@ -7054,7 +7054,7 @@ namespace System.Windows.Forms
 					// this needs to render like a pushed button - jba
 					// CPDrawBorder3D(graphics, rectangle, Border3DStyle.Sunken, Border3DSide.Left | Border3DSide.Top | Border3DSide.Right | Border3DSide.Bottom, ColorControl);
 					Rectangle trace_rectangle = new Rectangle(rectangle.X, rectangle.Y, Math.Max (rectangle.Width-1, 0), Math.Max (rectangle.Height-1, 0));
-					graphics.DrawRectangle (SystemPens.ControlDark, trace_rectangle);
+					graphics.DrawRoundedRectangle (SystemPens.ControlDark, trace_rectangle);
 				} else {
 					CPDrawBorder3D(graphics, rectangle, Border3DStyle.Raised, Border3DSide.Left | Border3DSide.Top | Border3DSide.Right | Border3DSide.Bottom, ColorControl);
 				}
@@ -7192,7 +7192,7 @@ namespace System.Windows.Forms
 			rect.Width--;
 			rect.Height--;			
 			
-			graphics.DrawRectangle (pen, rect);
+			graphics.DrawRoundedRectangle (pen, rect);
 			pen.Dispose ();
 		}
 		
@@ -7984,10 +7984,10 @@ namespace System.Windows.Forms
 		/* Generic scroll button */
 		public void DrawScrollButtonPrimitive (Graphics dc, Rectangle area, ButtonState state) {
 			if ((state & ButtonState.Pushed) == ButtonState.Pushed) {
-				dc.FillRectangle (SystemBrushes.Control, area.X + 1,
+				dc.FillRoundedRect (SystemBrushes.Control, area.X + 1,
 					area.Y + 1, area.Width - 2 , area.Height - 2);
 
-				dc.DrawRectangle (SystemPens.ControlDark, area.X,
+				dc.DrawRoundedRectangle (SystemPens.ControlDark, area.X,
 					area.Y, area.Width, area.Height);
 
 				return;
@@ -7998,26 +7998,26 @@ namespace System.Windows.Forms
 			Brush sb_dark = SystemBrushes.ControlDark;
 			Brush sb_darkdark = SystemBrushes.ControlDarkDark;
 			
-			dc.FillRectangle (sb_control, area.X, area.Y, area.Width, 1);
-			dc.FillRectangle (sb_control, area.X, area.Y, 1, area.Height);
+			dc.FillRoundedRect (sb_control, area.X, area.Y, area.Width, 1);
+			dc.FillRoundedRect (sb_control, area.X, area.Y, 1, area.Height);
 
-			dc.FillRectangle (sb_lightlight, area.X + 1, area.Y + 1, area.Width - 1, 1);
-			dc.FillRectangle (sb_lightlight, area.X + 1, area.Y + 2, 1,
+			dc.FillRoundedRect (sb_lightlight, area.X + 1, area.Y + 1, area.Width - 1, 1);
+			dc.FillRoundedRect (sb_lightlight, area.X + 1, area.Y + 2, 1,
 				area.Height - 4);
 			
-			dc.FillRectangle (sb_dark, area.X + 1, area.Y + area.Height - 2,
+			dc.FillRoundedRect (sb_dark, area.X + 1, area.Y + area.Height - 2,
 				area.Width - 2, 1);
 
-			dc.FillRectangle (sb_darkdark, area.X, area.Y + area.Height -1,
+			dc.FillRoundedRect (sb_darkdark, area.X, area.Y + area.Height -1,
 				area.Width , 1);
 
-			dc.FillRectangle (sb_dark, area.X + area.Width - 2,
+			dc.FillRoundedRect (sb_dark, area.X + area.Width - 2,
 				area.Y + 1, 1, area.Height -3);
 
-			dc.FillRectangle (sb_darkdark, area.X + area.Width -1,
+			dc.FillRoundedRect(sb_darkdark, area.X + area.Width -1,
 				area.Y, 1, area.Height - 1);
 
-			dc.FillRectangle (sb_control, area.X + 2,
+			dc.FillRoundedRect(sb_control, area.X + 2,
 				area.Y + 2, area.Width - 4, area.Height - 4);
 			
 		}

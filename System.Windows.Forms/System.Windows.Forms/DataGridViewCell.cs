@@ -1380,7 +1380,7 @@ namespace System.Windows.Forms {
 		internal virtual void PaintPartBackground (Graphics graphics, Rectangle cellBounds, DataGridViewCellStyle style)
 		{
 			Color color = style.BackColor;
-			graphics.FillRectangle (ThemeEngine.Current.ResPool.GetSolidBrush (color), cellBounds);
+			graphics.FillRoundedRect (ThemeEngine.Current.ResPool.GetSolidBrush (color), cellBounds);
 		}
 
 		internal Pen GetBorderPen ()
@@ -1423,7 +1423,9 @@ namespace System.Windows.Forms {
 				return;
 				
 			Color color = cellStyle.SelectionBackColor;
-			graphics.FillRectangle (ThemeEngine.Current.ResPool.GetSolidBrush (color), cellBounds);
+			//Color color = Color.Transparent;
+			Rectangle cb2 = new Rectangle(cellBounds.Left, cellBounds.Top, cellBounds.Width-2, cellBounds.Height-2);
+            graphics.FillRoundedRect (ThemeEngine.Current.ResPool.GetSolidBrush (color), cb2);
 		}
 
 		internal void PaintWork (Graphics graphics, Rectangle clipBounds, Rectangle cellBounds, int rowIndex, DataGridViewElementStates cellState, DataGridViewCellStyle cellStyle, DataGridViewAdvancedBorderStyle advancedBorderStyle, DataGridViewPaintParts paintParts)

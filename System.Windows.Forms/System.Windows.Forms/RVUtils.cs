@@ -287,6 +287,44 @@ namespace System.Windows.Forms
         {
             FillRoundedRectangle(g, brush, rect, cornerRadius ?? RVUtils.cornerRadius, innerBrush);
         }
+        public static void DrawRoundedRectangle(this Graphics g, Pen pen, Rectangle rect, float cornerRadius)
+        {
+            if (g == null || pen == null) return;
+
+            using (var path = CreateRoundedRectanglePath(rect, cornerRadius))
+            {
+                var oldSmoothing = g.SmoothingMode;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                try
+                {
+                    g.DrawPath(pen, path);
+                }
+                finally
+                {
+                    g.SmoothingMode = oldSmoothing;
+                }
+            }
+        }
+
+        public static void DrawRoundedRectangle(this Graphics g, Pen pen, Rectangle rect)
+        {
+            DrawRoundedRectangle(g, pen, rect, RVUtils.cornerRadius);
+        }
+
+        public static void DrawRoundedRectangle(this Graphics g, Pen pen, int x, int y, int width, int height, float cornerRadius)
+        {
+            DrawRoundedRectangle(g, pen, new Rectangle(x, y, width, height), cornerRadius);
+        }
+
+        public static void DrawRoundedRectangle(this Graphics g, Pen pen, int x, int y, int width, int height)
+        {
+            DrawRoundedRectangle(g, pen, new Rectangle(x, y, width, height), RVUtils.cornerRadius);
+        }
+
+        public static void FillRoundedRect(this Graphics g, Brush brush, int x, int y, int width, int height)
+        {
+            g.FillRoundedRect(brush, new Rectangle(x, y, width, height));
+        }
 
     }
 }

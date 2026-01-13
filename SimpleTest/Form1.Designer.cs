@@ -125,6 +125,7 @@ namespace SimpleTest
             this.numericUpDown1 = new NumericUpDown();
             this.trackBar1 = new TrackBar();
             this.comboBox1 = new ComboBox();
+            this.dateTimePicker1 = new DateTimePicker(); // Added
 
             // Zone 2: Transparency (Builtin Buttons)
             this.picStar = new PictureBox();
@@ -225,12 +226,24 @@ namespace SimpleTest
             comboBox1.SelectedIndex = 0;
             comboBox1.FlatStyle = FlatStyle.Flat;
 
+            // New DateTimePicker Config
+            dateTimePicker1.Location = new Point(20, 375); dateTimePicker1.Size = new Size(200, 25);
+            dateTimePicker1.Format = DateTimePickerFormat.Short;
+            dateTimePicker1.Value = DateTime.Now;
+            dateTimePicker1.BackColor = Color.White;
+            dateTimePicker1.ForeColor = Color.Black;
+            //dateTimePicker1.CalendarForeColor = Color.Black;
+            dateTimePicker1.CalendarTitleBackColor = Color.PaleGoldenrod;
+            
+            //dateTimePicker1.BorderStyle = BorderStyle.FixedSingle;
+
             grpInputs.Controls.Add(txtStandard);
             grpInputs.Controls.Add(txtPassword);
             grpInputs.Controls.Add(txtMulti);
             grpInputs.Controls.Add(numericUpDown1);
             grpInputs.Controls.Add(trackBar1);
             grpInputs.Controls.Add(comboBox1);
+            grpInputs.Controls.Add(dateTimePicker1); // Added to group
 
             // --- Zone 2: Transparency (Builtin Buttons - FLAT) ---
             picStar.Location = new Point(25, 30); picStar.Size = new Size(400, 350);
@@ -523,6 +536,7 @@ namespace SimpleTest
         private NumericUpDown numericUpDown1;
         private TrackBar trackBar1;
         private ComboBox comboBox1;
+        private DateTimePicker dateTimePicker1; // Added
 
         // Zone 2
         private PictureBox picStar;
