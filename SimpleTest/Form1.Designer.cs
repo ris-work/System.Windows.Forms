@@ -34,642 +34,562 @@ namespace SimpleTest
         /// </summary>
         private void InitializeComponent()
         {
-            this.GotFocus += (_, __) => { this.Invalidate(true); };
+            this.components = new System.ComponentModel.Container();
+
+            // Form Setup
+            this.AutoScaleMode = AutoScaleMode.Font;
+            this.ClientSize = new System.Drawing.Size(1800, 950);
+            this.BackColor = System.Drawing.Color.FromArgb(45, 45, 48);
+            this.Text = "Ultimate Control Test Bench";
+            this.WindowState = FormWindowState.Maximized;
             this.DoubleBuffered = true;
-            this.AutoScaleMode = AutoScaleMode.None;
 
-            // 1. Expand the form size to use more area
-            this.ClientSize = new System.Drawing.Size(1200, 800);
-            this.BackColor = System.Drawing.Color.FromKnownColor(System.Drawing.KnownColor.DeepSkyBlue);
-            this.AllowTransparency = false;
+            // --- Global Controls ---
+            this.menuStrip1 = new MenuStrip();
+            this.statusStrip1 = new StatusStrip();
+            this.toolTip1 = new ToolTip(this.components);
+            this.contextMenuStrip1 = new ContextMenuStrip(this.components);
 
-            // --- Existing Controls Initialization (Shifted/Adjusted slightly) ---
-            this.button1 = new System.Windows.Forms.Button();
-            this.label1 = new System.Windows.Forms.Label();
-            this.checkBox1 = new System.Windows.Forms.CheckBox();
-            this.checkedListBox1 = new System.Windows.Forms.CheckedListBox();
-            this.comboBox1 = new System.Windows.Forms.ComboBox();
-            this.dateTimePicker1 = new System.Windows.Forms.DateTimePicker();
-            this.monthCalendar1 = new System.Windows.Forms.MonthCalendar();
-            this.numericUpDown1 = new System.Windows.Forms.NumericUpDown();
-            this.radioButton1 = new System.Windows.Forms.RadioButton();
-            this.treeView1 = new System.Windows.Forms.TreeView();
-            this.webBrowser1 = new System.Windows.Forms.WebBrowser();
-            this.menuStrip1 = new System.Windows.Forms.MenuStrip();
-            this.helloToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.worldToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.statusStrip1 = new System.Windows.Forms.StatusStrip();
-            this.panel1 = new System.Windows.Forms.Panel();
-            this.groupBox1 = new System.Windows.Forms.GroupBox();
-            this.tabControl1 = new System.Windows.Forms.TabControl();
-            this.tabPage1 = new System.Windows.Forms.TabPage();
-            this.tabPage2 = new System.Windows.Forms.TabPage();
-            this.dataGridView1 = new System.Windows.Forms.DataGridView();
+            // --- Main Containers (Layout Zones) ---
+            // Y positions shifted to 40 to account for MenuStrip
 
-            this.listBox1 = new System.Windows.Forms.ListBox();
-            this.richTextBox1 = new System.Windows.Forms.RichTextBox();
-            this.pictureBox1 = new System.Windows.Forms.PictureBox();
-            this.progressBar1 = new System.Windows.Forms.ProgressBar();
-            this.trackBar1 = new System.Windows.Forms.TrackBar();
-            this.listView1 = new System.Windows.Forms.ListView();
-            this.imageList1 = new System.Windows.Forms.ImageList();
-            this.linkLabel1 = new System.Windows.Forms.LinkLabel();
-            this.maskedTextBox1 = new System.Windows.Forms.MaskedTextBox();
-            this.domainUpDown1 = new System.Windows.Forms.DomainUpDown();
-            this.toolTip1 = new System.Windows.Forms.ToolTip();
-            this.contextMenuStrip1 = new System.Windows.Forms.ContextMenuStrip();
-            this.toolStripMenuItem1 = new System.Windows.Forms.ToolStripMenuItem();
-            this.toolStripMenuItem2 = new System.Windows.Forms.ToolStripMenuItem();
-            this.notifyIcon1 = new System.Windows.Forms.NotifyIcon();
-            this.propertyGrid1 = new System.Windows.Forms.PropertyGrid();
-            this.flowLayoutPanel1 = new System.Windows.Forms.FlowLayoutPanel();
-            this.tabPage3 = new System.Windows.Forms.TabPage();
-            this.tabPage4 = new System.Windows.Forms.TabPage();
-            this.groupBox2 = new System.Windows.Forms.GroupBox();
-            this.splitContainer1 = new System.Windows.Forms.SplitContainer();
+            // Zone 1: Top Left - Inputs
+            this.grpInputs = new GroupBox();
+            this.grpInputs.Text = "Zone 1: Inputs & Basics";
+            this.grpInputs.Location = new Point(20, 40);
+            this.grpInputs.Size = new Size(400, 420);
+            this.grpInputs.BackColor = Color.FromArgb(60, 60, 65);
+            this.grpInputs.ForeColor = Color.White;
+            this.grpInputs.FlatStyle = FlatStyle.Flat; // GroupBox FlatStyle (WinForms 2.0+)
 
-            // --- NEW Controls Initialization (Transparency Test) ---
-            this.grpTransparency = new System.Windows.Forms.GroupBox();
-            this.picStar = new System.Windows.Forms.PictureBox();
-            this.lblTransparent = new System.Windows.Forms.Label();
-            this.btnTransparent = new TransparentButton(); // Using the custom class defined below
+            // Zone 2: Top Center - Transparency
+            this.grpTransparency = new GroupBox();
+            this.grpTransparency.Text = "Zone 2: Builtin Transparency Test";
+            this.grpTransparency.Location = new Point(440, 40);
+            this.grpTransparency.Size = new Size(450, 420);
+            this.grpTransparency.BackColor = Color.FromArgb(60, 60, 65);
+            this.grpTransparency.ForeColor = Color.White;
+            this.grpTransparency.FlatStyle = FlatStyle.Flat;
 
+            // Zone 3: Top Right - Rainbow DataGridView
+            this.grpRainbowData = new GroupBox();
+            this.grpRainbowData.Text = "Zone 3: Rainbow Cell Grid";
+            this.grpRainbowData.Location = new Point(910, 40);
+            this.grpRainbowData.Size = new Size(450, 420);
+            this.grpRainbowData.BackColor = Color.FromArgb(60, 60, 65);
+            this.grpRainbowData.ForeColor = Color.White;
+            this.grpRainbowData.FlatStyle = FlatStyle.Flat;
+
+            // Zone 4: Bottom Left - Buttons
+            this.grpButtons = new GroupBox();
+            this.grpButtons.Text = "Zone 4: Interactive Buttons";
+            this.grpButtons.Location = new Point(20, 480);
+            this.grpButtons.Size = new Size(400, 380);
+            this.grpButtons.BackColor = Color.FromArgb(60, 60, 65);
+            this.grpButtons.ForeColor = Color.White;
+            this.grpButtons.FlatStyle = FlatStyle.Flat;
+
+            // Zone 5: Bottom Center - Lists
+            this.grpLists = new GroupBox();
+            this.grpLists.Text = "Zone 5: Hierarchies";
+            this.grpLists.Location = new Point(440, 480);
+            this.grpLists.Size = new Size(450, 380);
+            this.grpLists.BackColor = Color.FromArgb(60, 60, 65);
+            this.grpLists.ForeColor = Color.White;
+            this.grpLists.FlatStyle = FlatStyle.Flat;
+
+            // Zone 6: Bottom Right - Standard Data
+            this.grpStandardData = new GroupBox();
+            this.grpStandardData.Text = "Zone 6: Standard Data";
+            this.grpStandardData.Location = new Point(910, 480);
+            this.grpStandardData.Size = new Size(450, 380);
+            this.grpStandardData.BackColor = Color.FromArgb(60, 60, 65);
+            this.grpStandardData.ForeColor = Color.White;
+            this.grpStandardData.FlatStyle = FlatStyle.Flat;
+
+            // Zone 7: Far Right - Tab Control
+            this.grpTabs = new GroupBox();
+            this.grpTabs.Text = "Zone 7: Tab Control & Random Crap";
+            this.grpTabs.Location = new Point(1380, 40);
+            this.grpTabs.Size = new Size(380, 820);
+            this.grpTabs.BackColor = Color.FromArgb(60, 60, 65);
+            this.grpTabs.ForeColor = Color.White;
+            this.grpTabs.FlatStyle = FlatStyle.Flat;
+
+            // --- Controls Initialization ---
+
+            // Zone 1: Inputs
+            this.txtStandard = new TextBox();
+            this.txtPassword = new TextBox();
+            this.txtMulti = new TextBox();
+            this.numericUpDown1 = new NumericUpDown();
+            this.trackBar1 = new TrackBar();
+            this.comboBox1 = new ComboBox();
+
+            // Zone 2: Transparency (Builtin Buttons)
+            this.picStar = new PictureBox();
+            this.btnTran1 = new System.Windows.Forms.Button();
+            this.btnTran2 = new System.Windows.Forms.Button();
+            this.btnTran3 = new System.Windows.Forms.Button();
+
+            // Zone 3: Rainbow Grid
+            this.dataGridViewRainbow = new DataGridView();
+
+            // Zone 4: Buttons
+            this.btnColored1 = new Button();
+            this.btnColored2 = new Button();
+            this.btnColored3 = new Button();
+            this.checkBox1 = new CheckBox();
+            this.radioButton1 = new RadioButton();
+            this.linkLabel1 = new LinkLabel();
+
+            // Zone 5: Lists
+            this.treeView1 = new TreeView();
+            this.listView1 = new ListView();
+
+            // Zone 6: Standard Data
+            this.dataGridView1 = new DataGridView();
+            this.richTextBox1 = new RichTextBox();
+            this.progressBar1 = new ProgressBar();
+
+            // Zone 7: TabPages
+            this.tabControlRandom = new TabControl();
+            this.tabPageScrolls = new TabPage();
+            thisTabPageLists = new TabPage();
+            thisTabPageWeird = new TabPage();
+
+            // Crap for Tab 1
+            this.hScrollBar1 = new HScrollBar();
+            this.vScrollBar1 = new VScrollBar();
+            this.progressBarCrap = new ProgressBar();
+
+            // Crap for Tab 2
+            this.listBox1 = new ListBox();
+            this.checkedListBox1 = new CheckedListBox();
+
+            // Crap for Tab 3
+            this.domainUpDown1 = new DomainUpDown();
+            this.maskedTextBox1 = new MaskedTextBox();
+            this.pictureBoxCrap = new PictureBox();
+
+            // Begin Suspend Layout
             ((System.ComponentModel.ISupportInitialize)(this.numericUpDown1)).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.trackBar1)).BeginInit();
-            this.menuStrip1.SuspendLayout();
-            this.panel1.SuspendLayout();
-            this.groupBox1.SuspendLayout();
-            this.tabControl1.SuspendLayout();
-            this.tabPage1.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.dataGridViewRainbow)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.dataGridView1)).BeginInit();
-            this.contextMenuStrip1.SuspendLayout();
-            this.tabPage3.SuspendLayout();
-            this.tabPage4.SuspendLayout();
-            this.groupBox2.SuspendLayout();
-            this.splitContainer1.Panel1.SuspendLayout();
-            this.splitContainer1.Panel2.SuspendLayout();
-            this.splitContainer1.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.pictureBoxCrap)).BeginInit();
+            this.grpInputs.SuspendLayout();
             this.grpTransparency.SuspendLayout();
+            this.grpRainbowData.SuspendLayout();
+            this.grpButtons.SuspendLayout();
+            this.grpLists.SuspendLayout();
+            this.grpStandardData.SuspendLayout();
+            this.grpTabs.SuspendLayout();
+            this.tabControlRandom.SuspendLayout();
+            this.tabPageScrolls.SuspendLayout();
+            thisTabPageLists.SuspendLayout();
+            thisTabPageWeird.SuspendLayout();
+            this.menuStrip1.SuspendLayout();
             this.SuspendLayout();
 
-            // 
-            // button1
-            // 
-            this.button1.Location = new System.Drawing.Point(36, 64);
-            this.button1.Name = "button1";
-            this.button1.Size = new System.Drawing.Size(120, 40);
-            this.button1.TabIndex = 0;
-            this.button1.Text = "SB";
-            this.button1.ForeColor = Color.Brown;
-            //this.button1.UseVisualStyleBackColor = true;
-            this.button1.Click += new System.EventHandler(this.button1_Click);
-            // Note: Setting Color.Transparent on a standard Button has no effect usually.
-            this.button1.BackColor = Color.Transparent;
-            // 
-            // label1
-            // 
-            this.label1.AutoSize = true;
-            this.label1.Location = new System.Drawing.Point(180, 69);
-            this.label1.Name = "label1";
-            this.label1.Size = new System.Drawing.Size(35, 13);
-            this.label1.TabIndex = 1;
-            this.label1.Text = "label1";
-            this.label1.BackColor = System.Drawing.Color.FromArgb(128, 255, 0, 0);
-            // 
-            // checkBox1
-            // 
-            this.checkBox1.AutoSize = true;
-            this.checkBox1.Location = new System.Drawing.Point(346, 156);
-            this.checkBox1.Name = "checkBox1";
-            this.checkBox1.Size = new System.Drawing.Size(80, 17);
-            this.checkBox1.TabIndex = 2;
-            this.checkBox1.Text = "checkBox1";
-            this.checkBox1.UseVisualStyleBackColor = true;
-            // 
-            // checkedListBox1
-            // 
-            this.checkedListBox1.FormattingEnabled = true;
-            this.checkedListBox1.Location = new System.Drawing.Point(207, 40);
-            this.checkedListBox1.Name = "checkedListBox1";
-            this.checkedListBox1.Size = new System.Drawing.Size(120, 94);
-            this.checkedListBox1.TabIndex = 3;
-            // 
-            // comboBox1
-            // 
-            this.comboBox1.FormattingEnabled = true;
-            this.comboBox1.Location = new System.Drawing.Point(252, 13);
-            this.comboBox1.Name = "comboBox1";
-            this.comboBox1.Size = new System.Drawing.Size(121, 21);
-            this.comboBox1.TabIndex = 4;
-            // 
-            // dateTimePicker1
-            // 
-            this.dateTimePicker1.Location = new System.Drawing.Point(36, 6);
-            this.dateTimePicker1.Name = "dateTimePicker1";
-            this.dateTimePicker1.Size = new System.Drawing.Size(200, 20);
-            this.dateTimePicker1.TabIndex = 5;
-            // 
-            // monthCalendar1
-            // 
-            this.monthCalendar1.Location = new System.Drawing.Point(60, 350);
-            this.monthCalendar1.Name = "monthCalendar1";
-            this.monthCalendar1.TabIndex = 6;
-            // 
-            // numericUpDown1
-            // 
-            this.numericUpDown1.Location = new System.Drawing.Point(413, 214);
-            this.numericUpDown1.Name = "numericUpDown1";
-            this.numericUpDown1.Size = new System.Drawing.Size(120, 20);
-            this.numericUpDown1.TabIndex = 7;
+            // ==========================================
+            // CONFIGURING CONTROLS
+            // ==========================================
 
-            // 
-            // radioButton1
-            // 
-            this.radioButton1.AutoSize = true;
-            this.radioButton1.Location = new System.Drawing.Point(170, 67);
-            this.radioButton1.Name = "radioButton1";
-            this.radioButton1.Size = new System.Drawing.Size(85, 17);
-            this.radioButton1.TabIndex = 8;
-            this.radioButton1.TabStop = true;
-            this.radioButton1.Text = "radioButton1";
-            this.radioButton1.UseVisualStyleBackColor = true;
-            // 
-            // treeView1
-            // 
-            this.treeView1.Location = new System.Drawing.Point(22, 23);
-            this.treeView1.Name = "treeView1";
-            this.treeView1.Size = new System.Drawing.Size(121, 97);
-            this.treeView1.TabIndex = 9;
-            // 
-            // webBrowser1
-            // 
-            this.webBrowser1.Location = new System.Drawing.Point(57, 29);
-            this.webBrowser1.MinimumSize = new System.Drawing.Size(20, 20);
-            this.webBrowser1.Name = "webBrowser1";
-            this.webBrowser1.Size = new System.Drawing.Size(143, 193);
-            this.webBrowser1.TabIndex = 10;
+            // --- Zone 1: Inputs ---
+            txtStandard.Location = new Point(20, 30); txtStandard.Size = new Size(360, 25);
+            txtStandard.Text = "Standard TextBox";
+            txtStandard.ForeColor = Color.Black; txtStandard.BackColor = Color.White;
+            txtStandard.BorderStyle = BorderStyle.FixedSingle;
 
-            // 
-            // menuStrip1
-            // 
-            this.menuStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.helloToolStripMenuItem});
-            this.menuStrip1.Location = new System.Drawing.Point(0, 0);
-            this.menuStrip1.Name = "menuStrip1";
-            this.menuStrip1.Size = new System.Drawing.Size(1200, 24);
-            this.menuStrip1.TabIndex = 11;
-            this.menuStrip1.Text = "menuStrip1";
-            // 
-            // helloToolStripMenuItem
-            // 
-            this.helloToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.worldToolStripMenuItem});
-            this.helloToolStripMenuItem.Name = "helloToolStripMenuItem";
-            this.helloToolStripMenuItem.Size = new System.Drawing.Size(47, 20);
-            this.helloToolStripMenuItem.Text = "Hello";
-            // 
-            // worldToolStripMenuItem
-            // 
-            this.worldToolStripMenuItem.Name = "worldToolStripMenuItem";
-            this.worldToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
-            this.worldToolStripMenuItem.Text = "World";
-            // 
-            // statusStrip1
-            // 
-            this.statusStrip1.Location = new System.Drawing.Point(0, 778);
-            this.statusStrip1.Name = "statusStrip1";
-            this.statusStrip1.Size = new System.Drawing.Size(1200, 22);
-            this.statusStrip1.TabIndex = 12;
-            this.statusStrip1.Text = "statusStrip1";
-            // 
-            // panel1
-            // 
-            this.panel1.Controls.Add(this.treeView1);
-            this.panel1.Controls.Add(this.checkedListBox1);
-            this.panel1.Location = new System.Drawing.Point(500, 29);
-            this.panel1.Name = "panel1";
-            this.panel1.Size = new System.Drawing.Size(200, 150);
-            this.panel1.TabIndex = 13;
-            // 
-            // groupBox1
-            // 
-            //this.groupBox1.Controls.Add(this.webBrowser1);
-            this.groupBox1.Location = new System.Drawing.Point(34, 29);
-            this.groupBox1.Name = "groupBox1";
-            this.groupBox1.Size = new System.Drawing.Size(239, 231);
-            this.groupBox1.TabIndex = 14;
-            this.groupBox1.TabStop = false;
-            this.groupBox1.Text = "groupBox1";
-            // 
-            // tabControl1
-            // 
-            this.tabControl1.Controls.Add(this.tabPage1);
-            this.tabControl1.Controls.Add(this.tabPage2);
-            this.tabControl1.Controls.Add(this.tabPage3);
-            this.tabControl1.Controls.Add(this.tabPage4);
-            this.tabControl1.Location = new System.Drawing.Point(350, 400);
-            this.tabControl1.Name = "tabControl1";
-            this.tabControl1.SelectedIndex = 0;
-            this.tabControl1.Size = new System.Drawing.Size(450, 150);
-            this.tabControl1.TabIndex = 15;
-            this.tabControl1.BackColor = System.Drawing.Color.FromArgb(255, 255, 255, 255);
-            // 
-            // tabPage1
-            // 
-            this.tabPage1.Controls.Add(this.dateTimePicker1);
-            this.tabPage1.Controls.Add(this.comboBox1);
-            this.tabPage1.Controls.Add(this.button1);
-            this.tabPage1.Controls.Add(this.radioButton1);
-            this.tabPage1.Location = new System.Drawing.Point(4, 22);
-            this.tabPage1.Name = "tabPage1";
-            this.tabPage1.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage1.Size = new System.Drawing.Size(442, 124);
-            this.tabPage1.TabIndex = 0;
-            this.tabPage1.Text = "tabPage1";
-            this.tabPage1.UseVisualStyleBackColor = true;
-            this.tabPage1.BackColor = System.Drawing.Color.FromArgb(0, 50, 255, 255);
-            // 
-            // tabPage2
-            // 
-            this.tabPage2.Location = new System.Drawing.Point(4, 22);
-            this.tabPage2.Name = "tabPage2";
-            this.tabPage2.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage2.Size = new System.Drawing.Size(192, 74);
-            this.tabPage2.TabIndex = 1;
-            this.tabPage2.Text = "tabPage2";
-            this.tabPage2.UseVisualStyleBackColor = true;
-            this.tabPage2.BackColor = System.Drawing.Color.FromArgb(100, 50, 255, 255);
-            // 
-            // dataGridView1
-            // 
-            this.dataGridView1.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-            this.dataGridView1.Location = new System.Drawing.Point(34, 650);
-            this.dataGridView1.Name = "dataGridView1";
-            this.dataGridView1.Size = new System.Drawing.Size(350, 100);
-            this.dataGridView1.TabIndex = 16;
-            this.dataGridView1.AutoGenerateColumns = true;
+            txtPassword.Location = new Point(20, 70); txtPassword.Size = new Size(360, 25);
+            txtPassword.UseSystemPasswordChar = true; txtPassword.Text = "password";
+            txtPassword.ForeColor = Color.Black; txtPassword.BackColor = Color.White;
+            txtPassword.BorderStyle = BorderStyle.FixedSingle;
 
-            System.Data.DataTable dt = new System.Data.DataTable();
-            dt.Columns.Add("ID", typeof(int));
-            dt.Columns.Add("Name", typeof(string));
-            dt.Columns.Add("Value", typeof(decimal));
-            dt.Rows.Add(1, "First Item", 10.5);
-            dt.Rows.Add(2, "Second Item", 20.0);
-            dt.Rows.Add(3, "Third Item", 30.2);
-            this.dataGridView1.DataSource = dt;
-            // 
-            // listBox1
-            // 
-            this.listBox1.FormattingEnabled = true;
-            this.listBox1.Location = new System.Drawing.Point(6, 19);
-            this.listBox1.Name = "listBox1";
-            this.listBox1.Size = new System.Drawing.Size(120, 95);
-            this.listBox1.TabIndex = 0;
-            // 
-            // richTextBox1
-            // 
-            this.richTextBox1.Location = new System.Drawing.Point(3, 3);
-            this.richTextBox1.Name = "richTextBox1";
-            this.richTextBox1.Size = new System.Drawing.Size(200, 146);
-            this.richTextBox1.TabIndex = 0;
-            this.richTextBox1.Text = "richTextBox1";
-            // 
-            // pictureBox1
-            // 
-            this.pictureBox1.BorderStyle = System.Windows.Forms.BorderStyle.Fixed3D;
-            this.pictureBox1.Location = new System.Drawing.Point(3, 3);
-            this.pictureBox1.Name = "pictureBox1";
-            this.pictureBox1.Size = new System.Drawing.Size(100, 50);
-            this.pictureBox1.TabIndex = 0;
-            this.pictureBox1.TabStop = false;
-            // 
-            // progressBar1
-            // 
-            this.progressBar1.Location = new System.Drawing.Point(3, 59);
-            this.progressBar1.Name = "progressBar1";
-            this.progressBar1.Size = new System.Drawing.Size(100, 23);
-            this.progressBar1.TabIndex = 1;
-            // 
-            // trackBar1
-            // 
-            this.trackBar1.Location = new System.Drawing.Point(3, 88);
-            this.trackBar1.Name = "trackBar1";
-            this.trackBar1.Size = new System.Drawing.Size(104, 45);
-            this.trackBar1.TabIndex = 2;
-            // 
-            // listView1
-            // 
-            this.listView1.Location = new System.Drawing.Point(3, 3);
-            this.listView1.Name = "listView1";
-            this.listView1.Size = new System.Drawing.Size(121, 95);
-            this.listView1.TabIndex = 0;
-            this.listView1.UseCompatibleStateImageBehavior = false;
-            // 
-            // imageList1
-            // 
-            this.imageList1.ColorDepth = System.Windows.Forms.ColorDepth.Depth8Bit;
-            this.imageList1.ImageSize = new System.Drawing.Size(16, 16);
-            this.imageList1.TransparentColor = System.Drawing.Color.Transparent;
-            // 
-            // linkLabel1
-            // 
-            this.linkLabel1.AutoSize = true;
-            this.linkLabel1.Location = new System.Drawing.Point(3, 139);
-            this.linkLabel1.Name = "linkLabel1";
-            this.linkLabel1.Size = new System.Drawing.Size(59, 13);
-            this.linkLabel1.TabIndex = 3;
-            this.linkLabel1.TabStop = true;
-            this.linkLabel1.Text = "linkLabel1";
-            // 
-            // maskedTextBox1
-            // 
-            this.maskedTextBox1.Location = new System.Drawing.Point(109, 3);
-            this.maskedTextBox1.Mask = "000/000/0000";
-            this.maskedTextBox1.Name = "maskedTextBox1";
-            this.maskedTextBox1.Size = new System.Drawing.Size(100, 20);
-            this.maskedTextBox1.TabIndex = 4;
-            // 
-            // domainUpDown1
-            // 
-            this.domainUpDown1.Location = new System.Drawing.Point(109, 29);
-            this.domainUpDown1.Name = "domainUpDown1";
-            this.domainUpDown1.Size = new System.Drawing.Size(120, 20);
-            this.domainUpDown1.TabIndex = 5;
-            // 
-            // toolTip1
-            // 
-            this.toolTip1.AutoPopDelay = 5000;
-            this.toolTip1.InitialDelay = 100;
-            this.toolTip1.IsBalloon = true;
-            this.toolTip1.ReshowDelay = 100;
-            // 
-            // contextMenuStrip1
-            // 
-            this.contextMenuStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.toolStripMenuItem1,
-            this.toolStripMenuItem2});
-            this.contextMenuStrip1.Name = "contextMenuStrip1";
-            this.contextMenuStrip1.Size = new System.Drawing.Size(103, 48);
-            // 
-            // toolStripMenuItem1
-            // 
-            this.toolStripMenuItem1.Name = "toolStripMenuItem1";
-            this.toolStripMenuItem1.Size = new System.Drawing.Size(102, 22);
-            this.toolStripMenuItem1.Text = "Copy";
-            // 
-            // toolStripMenuItem2
-            // 
-            this.toolStripMenuItem2.Name = "toolStripMenuItem2";
-            this.toolStripMenuItem2.Size = new System.Drawing.Size(102, 22);
-            this.toolStripMenuItem2.Text = "Paste";
-            // 
-            // notifyIcon1
-            // 
-            this.notifyIcon1.Text = "NotifyIcon1";
-            this.notifyIcon1.Visible = true;
-            // 
-            // propertyGrid1
-            // 
-            this.propertyGrid1.LineColor = System.Drawing.SystemColors.ScrollBar;
-            this.propertyGrid1.Location = new System.Drawing.Point(3, 168);
-            this.propertyGrid1.Name = "propertyGrid1";
-            this.propertyGrid1.Size = new System.Drawing.Size(226, 134);
-            this.propertyGrid1.TabIndex = 6;
-            // 
-            // flowLayoutPanel1
-            // 
-            this.flowLayoutPanel1.Controls.Add(this.pictureBox1);
-            this.flowLayoutPanel1.Controls.Add(this.progressBar1);
-            this.flowLayoutPanel1.Controls.Add(this.trackBar1);
-            this.flowLayoutPanel1.Controls.Add(this.maskedTextBox1);
-            this.flowLayoutPanel1.Controls.Add(this.domainUpDown1);
-            this.flowLayoutPanel1.Controls.Add(this.linkLabel1);
-            this.flowLayoutPanel1.Location = new System.Drawing.Point(3, 3);
-            this.flowLayoutPanel1.Name = "flowLayoutPanel1";
-            this.flowLayoutPanel1.Size = new System.Drawing.Size(232, 159);
-            this.flowLayoutPanel1.TabIndex = 0;
-            // 
-            // tabPage3
-            // 
-            this.tabPage3.Controls.Add(this.splitContainer1);
-            this.tabPage3.Location = new System.Drawing.Point(4, 22);
-            this.tabPage3.Name = "tabPage3";
-            this.tabPage3.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage3.Size = new System.Drawing.Size(442, 124);
-            this.tabPage3.TabIndex = 2;
-            this.tabPage3.Text = "Split & List";
-            this.tabPage3.UseVisualStyleBackColor = true;
-            // 
-            // tabPage4
-            // 
-            this.tabPage4.Controls.Add(this.propertyGrid1);
-            this.tabPage4.Controls.Add(this.flowLayoutPanel1);
-            this.tabPage4.Location = new System.Drawing.Point(4, 22);
-            this.tabPage4.Name = "tabPage4";
-            this.tabPage4.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage4.Size = new System.Drawing.Size(442, 124);
-            this.tabPage4.TabIndex = 3;
-            this.tabPage4.Text = "Misc";
-            this.tabPage4.UseVisualStyleBackColor = true;
-            // 
-            // groupBox2
-            // 
-            this.groupBox2.Controls.Add(this.listBox1);
-            this.groupBox2.Location = new System.Drawing.Point(400, 650);
-            this.groupBox2.Name = "groupBox2";
-            this.groupBox2.Size = new System.Drawing.Size(143, 129);
-            this.groupBox2.TabIndex = 17;
-            this.groupBox2.TabStop = false;
-            this.groupBox2.Text = "groupBox2";
-            // 
-            // splitContainer1
-            // 
-            this.splitContainer1.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.splitContainer1.Location = new System.Drawing.Point(3, 3);
-            this.splitContainer1.Name = "splitContainer1";
-            // 
-            // splitContainer1.Panel1
-            // 
-            this.splitContainer1.Panel1.Controls.Add(this.listView1);
-            // 
-            // splitContainer1.Panel2
-            // 
-            this.splitContainer1.Panel2.Controls.Add(this.richTextBox1);
-            this.splitContainer1.Size = new System.Drawing.Size(436, 118);
-            this.splitContainer1.SplitterDistance = 139;
-            this.splitContainer1.TabIndex = 0;
-            // 
-            // grpTransparency
-            // 
-            this.grpTransparency.Controls.Add(this.picStar);
-            this.grpTransparency.Location = new System.Drawing.Point(820, 50);
-            this.grpTransparency.Name = "grpTransparency";
-            this.grpTransparency.Size = new System.Drawing.Size(350, 400);
-            this.grpTransparency.TabIndex = 18;
-            this.grpTransparency.TabStop = false;
-            this.grpTransparency.Text = "Transparency Test (Star Image)";
+            txtMulti.Location = new Point(20, 110); txtMulti.Size = new Size(360, 100);
+            txtMulti.Multiline = true; txtMulti.ScrollBars = ScrollBars.Vertical;
+            txtMulti.Text = "Multiline text box...";
+            txtMulti.BackColor = Color.FromArgb(255, 255, 220);
+            txtMulti.BorderStyle = BorderStyle.FixedSingle;
 
-            // 
-            // picStar
-            // 
-            this.picStar.Location = new System.Drawing.Point(10, 20);
-            this.picStar.Name = "picStar";
-            this.picStar.Size = new System.Drawing.Size(320, 320);
-            this.picStar.TabIndex = 0;
-            this.picStar.TabStop = false;
-            this.picStar.BorderStyle = BorderStyle.Fixed3D;
-            this.picStar.BackColor = Color.LightGray; // Background behind the star image
-            this.picStar.SizeMode = PictureBoxSizeMode.CenterImage;
+            numericUpDown1.Location = new Point(20, 230); numericUpDown1.Size = new Size(150, 25);
+            numericUpDown1.Value = 50;
+            numericUpDown1.BorderStyle = BorderStyle.FixedSingle;
 
-            // --- Child Controls of picStar ---
-            // Adding controls to picStar.Controls makes them children visually sitting on top of the image
+            trackBar1.Location = new Point(20, 270); trackBar1.Size = new Size(360, 45);
+            trackBar1.Maximum = 100; trackBar1.Value = 75;
 
-            // 
-            // lblTransparent (Child of picStar)
-            // 
-            this.lblTransparent.Text = "I am a Transparent Label";
-            this.lblTransparent.Location = new System.Drawing.Point(50, 50);
-            this.lblTransparent.AutoSize = true;
-            this.lblTransparent.Font = new Font("Microsoft Sans Serif", 12F, FontStyle.Bold);
-            this.lblTransparent.ForeColor = Color.White;
-            this.lblTransparent.BackColor = Color.Transparent; // This shows the Star through the text
+            comboBox1.Location = new Point(20, 330); comboBox1.Size = new Size(200, 25);
+            comboBox1.Items.AddRange(new object[] { "Option A", "Option B" });
+            comboBox1.SelectedIndex = 0;
+            comboBox1.FlatStyle = FlatStyle.Flat;
 
-            // 
-            // btnTransparent (Child of picStar)
-            // 
-            this.btnTransparent.Text = "Transparent Button";
-            this.btnTransparent.Location = new System.Drawing.Point(50, 100);
-            this.btnTransparent.Size = new System.Drawing.Size(180, 40);
-            this.btnTransparent.BackColor = Color.Transparent; // Supported by our custom TransparentButton class
-            this.btnTransparent.ForeColor = Color.White;
-            this.btnTransparent.FlatAppearance.BorderSize = 1;
-            this.btnTransparent.FlatAppearance.BorderColor = Color.White;
-            this.btnTransparent.FlatStyle = FlatStyle.Flat;
+            grpInputs.Controls.Add(txtStandard);
+            grpInputs.Controls.Add(txtPassword);
+            grpInputs.Controls.Add(txtMulti);
+            grpInputs.Controls.Add(numericUpDown1);
+            grpInputs.Controls.Add(trackBar1);
+            grpInputs.Controls.Add(comboBox1);
 
-            // Add children to the PictureBox
-            this.picStar.Controls.Add(this.lblTransparent);
-            this.picStar.Controls.Add(this.btnTransparent);
+            // --- Zone 2: Transparency (Builtin Buttons - FLAT) ---
+            picStar.Location = new Point(25, 30); picStar.Size = new Size(400, 350);
+            picStar.BackColor = Color.LightGray;
+            picStar.BorderStyle = BorderStyle.Fixed3D;
+            picStar.SizeMode = PictureBoxSizeMode.CenterImage;
 
-            // 
-            // Form1
-            // 
-            this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            // FlatStyle = Flat enables the OS Rounded Corners if the theme supports it.
+            btnTran1.Text = "Tran Btn 1"; btnTran1.Location = new Point(30, 30);
+            btnTran1.Size = new Size(150, 40);
+            btnTran1.BackColor = Color.Transparent;
+            btnTran1.FlatStyle = FlatStyle.Flat; // Requested
+            btnTran1.ForeColor = Color.Black;
+            btnTran1.FlatAppearance.BorderSize = 0; // Clean look
+
+            btnTran2.Text = "Tran Btn 2"; btnTran2.Location = new Point(200, 150);
+            btnTran2.Size = new Size(160, 40);
+            btnTran2.BackColor = Color.Transparent;
+            btnTran2.FlatStyle = FlatStyle.Flat; // Requested
+            btnTran2.Font = new Font("Arial", 10, FontStyle.Bold);
+            btnTran2.ForeColor = Color.Blue;
+            btnTran2.FlatAppearance.BorderSize = 0;
+
+            btnTran3.Text = "Tran Btn 3"; btnTran3.Location = new Point(30, 270);
+            btnTran3.Size = new Size(120, 40);
+            btnTran3.BackColor = Color.Transparent;
+            btnTran3.FlatStyle = FlatStyle.Flat; // Requested
+            btnTran3.ForeColor = Color.DarkGreen;
+            btnTran3.FlatAppearance.BorderSize = 0;
+
+            picStar.Controls.Add(btnTran1);
+            picStar.Controls.Add(btnTran2);
+            picStar.Controls.Add(btnTran3);
+
+            grpTransparency.Controls.Add(picStar);
+
+            // --- Zone 3: Rainbow DataGrid ---
+            dataGridViewRainbow.Location = new Point(10, 30); dataGridViewRainbow.Size = new Size(430, 380);
+            dataGridViewRainbow.AllowUserToAddRows = false;
+            dataGridViewRainbow.ReadOnly = true;
+            dataGridViewRainbow.BorderStyle = BorderStyle.FixedSingle;
+
+            // --- FIXING COLORS ---
+            // 1. Disable Visual Styles to allow custom header colors
+            dataGridViewRainbow.EnableHeadersVisualStyles = false;
+            // 2. Set background to Empty so cells can show their colors
+            dataGridViewRainbow.BackgroundColor = Color.FromArgb(60, 60, 65);
+            dataGridViewRainbow.DefaultCellStyle.BackColor = Color.Empty;
+            dataGridViewRainbow.AlternatingRowsDefaultCellStyle.BackColor = Color.Empty;
+            // 3. Grid Lines - make them subtle or transparent so they don't obscure the rainbow
+            dataGridViewRainbow.GridColor = Color.WhiteSmoke;
+            // 4. Selection Style - Set to Transparent or High Transparency so the rainbow shows through selection
+            dataGridViewRainbow.DefaultCellStyle.SelectionBackColor = Color.FromArgb(100, 0, 0, 0);
+            dataGridViewRainbow.DefaultCellStyle.SelectionForeColor = Color.White;
+
+            // Data
+            DataTable dtRainbow = new DataTable();
+            dtRainbow.Columns.Add("R"); dtRainbow.Columns.Add("A"); dtRainbow.Columns.Add("I"); dtRainbow.Columns.Add("N");
+            for (int i = 0; i < 10; i++) dtRainbow.Rows.Add("Cel", "Cel", "Cel", "Cel");
+            dataGridViewRainbow.DataSource = dtRainbow;
+
+            // Apply Colors
+            Random rnd = new Random();
+            foreach (DataGridViewRow row in dataGridViewRainbow.Rows)
+            {
+                foreach (DataGridViewCell cell in row.Cells)
+                {
+                    // Generate distinct bright pastel colors
+                    cell.Style.BackColor = Color.FromArgb(255, rnd.Next(150, 256), rnd.Next(150, 256), rnd.Next(150, 256));
+                    cell.Style.ForeColor = Color.Black;
+                }
+            }
+
+            grpRainbowData.Controls.Add(dataGridViewRainbow);
+
+            // --- Zone 4: Buttons (FlatStyle.Flat) ---
+            btnColored1.Text = "RED ACTION"; btnColored1.Location = new Point(20, 30);
+            btnColored1.Size = new Size(150, 50); btnColored1.BackColor = Color.Tomato;
+            btnColored1.FlatStyle = FlatStyle.Flat; // Requested
+            btnColored1.ForeColor = Color.White;
+            btnColored1.FlatAppearance.BorderSize = 0;
+
+            btnColored2.Text = "Blue Action"; btnColored2.Location = new Point(20, 100);
+            btnColored2.Size = new Size(150, 50); btnColored2.BackColor = Color.CornflowerBlue;
+            btnColored2.FlatStyle = FlatStyle.Flat; // Requested
+            btnColored2.ForeColor = Color.White;
+            btnColored2.FlatAppearance.BorderSize = 0;
+
+            btnColored3.Text = "Green Submit"; btnColored3.Location = new Point(20, 170);
+            btnColored3.Size = new Size(150, 50); btnColored3.BackColor = Color.MediumSeaGreen;
+            btnColored3.FlatStyle = FlatStyle.Flat; // Requested
+            btnColored3.ForeColor = Color.White;
+            btnColored3.FlatAppearance.BorderSize = 0;
+
+            checkBox1.Text = "Enable Options"; checkBox1.Location = new Point(200, 40);
+            checkBox1.AutoSize = true; checkBox1.ForeColor = Color.White;
+            checkBox1.FlatStyle = FlatStyle.Flat; // Requested
+
+            radioButton1.Text = "Radio Choice"; radioButton1.Location = new Point(200, 80);
+            radioButton1.AutoSize = true; radioButton1.ForeColor = Color.White;
+            radioButton1.FlatStyle = FlatStyle.Flat; // Requested
+
+            linkLabel1.Text = "Visit Example.com"; linkLabel1.Location = new Point(200, 120);
+            linkLabel1.AutoSize = true; linkLabel1.LinkColor = Color.Cyan;
+
+            grpButtons.Controls.Add(btnColored1);
+            grpButtons.Controls.Add(btnColored2);
+            grpButtons.Controls.Add(btnColored3);
+            grpButtons.Controls.Add(checkBox1);
+            grpButtons.Controls.Add(radioButton1);
+            grpButtons.Controls.Add(linkLabel1);
+
+            // --- Zone 5: Lists ---
+            treeView1.Location = new Point(10, 30); treeView1.Size = new Size(200, 330);
+            treeView1.BackColor = Color.White;
+            treeView1.BorderStyle = BorderStyle.FixedSingle;
+            treeView1.Nodes.Add("Root"); treeView1.Nodes[0].Nodes.Add("Child");
+
+            listView1.Location = new Point(220, 30); listView1.Size = new Size(200, 330);
+            listView1.View = View.Details;
+            listView1.BorderStyle = BorderStyle.FixedSingle;
+            listView1.Columns.Add("Item"); listView1.Columns.Add("Info");
+            listView1.Items.Add("Item 1", "Info 1");
+
+            grpLists.Controls.Add(treeView1);
+            grpLists.Controls.Add(listView1);
+
+            // --- Zone 6: Standard Data ---
+            dataGridView1.Location = new Point(10, 30); dataGridView1.Size = new Size(410, 150);
+            dataGridView1.BorderStyle = BorderStyle.FixedSingle;
+            dataGridView1.EnableHeadersVisualStyles = false;
+            dataGridView1.ColumnHeadersDefaultCellStyle.BackColor = Color.Gray;
+            dataGridView1.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
+            DataTable dtStd = new DataTable();
+            dtStd.Columns.Add("ID"); dtStd.Columns.Add("Data");
+            dtStd.Rows.Add(1, "Alpha"); dtStd.Rows.Add(2, "Beta");
+            dataGridView1.DataSource = dtStd;
+
+            richTextBox1.Location = new Point(10, 200); richTextBox1.Size = new Size(250, 150);
+            richTextBox1.Text = "Rich Text Area..."; richTextBox1.BackColor = Color.White;
+            richTextBox1.BorderStyle = BorderStyle.FixedSingle;
+
+            progressBar1.Location = new Point(280, 200); progressBar1.Size = new Size(140, 23);
+            progressBar1.Value = 60;
+
+            grpStandardData.Controls.Add(dataGridView1);
+            grpStandardData.Controls.Add(richTextBox1);
+            grpStandardData.Controls.Add(progressBar1);
+
+            // --- Zone 7: Tab Control (Random Crap) ---
+
+            tabControlRandom.Location = new Point(10, 20);
+            tabControlRandom.Size = new Size(360, 780);
+            tabControlRandom.SelectedIndex = 0;
+            tabControlRandom.Appearance = TabAppearance.FlatButtons; // Flat appearance
+
+            // Tab 1: Scrolls
+            tabPageScrolls.Text = "Scrolls";
+            tabPageScrolls.BackColor = Color.FromArgb(70, 70, 75);
+
+            hScrollBar1.Location = new Point(20, 30); hScrollBar1.Size = new Size(300, 20);
+            hScrollBar1.Maximum = 100; hScrollBar1.Value = 50;
+
+            vScrollBar1.Location = new Point(20, 70); vScrollBar1.Size = new Size(20, 200);
+            vScrollBar1.Maximum = 100; vScrollBar1.Value = 20;
+
+            progressBarCrap.Location = new Point(60, 70); progressBarCrap.Size = new Size(260, 20);
+            progressBarCrap.Style = ProgressBarStyle.Marquee;
+            progressBarCrap.MarqueeAnimationSpeed = 50;
+
+            tabPageScrolls.Controls.Add(hScrollBar1);
+            tabPageScrolls.Controls.Add(vScrollBar1);
+            tabPageScrolls.Controls.Add(progressBarCrap);
+
+            // Tab 2: Lists
+            thisTabPageLists.Text = "More Lists";
+            thisTabPageLists.BackColor = Color.FromArgb(70, 70, 75);
+
+            listBox1.Location = new Point(20, 20); listBox1.Size = new Size(150, 200);
+            listBox1.BorderStyle = BorderStyle.FixedSingle;
+            listBox1.Items.Add("List Item 1"); listBox1.Items.Add("List Item 2");
+            listBox1.Items.Add("List Item 3"); listBox1.Items.Add("List Item 4");
+
+            checkedListBox1.Location = new Point(180, 20); checkedListBox1.Size = new Size(150, 200);
+            checkedListBox1.BorderStyle = BorderStyle.FixedSingle;
+            checkedListBox1.Items.Add("Check 1"); checkedListBox1.Items.Add("Check 2");
+            checkedListBox1.Items.Add("Check 3");
+
+            thisTabPageLists.Controls.Add(listBox1);
+            thisTabPageLists.Controls.Add(checkedListBox1);
+
+            // Tab 3: Weird Stuff
+            thisTabPageWeird.Text = "Weird Stuff";
+            thisTabPageWeird.BackColor = Color.FromArgb(70, 70, 75);
+
+            domainUpDown1.Location = new Point(20, 30); domainUpDown1.Size = new Size(120, 20);
+            domainUpDown1.Items.Add("Item 1"); domainUpDown1.SelectedIndex = 0;
+            domainUpDown1.BorderStyle = BorderStyle.FixedSingle;
+
+            maskedTextBox1.Location = new Point(20, 60); maskedTextBox1.Size = new Size(100, 20);
+            maskedTextBox1.Mask = "00/00/0000";
+            maskedTextBox1.BorderStyle = BorderStyle.FixedSingle;
+
+            pictureBoxCrap.Location = new Point(20, 100); pictureBoxCrap.Size = new Size(300, 100);
+            pictureBoxCrap.BackColor = Color.White;
+            pictureBoxCrap.BorderStyle = BorderStyle.FixedSingle;
+            Bitmap bmpCrap = new Bitmap(300, 100);
+            using (Graphics g = Graphics.FromImage(bmpCrap))
+            {
+                g.Clear(Color.White);
+                g.FillEllipse(Brushes.Purple, 10, 10, 80, 80);
+                g.FillRectangle(Brushes.Orange, 100, 20, 180, 60);
+            }
+            pictureBoxCrap.Image = bmpCrap;
+
+            thisTabPageWeird.Controls.Add(domainUpDown1);
+            thisTabPageWeird.Controls.Add(maskedTextBox1);
+            thisTabPageWeird.Controls.Add(pictureBoxCrap);
+
+            tabControlRandom.Controls.Add(tabPageScrolls);
+            tabControlRandom.Controls.Add(thisTabPageLists);
+            tabControlRandom.Controls.Add(thisTabPageWeird);
+
+            grpTabs.Controls.Add(tabControlRandom);
+
+
+            // --- Global Form Settings ---
+            this.Controls.Add(this.grpInputs);
             this.Controls.Add(this.grpTransparency);
-            this.Controls.Add(this.groupBox2);
-            this.Controls.Add(this.dataGridView1);
-            this.Controls.Add(this.tabControl1);
-            this.Controls.Add(this.groupBox1);
-            this.Controls.Add(this.panel1);
-            this.Controls.Add(this.statusStrip1);
-            this.Controls.Add(this.numericUpDown1);
-            this.Controls.Add(this.monthCalendar1);
-            this.Controls.Add(this.checkBox1);
-            this.Controls.Add(this.label1);
-            this.Controls.Add(this.menuStrip1);
-            this.MainMenuStrip = this.menuStrip1;
-            this.Name = "Form1";
-            this.Text = "Form1";
-            this.ContextMenuStrip = this.contextMenuStrip1;
+            this.Controls.Add(this.grpRainbowData);
+            this.Controls.Add(this.grpButtons);
+            this.Controls.Add(this.grpLists);
+            this.Controls.Add(this.grpStandardData);
+            this.Controls.Add(this.grpTabs);
 
-            this.toolTip1.SetToolTip(this.button1, "Click me!");
-            this.toolTip1.SetToolTip(this.label1, "I am a label");
+            this.Controls.Add(this.statusStrip1);
+            this.Controls.Add(this.menuStrip1);
+
+            statusStrip1.Items.Add("Ready");
+
+            // Menu Strip
+            menuStrip1.Items.Add("File");
+            menuStrip1.Items.Add("Edit");
+            menuStrip1.Items.Add("View");
+
+            // Final Image Generation
+            this.picStar.Image = CreateStarBitmap(400, 350);
 
             ((System.ComponentModel.ISupportInitialize)(this.numericUpDown1)).EndInit();
-            ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.trackBar1)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.dataGridViewRainbow)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.dataGridView1)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.pictureBoxCrap)).EndInit();
+            this.grpInputs.ResumeLayout(false);
+            this.grpInputs.PerformLayout();
+            this.grpTransparency.ResumeLayout(false);
+            this.grpRainbowData.ResumeLayout(false);
+            this.grpButtons.ResumeLayout(false);
+            this.grpButtons.PerformLayout();
+            this.grpLists.ResumeLayout(false);
+            this.grpStandardData.ResumeLayout(false);
+            this.grpTabs.ResumeLayout(false);
+            this.tabControlRandom.ResumeLayout(false);
+            this.tabPageScrolls.ResumeLayout(false);
+            thisTabPageLists.ResumeLayout(false);
+            thisTabPageWeird.ResumeLayout(false);
             this.menuStrip1.ResumeLayout(false);
             this.menuStrip1.PerformLayout();
-            this.panel1.ResumeLayout(false);
-            this.groupBox1.ResumeLayout(false);
-            this.tabControl1.ResumeLayout(false);
-            this.tabPage1.ResumeLayout(false);
-            this.tabPage1.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.dataGridView1)).EndInit();
-            this.contextMenuStrip1.ResumeLayout(false);
-            this.tabPage3.ResumeLayout(false);
-            this.tabPage4.ResumeLayout(false);
-            this.groupBox2.ResumeLayout(false);
-            this.splitContainer1.Panel1.ResumeLayout(false);
-            this.splitContainer1.Panel2.ResumeLayout(false);
-            this.splitContainer1.ResumeLayout(false);
-            this.grpTransparency.ResumeLayout(false);
             this.ResumeLayout(false);
             this.PerformLayout();
-
-            // After layout is done, generate and assign the star image
-            this.picStar.Image = CreateStarBitmap(300, 300);
         }
 
         #endregion
 
-        private System.Windows.Forms.Button button1;
-        private System.Windows.Forms.Label label1;
-        private System.Windows.Forms.CheckBox checkBox1;
-        private System.Windows.Forms.CheckedListBox checkedListBox1;
-        private System.Windows.Forms.ComboBox comboBox1;
-        private System.Windows.Forms.DateTimePicker dateTimePicker1;
-        private System.Windows.Forms.MonthCalendar monthCalendar1;
-        private System.Windows.Forms.NumericUpDown numericUpDown1;
-        private System.Windows.Forms.RadioButton radioButton1;
-        private System.Windows.Forms.TreeView treeView1;
-        private System.Windows.Forms.WebBrowser webBrowser1;
-        private System.Windows.Forms.MenuStrip menuStrip1;
-        private System.Windows.Forms.ToolStripMenuItem helloToolStripMenuItem;
-        private System.Windows.Forms.ToolStripMenuItem worldToolStripMenuItem;
-        private System.Windows.Forms.StatusStrip statusStrip1;
-        private System.Windows.Forms.Panel panel1;
-        private System.Windows.Forms.GroupBox groupBox1;
-        private System.Windows.Forms.TabControl tabControl1;
-        private System.Windows.Forms.TabPage tabPage1;
-        private System.Windows.Forms.TabPage tabPage2;
-        private System.Windows.Forms.DataGridView dataGridView1;
-        private System.Windows.Forms.ListBox listBox1;
-        private System.Windows.Forms.RichTextBox richTextBox1;
-        private System.Windows.Forms.PictureBox pictureBox1;
-        private System.Windows.Forms.ProgressBar progressBar1;
-        private System.Windows.Forms.TrackBar trackBar1;
-        private System.Windows.Forms.ListView listView1;
-        private System.Windows.Forms.ImageList imageList1;
-        private System.Windows.Forms.LinkLabel linkLabel1;
-        private System.Windows.Forms.MaskedTextBox maskedTextBox1;
-        private System.Windows.Forms.DomainUpDown domainUpDown1;
-        private System.Windows.Forms.ToolTip toolTip1;
-        private System.Windows.Forms.ContextMenuStrip contextMenuStrip1;
-        private System.Windows.Forms.ToolStripMenuItem toolStripMenuItem1;
-        private System.Windows.Forms.ToolStripMenuItem toolStripMenuItem2;
-        private System.Windows.Forms.NotifyIcon notifyIcon1;
-        private System.Windows.Forms.PropertyGrid propertyGrid1;
-        private System.Windows.Forms.FlowLayoutPanel flowLayoutPanel1;
-        private System.Windows.Forms.TabPage tabPage3;
-        private System.Windows.Forms.TabPage tabPage4;
-        private System.Windows.Forms.GroupBox groupBox2;
-        private System.Windows.Forms.SplitContainer splitContainer1;
+        // --- Control Declarations ---
 
-        // New Fields
-        private System.Windows.Forms.GroupBox grpTransparency;
-        private System.Windows.Forms.PictureBox picStar;
-        private System.Windows.Forms.Label lblTransparent;
-        private Button btnTransparent; // Custom type
+        // Zones
+        private GroupBox grpInputs;
+        private GroupBox grpTransparency;
+        private GroupBox grpRainbowData;
+        private GroupBox grpButtons;
+        private GroupBox grpLists;
+        private GroupBox grpStandardData;
+        private GroupBox grpTabs;
 
-        // Helper method to create a star shape bitmap
+        // Zone 1
+        private TextBox txtStandard;
+        private TextBox txtPassword;
+        private TextBox txtMulti;
+        private NumericUpDown numericUpDown1;
+        private TrackBar trackBar1;
+        private ComboBox comboBox1;
+
+        // Zone 2
+        private PictureBox picStar;
+        private System.Windows.Forms.Button btnTran1;
+        private System.Windows.Forms.Button btnTran2;
+        private System.Windows.Forms.Button btnTran3;
+
+        // Zone 3
+        private DataGridView dataGridViewRainbow;
+
+        // Zone 4
+        private Button btnColored1;
+        private Button btnColored2;
+        private Button btnColored3;
+        private CheckBox checkBox1;
+        private RadioButton radioButton1;
+        private LinkLabel linkLabel1;
+
+        // Zone 5
+        private TreeView treeView1;
+        private ListView listView1;
+
+        // Zone 6
+        private DataGridView dataGridView1;
+        private RichTextBox richTextBox1;
+        private ProgressBar progressBar1;
+
+        // Zone 7
+        private TabControl tabControlRandom;
+        private TabPage tabPageScrolls;
+        private TabPage thisTabPageLists;
+        private TabPage thisTabPageWeird;
+
+        private HScrollBar hScrollBar1;
+        private VScrollBar vScrollBar1;
+        private ProgressBar progressBarCrap;
+
+        private ListBox listBox1;
+        private CheckedListBox checkedListBox1;
+
+        private DomainUpDown domainUpDown1;
+        private MaskedTextBox maskedTextBox1;
+        private PictureBox pictureBoxCrap;
+
+        // Global
+        private MenuStrip menuStrip1;
+        private StatusStrip statusStrip1;
+        private ToolTip toolTip1;
+        private ContextMenuStrip contextMenuStrip1;
+
+        // --- Helper Methods ---
+
         private Bitmap CreateStarBitmap(int width, int height)
         {
             Bitmap bmp = new Bitmap(width, height);
             using (Graphics g = Graphics.FromImage(bmp))
             {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
-                g.Clear(Color.Transparent); // Transparent background
+                g.Clear(Color.Transparent);
 
-                // Calculate star points
                 PointF center = new PointF(width / 2, height / 2);
                 float outerRadius = width / 2.5f;
-                float innerRadius = width / 5.5f;
+                float innerRadius = width / 6.0f;
                 int points = 5;
 
                 PointF[] starPoints = new PointF[points * 2];
-                float angle = (float)(-Math.PI / 2); // Start at top
+                float angle = (float)(-Math.PI / 2);
                 float step = (float)(Math.PI / points);
 
                 for (int i = 0; i < points * 2; i++)
@@ -682,39 +602,18 @@ namespace SimpleTest
                     angle += step;
                 }
 
-                // Draw the star
-                using (SolidBrush brush = new SolidBrush(Color.Gold))
+                using (LinearGradientBrush brush = new LinearGradientBrush(
+                    new RectangleF(0, 0, width, height), Color.Gold, Color.OrangeRed, LinearGradientMode.ForwardDiagonal))
                 {
                     g.FillPolygon(brush, starPoints);
                 }
 
-                using (Pen pen = new Pen(Color.OrangeRed, 3))
+                using (Pen pen = new Pen(Color.White, 4))
                 {
                     g.DrawPolygon(pen, starPoints);
                 }
             }
             return bmp;
-        }
-    }
-
-    // Custom Button class that supports transparency
-    public class TransparentButton : Button
-    {
-        public TransparentButton()
-        {
-            // Enable support for transparent backcolor
-            this.SetStyle(ControlStyles.SupportsTransparentBackColor, true);
-            this.SetStyle(ControlStyles.Opaque, false); // Don't paint background
-            this.BackColor = Color.Transparent;
-        }
-
-        protected override void OnPaint(PaintEventArgs pevent)
-        {
-            // Optional: Custom paint logic here if you want total control
-            // For now, we rely on standard button painting which respects the flat style
-            // and our transparent backcolor setting (mostly).
-            // Note: Windows strictly draws the text, and potentially a border if set.
-            base.OnPaint(pevent);
         }
     }
 }
