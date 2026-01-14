@@ -326,5 +326,16 @@ namespace System.Windows.Forms
             g.FillRoundedRect(brush, new Rectangle(x, y, width, height));
         }
 
+        public static DashStyle ConvertToDashStyle(ButtonBorderStyle style)
+        {
+            switch (style)
+            {
+                case ButtonBorderStyle.Dashed: return DashStyle.Dash;
+                case ButtonBorderStyle.Dotted: return DashStyle.Dot;
+                case ButtonBorderStyle.Solid:
+                default: return DashStyle.Solid;
+            }
+        }
+
     }
 }

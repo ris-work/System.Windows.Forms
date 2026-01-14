@@ -1473,7 +1473,7 @@ namespace System.Windows.Forms
 					current_state = ButtonState.Inactive;
 
 				if (is_flat || theme.ComboBoxNormalDropDownButtonHasTransparentBackground (this, current_state))
-					dc.FillRectangle (theme.ResPool.GetSolidBrush (theme.ColorControl), button_area);
+					dc.FillRoundedRect (theme.ResPool.GetSolidBrush (theme.ColorControl), button_area);
 
 				if (is_flat) {
 					theme.DrawFlatStyleComboButton (dc, button_area, current_state);
@@ -2555,7 +2555,7 @@ namespace System.Windows.Forms
 
 			private void Draw (Rectangle clip, Graphics dc)
 			{
-				dc.FillRectangle (ThemeEngine.Current.ResPool.GetSolidBrush (owner.BackColor), clip);
+				dc.FillRoundedRect (ThemeEngine.Current.ResPool.GetSolidBrush (owner.BackColor), clip);
 
 				if (owner.Items.Count > 0) {
 					

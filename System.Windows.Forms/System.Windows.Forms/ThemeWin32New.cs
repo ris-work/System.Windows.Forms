@@ -1753,11 +1753,13 @@ namespace System.Windows.Forms
 					fore_color, back_color);
 			}
 		}
-		
-		#endregion // CheckedListBox
-		
-		#region ComboBox		
-		public override void DrawComboBoxItem (ComboBox ctrl, DrawItemEventArgs e)
+
+        #endregion // CheckedListBox
+
+        #region ComboBox		
+        
+
+        public override void DrawComboBoxItem (ComboBox ctrl, DrawItemEventArgs e)
 		{
 			Color back_color, fore_color;
 			Rectangle text_draw = e.Bounds;
@@ -1775,8 +1777,8 @@ namespace System.Windows.Forms
 			
 			if (!ctrl.Enabled)
 				fore_color = ColorInactiveCaptionText;
-							
-			e.Graphics.FillRoundedRect (ResPool.GetSolidBrush (back_color), e.Bounds, innerBrush: RVUtils.DefaultInnerBrush);
+
+			e.Graphics.FillRoundedRect(ResPool.GetSolidBrush(back_color), e.Bounds);//, innerBrush: RVUtils.DefaultInnerBrush);
 
 			if (e.Index != -1) {
 				e.Graphics.DrawString (ctrl.GetItemText (ctrl.Items[e.Index]), e.Font,
@@ -2840,7 +2842,7 @@ namespace System.Windows.Forms
 				fore_color = e.ForeColor;
 			}
 
-			e.Graphics.FillRectangle (ResPool.GetSolidBrush (back_color), e.Bounds);
+			e.Graphics.FillRoundedRect (ResPool.GetSolidBrush (back_color), e.Bounds);
 
 			e.Graphics.DrawString (ctrl.GetItemText (ctrl.Items[e.Index]), e.Font,
 					       ResPool.GetSolidBrush (fore_color),
@@ -2894,7 +2896,7 @@ namespace System.Windows.Forms
 					insertion_mark_index > -1 && insertion_mark_index < control.Items.Count) {
 
 				Brush brush = ResPool.GetSolidBrush (insertion_mark.Color);
-				dc.FillRectangle (brush, insertion_mark.Line);
+				dc.FillRoundedRect (brush, insertion_mark.Line);
 				dc.FillPolygon (brush, insertion_mark.TopTriangle);
 				dc.FillPolygon (brush, insertion_mark.BottomTriangle);
 			}
@@ -7044,7 +7046,7 @@ namespace System.Windows.Forms
 			Rectangle		rect;
 
 			if ((state & ButtonState.Checked)!=0) {
-				graphics.FillRectangle(ResPool.GetHatchBrush (HatchStyle.Percent50, ColorControlLightLight, ColorControlLight),rectangle);				
+				graphics.FillRoundedRect(ResPool.GetHatchBrush (HatchStyle.Percent50, ColorControlLightLight, ColorControlLight),rectangle);				
 			}
 
 			if ((state & ButtonState.Flat)!=0) {
@@ -7695,7 +7697,7 @@ namespace System.Windows.Forms
 
 		public override void CPDrawVisualStyleBorder (Graphics graphics, Rectangle bounds)
 		{
-			graphics.DrawRectangle (SystemPens.ControlDarkDark, bounds);
+			graphics.DrawRoundedRectangle (SystemPens.ControlDarkDark, bounds);
 		}
 
 		private static void DrawBorderInternal (Graphics graphics, int startX, int startY, int endX, int endY,
@@ -7708,7 +7710,65 @@ namespace System.Windows.Forms
 		private static void DrawBorderInternal (Graphics graphics, float startX, float startY, float endX, float endY,
 			int width, Color color, ButtonBorderStyle style, Border3DSide side) {
 
-			Pen pen = null;
+            // 1. Handle None
+            if (style == ButtonBorderStyle.None) return;
+
+            // 2. Define the Rectangle
+            Rectangle rect = Rectangle.FromLTRB((int)startX, (int)startY, (int)endX, (int)endY);
+
+            // 3. Map ButtonBorderStyle to GDI+ DashStyle
+            DashStyle dashStyle = DashStyle.Solid;
+            switch (style)
+            {
+                case ButtonBorderStyle.Dotted: dashStyle = DashStyle.Dot; break;
+                case ButtonBorderStyle.Dashed: dashStyle = DashStyle.Dash; break;
+                case ButtonBorderStyle.Solid: dashStyle = DashStyle.Solid; break;
+                case ButtonBorderStyle.Inset: dashStyle = DashStyle.Solid; break;
+                case ButtonBorderStyle.Outset: dashStyle = DashStyle.Solid; break;
+            }
+
+            // 4. Setup Pen and Path inside the same block to fix scope errors
+            int radius = 5;
+
+            using (Pen pen = new Pen(color, width))
+            {
+                pen.Alignment = PenAlignment.Inset;
+                pen.DashStyle = dashStyle;
+
+                using (GraphicsPath roundedPath = RVUtils.CreateRoundedRectanglePath(rect, radius))
+                using (Region clipRegion = new Region())
+                {
+                    // 5. Build the Clip Region (Fixing 'sides' to 'side')
+                    int cornerCatch = radius + width + 1;
+
+                    if ((side & Border3DSide.Top) == Border3DSide.Top)
+                    {
+                        clipRegion.Union(new Rectangle(rect.X - radius, rect.Y - radius, rect.Width + (radius * 2), cornerCatch));
+                    }
+
+                    if ((side & Border3DSide.Bottom) == Border3DSide.Bottom)
+                    {
+                        clipRegion.Union(new Rectangle(rect.X - radius, rect.Bottom - radius, rect.Width + (radius * 2), cornerCatch));
+                    }
+
+                    if ((side & Border3DSide.Left) == Border3DSide.Left)
+                    {
+                        clipRegion.Union(new Rectangle(rect.X - radius, rect.Y - radius, cornerCatch, rect.Height + (radius * 2)));
+                    }
+
+                    if ((side & Border3DSide.Right) == Border3DSide.Right)
+                    {
+                        clipRegion.Union(new Rectangle(rect.Right - radius, rect.Y - radius, cornerCatch, rect.Height + (radius * 2)));
+                    }
+
+                    // 6. Draw
+                    graphics.SetClip(clipRegion, CombineMode.Replace);
+                    graphics.DrawPath(pen, roundedPath);
+                    graphics.ResetClip();
+                }
+            }
+
+            /*Pen pen = null;
 
 			switch (style) {
 			case ButtonBorderStyle.Solid:
@@ -7824,14 +7884,14 @@ namespace System.Windows.Forms
 					}
 				}
 				break;
-			}
+			}*/
 
-				/*
-					I decided to have the for-loop duplicated for speed reasons;
-					that way we only have to switch once (as opposed to have the
-					for-loop around the switch)
-				*/
-			default: {
+            /*
+                I decided to have the for-loop duplicated for speed reasons;
+                that way we only have to switch once (as opposed to have the
+                for-loop around the switch)
+            */
+            /*default: {
 				switch(side) {
 				case Border3DSide.Left:	{
 					for (int i=0; i<width; i++) {
@@ -7863,8 +7923,8 @@ namespace System.Windows.Forms
 				}
 				break;
 			}
-			}
-		}
+			}*/
+        }
 
 		/*
 			This function actually draws the various caption elements.
