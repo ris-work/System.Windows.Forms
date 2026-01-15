@@ -5321,14 +5321,8 @@ namespace System.Windows.Forms
         {
             Logger.AddLog($"TextBoxBaseFillBackground called for {textBoxBase.Name ?? "unnamed"}: {clippingArea}");
 
-            // Create a rounded rectangle path for the entire control
-            // Note: We need to account for the 2-pixel offset in the clipping area
-            Rectangle roundedRect = new Rectangle(
-                clippingArea.X - 2,
-                clippingArea.Y - 2,
-                clippingArea.Width + 4,
-                clippingArea.Height + 4);
-
+            // Create a rounded rectangle path for the entire TextBox
+            Rectangle textBoxRect = textBoxBase.ClientRectangle;
             float radius = RVUtils.cornerRadius;
 
             // Fill the background with rounded corners
@@ -5338,7 +5332,7 @@ namespace System.Windows.Forms
 
             using (var brush = new SolidBrush(backColor))
             {
-                RVUtils.FillRoundedRectangle(g, brush, roundedRect, (int)radius);
+                RVUtils.FillRoundedRectangle(g, brush, textBoxRect, (int)radius);
             }
 
             // Draw the border if needed
@@ -5346,12 +5340,11 @@ namespace System.Windows.Forms
             {
                 using (var pen = new Pen(SystemColors.WindowFrame))
                 {
-                    RVUtils.DrawRoundedRectangle(g, pen, roundedRect, radius);
+                    RVUtils.DrawRoundedRectangle(g, pen, textBoxRect, radius);
                 }
             }
 
-            // CRITICAL FIX: Only set the region if it's different from what we expect
-            // This prevents the infinite loop
+            // Set the region to the entire TextBox with rounded corners
             bool regionNeedsUpdate = false;
 
             if (textBoxBase.Region == null)
@@ -5363,14 +5356,13 @@ namespace System.Windows.Forms
                 // Get the current region bounds
                 RectangleF currentRegionBounds = textBoxBase.Region.GetBounds(g);
 
-                // Check if the current region bounds match our expected rounded rectangle
-                // Add a small tolerance to account for floating point precision
+                // Check if the current region bounds match our expected TextBox rectangle
                 const float tolerance = 0.1f;
 
-                if (Math.Abs(currentRegionBounds.X - roundedRect.X) > tolerance ||
-                    Math.Abs(currentRegionBounds.Y - roundedRect.Y) > tolerance ||
-                    Math.Abs(currentRegionBounds.Width - roundedRect.Width) > tolerance ||
-                    Math.Abs(currentRegionBounds.Height - roundedRect.Height) > tolerance)
+                if (Math.Abs(currentRegionBounds.X - textBoxRect.X) > tolerance ||
+                    Math.Abs(currentRegionBounds.Y - textBoxRect.Y) > tolerance ||
+                    Math.Abs(currentRegionBounds.Width - textBoxRect.Width) > tolerance ||
+                    Math.Abs(currentRegionBounds.Height - textBoxRect.Height) > tolerance)
                 {
                     regionNeedsUpdate = true;
                 }
@@ -5378,7 +5370,7 @@ namespace System.Windows.Forms
 
             if (regionNeedsUpdate)
             {
-                using (var path = RVUtils.CreateRoundedRectanglePath(roundedRect, radius))
+                using (var path = RVUtils.CreateRoundedRectanglePath(textBoxRect, radius))
                 {
                     // Suspend layout temporarily to prevent recursive paint calls
                     textBoxBase.SuspendLayout();
