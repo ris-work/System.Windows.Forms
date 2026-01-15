@@ -1857,7 +1857,7 @@ namespace System.Windows.Forms
 			return false;
 		}
 		public override void ComboBoxDrawBackground (ComboBox comboBox, Graphics g, Rectangle clippingArea, FlatStyle style)
-		{
+		{/*
             if (!comboBox.Enabled)
                 g.FillRoundedRect(ResPool.GetSolidBrush(ColorControl), comboBox.ClientRectangle, innerBrush: RVUtils.DefaultInnerBrush);
 
@@ -1874,8 +1874,33 @@ namespace System.Windows.Forms
 			}
 			bool is_flat = style == FlatStyle.Flat || style == FlatStyle.Popup;
 			if (!is_flat && clippingArea.IntersectsWith (comboBox.TextArea))
-				ControlPaint.DrawBorder3D (g, comboBox.TextArea, Border3DStyle.Sunken);
-		}
+				ControlPaint.DrawBorder3D (g, comboBox.TextArea, Border3DStyle.Sunken);*/
+            // 1. Setup Colors
+            bool is_enabled = comboBox.Enabled;
+            Color fillColor = is_enabled ? SystemColors.Window : SystemColors.Control;
+            Color borderColor = is_enabled ? comboBox.BackColor : SystemColors.Control;
+
+            // 1. Fill Entire Background
+            // This fixes the "Glitchy" Simple listbox look by ensuring the base is filled
+            g.FillRoundedRect(ResPool.GetSolidBrush(fillColor), comboBox.ClientRectangle);
+
+            // 2. Draw Button Background (Right side)
+            if (comboBox.ButtonArea != Rectangle.Empty && comboBox.ButtonArea.IntersectsWith(clippingArea))
+            {
+                g.FillRoundedRect(ResPool.GetSolidBrush(SystemColors.Control), comboBox.ButtonArea);
+            }
+
+            // 3. Draw Text Area (Inset Box)
+            // Only if not Simple (Simple border is handled by global CPDrawBorder3D on the listbox)
+            if (comboBox.DropDownStyle != ComboBoxStyle.Simple && clippingArea.IntersectsWith(comboBox.TextArea))
+            {
+                // Use CPDrawBorder3D for the "Sunken" text area
+                CPDrawBorder3D(g, comboBox.TextArea, Border3DStyle.Sunken, Border3DSide.Left | Border3DSide.Right | Border3DSide.Top | Border3DSide.Bottom, borderColor);
+
+                // Refill text area to ensure correct color
+                g.FillRoundedRect(ResPool.GetSolidBrush(fillColor), Rectangle.Inflate(comboBox.TextArea, -1, -1));
+            }
+        }
 		public override bool CombBoxBackgroundHasHotElementStyle (ComboBox comboBox)
 		{
 			return false;
@@ -5289,21 +5314,89 @@ namespace System.Windows.Forms
 			return ThemeElements.CurrentTheme.TabControlPainter.GetTabPanelRect (tab);
 		}
 
-		#endregion
+        #endregion
 
-		#region TextBox
-		public override void TextBoxBaseFillBackground (TextBoxBase textBoxBase, Graphics g, Rectangle clippingArea)
-		{
-			if (textBoxBase.backcolor_set || (textBoxBase.Enabled && !textBoxBase.read_only)) {
-				g.FillRectangle(ResPool.GetSolidBrush(textBoxBase.BackColor), clippingArea);
-			} else {
-				g.FillRectangle(ResPool.GetSolidBrush(ColorControl), clippingArea);
-			}
-		}
+        #region TextBox
+        public override void TextBoxBaseFillBackground(TextBoxBase textBoxBase, Graphics g, Rectangle clippingArea)
+        {
+            Logger.AddLog($"TextBoxBaseFillBackground called for {textBoxBase.Name ?? "unnamed"}: {clippingArea}");
 
-		public override bool TextBoxBaseHandleWmNcPaint (TextBoxBase textBoxBase, ref Message m)
+            // Create a rounded rectangle path for the entire control
+            // Note: We need to account for the 2-pixel offset in the clipping area
+            Rectangle roundedRect = new Rectangle(
+                clippingArea.X - 2,
+                clippingArea.Y - 2,
+                clippingArea.Width + 4,
+                clippingArea.Height + 4);
+
+            float radius = RVUtils.cornerRadius;
+
+            // Fill the background with rounded corners
+            Color backColor = textBoxBase.backcolor_set || (textBoxBase.Enabled && !textBoxBase.read_only)
+                ? textBoxBase.BackColor
+                : ColorControl;
+
+            using (var brush = new SolidBrush(backColor))
+            {
+                RVUtils.FillRoundedRectangle(g, brush, roundedRect, (int)radius);
+            }
+
+            // Draw the border if needed
+            if (textBoxBase.BorderStyle != BorderStyle.None)
+            {
+                using (var pen = new Pen(SystemColors.WindowFrame))
+                {
+                    RVUtils.DrawRoundedRectangle(g, pen, roundedRect, radius);
+                }
+            }
+
+            // CRITICAL FIX: Only set the region if it's different from what we expect
+            // This prevents the infinite loop
+            bool regionNeedsUpdate = false;
+
+            if (textBoxBase.Region == null)
+            {
+                regionNeedsUpdate = true;
+            }
+            else
+            {
+                // Get the current region bounds
+                RectangleF currentRegionBounds = textBoxBase.Region.GetBounds(g);
+
+                // Check if the current region bounds match our expected rounded rectangle
+                // Add a small tolerance to account for floating point precision
+                const float tolerance = 0.1f;
+
+                if (Math.Abs(currentRegionBounds.X - roundedRect.X) > tolerance ||
+                    Math.Abs(currentRegionBounds.Y - roundedRect.Y) > tolerance ||
+                    Math.Abs(currentRegionBounds.Width - roundedRect.Width) > tolerance ||
+                    Math.Abs(currentRegionBounds.Height - roundedRect.Height) > tolerance)
+                {
+                    regionNeedsUpdate = true;
+                }
+            }
+
+            if (regionNeedsUpdate)
+            {
+                using (var path = RVUtils.CreateRoundedRectanglePath(roundedRect, radius))
+                {
+                    // Suspend layout temporarily to prevent recursive paint calls
+                    textBoxBase.SuspendLayout();
+                    try
+                    {
+                        textBoxBase.Region = new Region(path);
+                    }
+                    finally
+                    {
+                        textBoxBase.ResumeLayout(false);
+                    }
+                }
+            }
+        }
+
+        public override bool TextBoxBaseHandleWmNcPaint (TextBoxBase textBoxBase, ref Message m)
 		{
-			return false;
+			return true;
 		}
 
 		public override bool TextBoxBaseShouldPaintBackground (TextBoxBase textBoxBase)
@@ -6684,7 +6777,7 @@ namespace System.Windows.Forms
 
         public override void CPDrawBorder3D(Graphics graphics, Rectangle rectangle, Border3DStyle style, Border3DSide sides, Color control_color)
         {
-            Pen penTopLeft;
+            /*Pen penTopLeft;
             Pen penTopLeftInner;
             Pen penBottomRight;
             Pen penBottomRightInner;
@@ -6791,6 +6884,103 @@ namespace System.Windows.Forms
                             graphics.SetClip(clipRegion, CombineMode.Intersect);
                             graphics.DrawPath(penBottomRight, outerPath);
                             if (inner)
+                                graphics.DrawPath(penBottomRightInner, innerPath);
+                            graphics.ResetClip();
+                        }
+                    }
+                }
+            }*/
+            bool is_ColorControl = control_color.ToArgb() == ColorControl.ToArgb();
+
+            // 1. Setup Colors
+            Pen penTopLeft = SystemPens.ControlDark;
+            Pen penTopLeftInner = SystemPens.ControlDarkDark;
+            Pen penBottomRight = SystemPens.ControlLightLight;
+            Pen penBottomRightInner = SystemPens.ControlLight;
+
+            // Handle Disabled State (Grayed out)
+            if (style == Border3DStyle.Flat)
+            {
+                penTopLeft = penBottomRight = is_ColorControl ? SystemPens.ControlDark : ResPool.GetPen(control_color);
+            }
+            else
+            {
+                // Adjust colors for 3D styles
+                switch (style)
+                {
+                    case Border3DStyle.Raised:
+                        penTopLeftInner = is_ColorControl ? SystemPens.ControlLightLight : ResPool.GetPen(ResPool.GetCPColor(control_color).LightLight);
+                        penBottomRight = is_ColorControl ? SystemPens.ControlDarkDark : ResPool.GetPen(ResPool.GetCPColor(control_color).DarkDark);
+                        penBottomRightInner = is_ColorControl ? SystemPens.ControlDark : ResPool.GetPen(ResPool.GetCPColor(control_color).Dark);
+                        break;
+                    case Border3DStyle.Sunken:
+                        penTopLeft = is_ColorControl ? SystemPens.ControlDark : ResPool.GetPen(ResPool.GetCPColor(control_color).Dark);
+                        penTopLeftInner = is_ColorControl ? SystemPens.ControlDarkDark : ResPool.GetPen(ResPool.GetCPColor(control_color).DarkDark);
+                        penBottomRight = is_ColorControl ? SystemPens.ControlLightLight : ResPool.GetPen(ResPool.GetCPColor(control_color).LightLight);
+                        break;
+                    case Border3DStyle.Etched:
+                        penTopLeft = penBottomRightInner = is_ColorControl ? SystemPens.ControlDark : ResPool.GetPen(ResPool.GetCPColor(control_color).Dark);
+                        penTopLeftInner = penBottomRight = is_ColorControl ? SystemPens.ControlLightLight : ResPool.GetPen(ResPool.GetCPColor(control_color).LightLight);
+                        break;
+                    case Border3DStyle.RaisedOuter:
+                        penBottomRight = is_ColorControl ? SystemPens.ControlDarkDark : ResPool.GetPen(ResPool.GetCPColor(control_color).DarkDark);
+                        break;
+                    case Border3DStyle.SunkenOuter:
+                        penTopLeft = is_ColorControl ? SystemPens.ControlDark : ResPool.GetPen(ResPool.GetCPColor(control_color).Dark);
+                        penBottomRight = is_ColorControl ? SystemPens.ControlLightLight : ResPool.GetPen(ResPool.GetCPColor(control_color).LightLight);
+                        break;
+                    case Border3DStyle.RaisedInner:
+                        penTopLeft = is_ColorControl ? SystemPens.ControlLightLight : ResPool.GetPen(ResPool.GetCPColor(control_color).LightLight);
+                        penBottomRight = is_ColorControl ? SystemPens.ControlDark : ResPool.GetPen(ResPool.GetCPColor(control_color).Dark);
+                        break;
+                    case Border3DStyle.SunkenInner:
+                        penTopLeft = is_ColorControl ? SystemPens.ControlDarkDark : ResPool.GetPen(ResPool.GetCPColor(control_color).DarkDark);
+                        break;
+                }
+            }
+
+            // 2. Create Rounded Paths
+            float radius = RVUtils.cornerRadius;
+            using (GraphicsPath outerPath = RVUtils.CreateRoundedRectanglePath(new Rectangle(rectangle.X, rectangle.Y, rectangle.Width - 1, rectangle.Height - 1), radius))
+            using (GraphicsPath innerPath = RVUtils.CreateRoundedRectanglePath(new Rectangle(rectangle.X + 1, rectangle.Y + 1, rectangle.Width - 3, rectangle.Height - 3), radius))
+            {
+                // 3. Draw Middle (GroupBox Fill)
+                if ((sides & Border3DSide.Middle) != 0)
+                {
+                    Brush brush = is_ColorControl ? SystemBrushes.Control : ResPool.GetSolidBrush(control_color);
+                    graphics.FillPath(brush, outerPath);
+                }
+
+                // 4. Draw Top-Left Side
+                if ((sides & (Border3DSide.Top | Border3DSide.Left)) != 0)
+                {
+                    using (var clipPath = new GraphicsPath())
+                    {
+                        // Clip to Top-Left triangle
+                        clipPath.AddPolygon(new Point[] { rectangle.Location, new Point(rectangle.Right, rectangle.Top), new Point(rectangle.Left, rectangle.Bottom) });
+                        using (var clipRegion = new Region(clipPath))
+                        {
+                            graphics.SetClip(clipRegion, CombineMode.Intersect);
+                            graphics.DrawPath(penTopLeft, outerPath);
+                            if ((style & Border3DStyle.RaisedOuter) != Border3DStyle.RaisedOuter && (style & Border3DStyle.SunkenOuter) != Border3DStyle.SunkenOuter)
+                                graphics.DrawPath(penTopLeftInner, innerPath);
+                            graphics.ResetClip();
+                        }
+                    }
+                }
+
+                // 5. Draw Bottom-Right Side
+                if ((sides & (Border3DSide.Bottom | Border3DSide.Right)) != 0)
+                {
+                    using (var clipPath = new GraphicsPath())
+                    {
+                        // Clip to Bottom-Right triangle
+                        clipPath.AddPolygon(new Point[] { new Point(rectangle.Right, rectangle.Top), new Point(rectangle.Right, rectangle.Bottom), new Point(rectangle.Left, rectangle.Bottom) });
+                        using (var clipRegion = new Region(clipPath))
+                        {
+                            graphics.SetClip(clipRegion, CombineMode.Intersect);
+                            graphics.DrawPath(penBottomRight, outerPath);
+                            if ((style & Border3DStyle.RaisedOuter) != Border3DStyle.RaisedOuter && (style & Border3DStyle.SunkenOuter) != Border3DStyle.SunkenOuter)
                                 graphics.DrawPath(penBottomRightInner, innerPath);
                             graphics.ResetClip();
                         }
@@ -7035,7 +7225,7 @@ namespace System.Windows.Forms
 		}
 
 		public override void CPDrawComboButton (Graphics graphics, Rectangle rectangle, ButtonState state) {
-			Point[]			arrow = new Point[3];
+            /*Point[]			arrow = new Point[3];
 			Point				P1;
 			Point				P2;
 			Point				P3;
@@ -7082,10 +7272,10 @@ namespace System.Windows.Forms
 			arrow[0]=P1;
 			arrow[1]=P2;
 			arrow[2]=P3;
-			
-			/* Draw the arrow */
-			if ((state & ButtonState.Inactive)!=0) {
-				/* Move away from the shadow */
+			*/
+            /* Draw the arrow */
+            /*if ((state & ButtonState.Inactive)!=0) {
+				/* Move away from the shadow *//*
 				arrow[0].X += 1;	arrow[0].Y += 1;
 				arrow[1].X += 1;	arrow[1].Y += 1;
 				arrow[2].X += 1;	arrow[2].Y += 1;
@@ -7099,8 +7289,77 @@ namespace System.Windows.Forms
 				graphics.FillPolygon(SystemBrushes.ControlDark, arrow, FillMode.Winding);
 			} else {
 				graphics.FillPolygon(SystemBrushes.ControlText, arrow, FillMode.Winding);
-			}
-		}
+			}*/
+            float radius = RVUtils.cornerRadius;
+            Rectangle rect = new Rectangle(rectangle.X, rectangle.Y, rectangle.Width - 1, rectangle.Height - 1);
+
+            // 1. Fill Background (White usually for button face, or Control color if disabled)
+            Brush backBrush = SystemBrushes.Control;
+            if ((state & ButtonState.Pushed) != 0)
+                backBrush = SystemBrushes.ControlDark; // Darker when pressed
+            else if ((state & ButtonState.Inactive) != 0)
+                backBrush = SystemBrushes.ControlLight; // Lighter when disabled (example)
+
+            using (var path = RVUtils.CreateRoundedRectanglePath(rect, radius))
+            {
+                graphics.FillPath(backBrush, path);
+            }
+
+            // 2. Draw Border
+            Pen borderPen = SystemPens.ControlDark;
+            if ((state & ButtonState.Pushed) != 0)
+                borderPen = SystemPens.ControlDarkDark;
+
+            using (var path = RVUtils.CreateRoundedRectanglePath(rect, radius))
+            {
+                graphics.DrawPath(borderPen, path);
+            }
+
+            // 3. Draw the Arrow (Standard Logic)
+            Point[] arrow = new Point[3];
+            Point P1, P2, P3;
+            int centerX, centerY, shiftX, shiftY;
+
+            Rectangle arrowRect = new Rectangle(rectangle.X + rectangle.Width / 4, rectangle.Y + rectangle.Height / 4, rectangle.Width / 2, rectangle.Height / 2);
+            centerX = arrowRect.Left + arrowRect.Width / 2;
+            centerY = arrowRect.Top + arrowRect.Height / 2;
+            shiftX = Math.Max(1, arrowRect.Width / 8);
+            shiftY = Math.Max(1, arrowRect.Height / 8);
+
+            if ((state & ButtonState.Pushed) != 0)
+            {
+                shiftX++; shiftY++;
+            }
+
+            arrowRect.Y -= shiftY;
+            centerY -= shiftY;
+
+            P1 = new Point(arrowRect.Left + 1, centerY);
+            P2 = new Point(arrowRect.Right - 1, centerY);
+            P3 = new Point(centerX, arrowRect.Bottom - 1);
+
+            arrow[0] = P1;
+            arrow[1] = P2;
+            arrow[2] = P3;
+
+            Brush arrowBrush = SystemBrushes.ControlText;
+            if ((state & ButtonState.Inactive) != 0)
+            {
+                // Shadow
+                arrow[0].X += 1; arrow[0].Y += 1;
+                arrow[1].X += 1; arrow[1].Y += 1;
+                arrow[2].X += 1; arrow[2].Y += 1;
+                graphics.FillPolygon(SystemBrushes.ControlLightLight, arrow, FillMode.Winding);
+
+                // Actual
+                arrow[0] = P1; arrow[1] = P2; arrow[2] = P3;
+                graphics.FillPolygon(SystemBrushes.ControlDark, arrow, FillMode.Winding);
+            }
+            else
+            {
+                graphics.FillPolygon(arrowBrush, arrow, FillMode.Winding);
+            }
+        }
 
 
 		public override void CPDrawContainerGrabHandle (Graphics graphics, Rectangle bounds)

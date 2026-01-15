@@ -62,74 +62,50 @@ namespace System.Windows.Forms
 			DrawTextBox (g, bounds, textBoxText, font, Rectangle.Empty, flags, state);
 		}
 
-		public static void DrawTextBox (Graphics g, Rectangle bounds, string textBoxText, Font font, Rectangle textBounds, TextFormatFlags flags, TextBoxState state) { 
+        public static void DrawTextBox(Graphics g, Rectangle bounds, string textBoxText, Font font, Rectangle textBounds, TextFormatFlags flags, TextBoxState state)
+        {
             if (!IsSupported)
                 throw new InvalidOperationException();
 
-        // Set smoothing mode for high-quality drawing.
-        var originalSmoothingMode = g.SmoothingMode;
-        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            VisualStyleRenderer vsr;
 
-            // Define the corner radius for the rounded rectangle.
-            int cornerRadius = 8;
-        Rectangle borderRect = new Rectangle(bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
-
-        // Draw the background fill based on the state.
-        Color backColor;
             switch (state)
             {
+                case TextBoxState.Assist:
+                    vsr = new VisualStyleRenderer(VisualStyleElement.TextBox.TextEdit.Assist);
+                    break;
                 case TextBoxState.Disabled:
-                    backColor = SystemColors.Control;
+                    vsr = new VisualStyleRenderer(VisualStyleElement.TextBox.TextEdit.Disabled);
                     break;
+                case TextBoxState.Hot:
+                    vsr = new VisualStyleRenderer(VisualStyleElement.TextBox.TextEdit.Hot);
+                    break;
+                case TextBoxState.Normal:
+                case TextBoxState.Readonly:
                 default:
-                    backColor = SystemColors.Window;
+                    vsr = new VisualStyleRenderer(VisualStyleElement.TextBox.TextEdit.Normal);
+                    break;
+                case TextBoxState.Selected:
+                    vsr = new VisualStyleRenderer(VisualStyleElement.TextBox.TextEdit.Selected);
                     break;
             }
 
-            using (Brush backgroundBrush = new SolidBrush(backColor))
-            {
-                RVUtils.FillRoundedRectangle(g, backgroundBrush, bounds, cornerRadius, RVUtils.DefaultInnerBrush);
-            }
+            vsr.DrawBackground(g, bounds);
+            Logger.AddLog("Drawn TB Background");
 
-// Draw the rounded border based on the state.
-Pen borderPen;
-switch (state)
-{
+            if (textBounds == Rectangle.Empty)
+                textBounds = new Rectangle(bounds.Left + 3, bounds.Top + 3, bounds.Width - 6, bounds.Height - 6);
 
-    case TextBoxState.Selected:
-    case TextBoxState.Hot:
-        borderPen = new Pen(Color.DodgerBlue, 2); // Thicker, distinct color for focus
-        break;
-    case TextBoxState.Disabled:
-        borderPen = SystemPens.ControlDark;
-        break;
-    default:
-        borderPen = SystemPens.ControlDark;
-        break;
-}
+            if (textBoxText != String.Empty)
+                if (state == TextBoxState.Disabled)
+                    TextRenderer.DrawText(g, textBoxText, font, textBounds, SystemColors.GrayText, flags);
+                else
+                    TextRenderer.DrawText(g, textBoxText, font, textBounds, SystemColors.ControlText, flags);
+        }
+        #endregion
 
-using (var path = RVUtils.CreateRoundedRectanglePath(borderRect, cornerRadius))
-{
-    g.DrawPath(borderPen, path);
-}
-
-// The original text drawing logic remains unchanged.
-if (textBounds == Rectangle.Empty)
-    textBounds = new Rectangle(bounds.Left + 3, bounds.Top + 3, bounds.Width - 6, bounds.Height - 6);
-
-if (textBoxText != String.Empty)
-    if (state == TextBoxState.Disabled)
-        TextRenderer.DrawText(g, textBoxText, font, textBounds, SystemColors.GrayText, flags);
-    else
-        TextRenderer.DrawText(g, textBoxText, font, textBounds, SystemColors.ControlText, flags);
-
-// Restore the original SmoothingMode.
-g.SmoothingMode = originalSmoothingMode;
-		}
-		#endregion
-
-		#region Public Static Properties
-		public static bool IsSupported {
+        #region Public Static Properties
+        public static bool IsSupported {
 			get { return VisualStyleInformation.IsEnabledByUser && (Application.VisualStyleState == VisualStyleState.ClientAndNonClientAreasEnabled || Application.VisualStyleState == VisualStyleState.ClientAreaEnabled); }
 		}
 		#endregion

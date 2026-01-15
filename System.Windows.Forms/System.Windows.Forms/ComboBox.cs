@@ -1426,7 +1426,9 @@ namespace System.Windows.Forms
 
 		private void CreateComboListBox ()
 		{
-			listbox_ctrl = new ComboListBox (this);
+			listbox_ctrl = new ComboListBox(this) { BackColor = Color.Transparent};
+			listbox_ctrl.border_style = BorderStyle.None;
+			
 			listbox_ctrl.HighlightedIndex = SelectedIndex;
 		}
 		

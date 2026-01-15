@@ -4,6 +4,7 @@ using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 using System.Data;
 
+
 namespace SimpleTest
 {
     partial class Form1
@@ -34,6 +35,7 @@ namespace SimpleTest
         /// </summary>
         private void InitializeComponent()
         {
+            //Application.EnableVisualStyles();
             this.components = new System.ComponentModel.Container();
 
             // Form Setup
@@ -120,6 +122,7 @@ namespace SimpleTest
 
             // Zone 1: Inputs
             this.txtStandard = new TextBox();
+            this.txtStandard2 = new TextBox();
             this.txtPassword = new TextBox();
             this.txtMulti = new TextBox();
             this.numericUpDown1 = new NumericUpDown();
@@ -200,19 +203,22 @@ namespace SimpleTest
             // --- Zone 1: Inputs ---
             txtStandard.Location = new Point(20, 30); txtStandard.Size = new Size(360, 25);
             txtStandard.Text = "Standard TextBox";
-            txtStandard.ForeColor = Color.Black; txtStandard.BackColor = Color.White;
-            txtStandard.BorderStyle = BorderStyle.FixedSingle;
+            txtStandard.ForeColor = Color.Black; txtStandard.BackColor = Color.Red;
+            //txtStandard.BorderStyle = BorderStyle.FixedSingle;
+            txtStandard2.Location = new Point(200, 30); txtStandard.Size = new Size(360, 25);
+            txtStandard2.Text = "Standard TextBox";
+            txtStandard2.ForeColor = Color.Black; txtStandard2.BackColor = Color.Red;
 
             txtPassword.Location = new Point(20, 70); txtPassword.Size = new Size(360, 25);
             txtPassword.UseSystemPasswordChar = true; txtPassword.Text = "password";
-            txtPassword.ForeColor = Color.Black; txtPassword.BackColor = Color.White;
-            txtPassword.BorderStyle = BorderStyle.FixedSingle;
+            txtPassword.ForeColor = Color.Black; txtPassword.BackColor = Color.Violet;
+            //txtPassword.BorderStyle = BorderStyle.FixedSingle;
 
             txtMulti.Location = new Point(20, 110); txtMulti.Size = new Size(360, 100);
             txtMulti.Multiline = true; txtMulti.ScrollBars = ScrollBars.Vertical;
             txtMulti.Text = "Multiline text box...";
             txtMulti.BackColor = Color.FromArgb(255, 255, 220);
-            txtMulti.BorderStyle = BorderStyle.FixedSingle;
+            //txtMulti.BorderStyle = BorderStyle.FixedSingle;
 
             numericUpDown1.Location = new Point(20, 230); numericUpDown1.Size = new Size(150, 25);
             numericUpDown1.Value = 50;
@@ -225,6 +231,7 @@ namespace SimpleTest
             comboBox1.Items.AddRange(new object[] { "Option A", "Option B" });
             comboBox1.SelectedIndex = 0;
             comboBox1.FlatStyle = FlatStyle.Flat;
+            comboBox1.DropDownStyle = ComboBoxStyle.DropDown;
 
             // New DateTimePicker Config
             dateTimePicker1.Location = new Point(20, 375); dateTimePicker1.Size = new Size(200, 25);
@@ -258,6 +265,7 @@ namespace SimpleTest
             btnTran1.FlatStyle = FlatStyle.Flat; // Requested
             btnTran1.ForeColor = Color.Black;
             btnTran1.FlatAppearance.BorderSize = 0; // Clean look
+            
 
             btnTran2.Text = "Tran Btn 2"; btnTran2.Location = new Point(200, 150);
             btnTran2.Size = new Size(160, 40);
@@ -277,6 +285,7 @@ namespace SimpleTest
             picStar.Controls.Add(btnTran1);
             picStar.Controls.Add(btnTran2);
             picStar.Controls.Add(btnTran3);
+            picStar.Controls.Add(txtStandard2);
 
             grpTransparency.Controls.Add(picStar);
 
@@ -384,7 +393,7 @@ namespace SimpleTest
 
             richTextBox1.Location = new Point(10, 200); richTextBox1.Size = new Size(250, 150);
             richTextBox1.Text = "Rich Text Area..."; richTextBox1.BackColor = Color.White;
-            richTextBox1.BorderStyle = BorderStyle.FixedSingle;
+            //richTextBox1.BorderStyle = BorderStyle.FixedSingle;
 
             progressBar1.Location = new Point(280, 200); progressBar1.Size = new Size(140, 23);
             progressBar1.Value = 60;
@@ -445,7 +454,7 @@ namespace SimpleTest
 
             maskedTextBox1.Location = new Point(20, 60); maskedTextBox1.Size = new Size(100, 20);
             maskedTextBox1.Mask = "00/00/0000";
-            maskedTextBox1.BorderStyle = BorderStyle.FixedSingle;
+            //maskedTextBox1.BorderStyle = BorderStyle.FixedSingle;
 
             pictureBoxCrap.Location = new Point(20, 100); pictureBoxCrap.Size = new Size(300, 100);
             pictureBoxCrap.BackColor = Color.White;
@@ -514,6 +523,7 @@ namespace SimpleTest
             this.menuStrip1.PerformLayout();
             this.ResumeLayout(false);
             this.PerformLayout();
+            btnTran1.Click += (_, __) => { txtMulti.Text = Logger.Log; };
         }
 
         #endregion
@@ -533,6 +543,7 @@ namespace SimpleTest
         private TextBox txtStandard;
         private TextBox txtPassword;
         private TextBox txtMulti;
+        private TextBox txtStandard2;
         private NumericUpDown numericUpDown1;
         private TrackBar trackBar1;
         private ComboBox comboBox1;
