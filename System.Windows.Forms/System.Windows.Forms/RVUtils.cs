@@ -1,5 +1,6 @@
 ﻿using ColorUtils;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -20,6 +21,7 @@ namespace System.Windows.Forms
     }
     public static class RVUtils
     {
+        public static readonly ConcurrentDictionary<WeakReference, Size> _controlSizes = new ConcurrentDictionary<WeakReference, Size>();
         public static Brush DefaultInnerBrush = ColorUtils.CielRandomGradientGenerator.Generate(3, RandomColorMode.EquiSat, GradientDirection.ForwardDiagonal);
         public static Brush DefaultInnerBrushD = new LinearGradientBrush(new Rectangle(0, 0, 100, 100), CielColorGenerator.RandomColorWithLightnessAndChroma(40, 65), CielColorGenerator.RandomColorWithLightnessAndChroma(40, 65), LinearGradientMode.Vertical) { WrapMode = WrapMode.Tile, GammaCorrection=true };
         public static Brush NewGradientPen() { return new LinearGradientBrush(new Rectangle(0, 0, 100, 100), CielColorGenerator.RandomColorWithLightnessAndChroma(40, 65), CielColorGenerator.RandomColorWithLightnessAndChroma(40, 65), LinearGradientMode.Vertical) { WrapMode = WrapMode.Tile, GammaCorrection = true }; }
@@ -264,14 +266,16 @@ namespace System.Windows.Forms
 
                     // 3. Construct brush3: Same Color, but Alpha = 0 (Transparent)
                     // This is effectively "Color to Alpha" like in Photoshop or Krita
-                    SolidBrush brush3 = new SolidBrush(Color.FromArgb(0, c.R, c.G, c.B));
+                    SolidBrush brush3 = new SolidBrush(Color.FromArgb(255, c.R, c.G, c.B));
                     //brush3.Tra
+                    //g.FillRectangle(brush3, new Rectangle(rect.Left - 1, rect.Top - 1, rect.Width + 1, rect.Height + 1));
 
-                    //g.SetClip(CreateRoundedRectanglePath(rect, cornerRadius));
-                    g.FillRectangle(brush, new Rectangle(rect.Left-1, rect.Top-1, rect.Width+1, rect.Height+1));
-                    //g.ResetClip();
-                    g.FillPath(innerBrush, path);
+                    g.SetClip(CreateRoundedRectanglePath(rect, cornerRadius));
                     
+                    
+                    g.FillPath(innerBrush, path);
+                    g.ResetClip();
+
                 }
                 finally
                 {

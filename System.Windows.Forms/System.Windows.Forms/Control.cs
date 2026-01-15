@@ -1405,19 +1405,55 @@ namespace System.Windows.Forms
 				}
 			}
 
-			if (background_image == null) {
-				if (!tbstyle_flat) {
-					Rectangle paintRect = pevent.ClipRectangle;
-					if (this is Button)
-					{
-						pevent.Graphics.FillRoundedRect(BackColorBrush, paintRect, innerBrush: RVUtils.DefaultInnerBrush);
-					}
-                    else pevent.Graphics.FillRoundedRect(BackColorBrush, paintRect, innerBrush: null);
-                }
-				return;
-			}
+            if (background_image == null)
+            {
+                if (!tbstyle_flat)
+                {
+                    Rectangle paintRect = pevent.ClipRectangle;
+                    if (this is Button or Panel or DataGrid or ComboBox or TextBox)
+                    {
+                        Size currentSize = paintRect.Size;
 
-			DrawBackgroundImage (pevent.Graphics);
+                        // Find the control in our dictionary
+                        WeakReference key = null;
+                        foreach (var kvp in RVUtils._controlSizes)
+                        {
+                            if (kvp.Key.IsAlive && kvp.Key.Target == this)
+                            {
+                                key = kvp.Key;
+                                break;
+                            }
+                        }
+
+                        // Update if not found or size changed
+                        if (key == null || !RVUtils._controlSizes[key].Equals(currentSize))
+                        {
+                            if (key == null)
+                            {
+                                key = new WeakReference(this);
+                            }
+
+                            RVUtils._controlSizes[key] = currentSize;
+
+                            Logger.AddLog($"Size changed to {currentSize}, updating Region");
+
+                            // Set the region
+                            using (var expectedPath = RVUtils.CreateRoundedRectanglePath(paintRect, RVUtils.cornerRadius))
+                            {
+                                this.Region = new Region(expectedPath);
+                            }
+                        }
+                    }
+					else
+					{
+                        
+                        pevent.Graphics.FillRectangle(BackColorBrush, paintRect);
+                    }
+                }
+                return;
+            }
+
+            DrawBackgroundImage (pevent.Graphics);
 		}
 
 		void DrawBackgroundImage (Graphics g) {

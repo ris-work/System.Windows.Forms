@@ -277,7 +277,7 @@ namespace SimpleTest
 
             btnTran3.Text = "Tran Btn 3"; btnTran3.Location = new Point(30, 270);
             btnTran3.Size = new Size(120, 40);
-            btnTran3.BackColor = Color.Transparent;
+            btnTran3.BackColor = Color.DarkCyan;
             btnTran3.FlatStyle = FlatStyle.Flat; // Requested
             btnTran3.ForeColor = Color.DarkGreen;
             btnTran3.FlatAppearance.BorderSize = 0;

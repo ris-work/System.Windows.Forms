@@ -27,6 +27,8 @@
 //	Alexander Olk, alex.olk@googlemail.com
 //
 
+using System.Collections.Generic;
+using System;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
@@ -38,12 +40,15 @@ using System.Text;
 using System.Windows.Forms.Theming;
 using static System.Windows.Forms.RVUtils;
 
+
+
 namespace System.Windows.Forms
 {
 
 	internal class ThemeWin32New : Theme
-	{		
-		public override Version Version {
+	{
+        
+        public override Version Version {
 			get {
 				return new Version(0, 1, 0, 0);
 			}
@@ -162,8 +167,13 @@ namespace System.Windows.Forms
 		#region Standard Button Style
 		public override void DrawButton (Graphics g, Button b, Rectangle textBounds, Rectangle imageBounds, Rectangle clipRectangle)
 		{
-			// Draw Button Background
-			DrawButtonBackground (g, b, clipRectangle);
+            //Rectangle buttonRect = b.ClientRectangle;
+            //using (var path = RVUtils.CreateRoundedRectanglePath(buttonRect, RVUtils.cornerRadius))
+            //{
+                //b.Region = new Region(path);
+            //}
+            // Draw Button Background
+            DrawButtonBackground (g, b, clipRectangle);
 
 			// If we have an image, draw it
 			if (imageBounds.Size != Size.Empty)
@@ -181,6 +191,8 @@ namespace System.Windows.Forms
 
 		public virtual void DrawButtonBackground (Graphics g, Button button, Rectangle clipArea) 
 		{
+			
+                
 			if (button.Pressed)
 				ThemeElements.DrawButton (g, button.ClientRectangle, ButtonThemeState.Pressed, button.BackColor, button.ForeColor);
 			else if (button.InternalSelected)
@@ -259,6 +271,11 @@ namespace System.Windows.Forms
         #region FlatStyle Button Style
         public override void DrawFlatButton(Graphics g, ButtonBase button, Rectangle textBounds, Rectangle imageBounds, Rectangle clipRectangle)
         {
+            //Rectangle buttonRectR = button.ClientRectangle;
+            //using (var path = RVUtils.CreateRoundedRectanglePath(buttonRectR, RVUtils.cornerRadius))
+            //{
+               //button.Region = new Region(path);
+            //}
             float radius = RVUtils.cornerRadius;
 
             // Determine which state we're in
@@ -729,8 +746,14 @@ namespace System.Windows.Forms
 		#region ButtonBase
 		public override void DrawButtonBase(Graphics dc, Rectangle clip_area, ButtonBase button)
 		{
-			// Draw the button: Draw border, etc.
-			ButtonBase_DrawButton(button, dc);
+            //Rectangle buttonRectR = button.ClientRectangle;
+            //using (var path = RVUtils.CreateRoundedRectanglePath(buttonRectR, RVUtils.cornerRadius))
+            //{
+            //button.Region = new Region(path);
+            //}
+			Logger.AddLog($"ButtonBase: DrawButtonBase {button.ClientRectangle}");
+            // Draw the button: Draw border, etc.
+            ButtonBase_DrawButton(button, dc);
 
 			// Draw the image
 			if (button.FlatStyle != FlatStyle.System && ((button.image != null) || (button.image_list != null)))
@@ -752,6 +775,7 @@ namespace System.Windows.Forms
 
 		protected virtual void ButtonBase_DrawButton (ButtonBase button, Graphics dc)
 		{
+
 			Rectangle borderRectangle;
 			bool check_or_radio = false;
 			bool check_or_radio_checked = false;
