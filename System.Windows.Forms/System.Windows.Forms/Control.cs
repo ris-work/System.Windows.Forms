@@ -1410,7 +1410,7 @@ namespace System.Windows.Forms
                 if (!tbstyle_flat)
                 {
                     Rectangle paintRect = pevent.ClipRectangle;
-                    if (this is Button or Panel or DataGrid or ComboBox or TextBox)
+                    if (this is Button or Panel or DataGrid or DataGridView or UpDownBase or DateTimePicker)
                     {
                         Size currentSize = paintRect.Size;
 

@@ -289,42 +289,52 @@ namespace SimpleTest
 
             grpTransparency.Controls.Add(picStar);
 
+
             // --- Zone 3: Rainbow DataGrid ---
-            dataGridViewRainbow.Location = new Point(10, 30); dataGridViewRainbow.Size = new Size(430, 380);
+            dataGridViewRainbow.Location = new Point(10, 30);
+            dataGridViewRainbow.Size = new Size(430, 380);
             dataGridViewRainbow.AllowUserToAddRows = false;
             dataGridViewRainbow.ReadOnly = true;
             dataGridViewRainbow.BorderStyle = BorderStyle.FixedSingle;
 
-            // --- FIXING COLORS ---
-            // 1. Disable Visual Styles to allow custom header colors
+            // --- VISUAL STYLES ---
             dataGridViewRainbow.EnableHeadersVisualStyles = false;
-            // 2. Set background to Empty so cells can show their colors
-            dataGridViewRainbow.BackgroundColor = Color.FromArgb(60, 60, 65);
-            dataGridViewRainbow.DefaultCellStyle.BackColor = Color.Empty;
-            dataGridViewRainbow.AlternatingRowsDefaultCellStyle.BackColor = Color.Empty;
-            // 3. Grid Lines - make them subtle or transparent so they don't obscure the rainbow
+            dataGridViewRainbow.BackgroundColor = Color.FromArgb(255, 60, 65);
             dataGridViewRainbow.GridColor = Color.WhiteSmoke;
-            // 4. Selection Style - Set to Transparent or High Transparency so the rainbow shows through selection
+
+            // DEFAULT STYLES (Fallback)
+            // Set a default color so Mono doesn't render null/empty
+            dataGridViewRainbow.DefaultCellStyle.BackColor = Color.White;
             dataGridViewRainbow.DefaultCellStyle.SelectionBackColor = Color.FromArgb(100, 0, 0, 0);
             dataGridViewRainbow.DefaultCellStyle.SelectionForeColor = Color.White;
 
-            // Data
+            // --- DATA ---
             DataTable dtRainbow = new DataTable();
             dtRainbow.Columns.Add("R"); dtRainbow.Columns.Add("A"); dtRainbow.Columns.Add("I"); dtRainbow.Columns.Add("N");
             for (int i = 0; i < 10; i++) dtRainbow.Rows.Add("Cel", "Cel", "Cel", "Cel");
             dataGridViewRainbow.DataSource = dtRainbow;
 
-            // Apply Colors
-            Random rnd = new Random();
-            foreach (DataGridViewRow row in dataGridViewRainbow.Rows)
+            // --- THE FIX: CellFormatting Event ---
+            // This is the equivalent to Eto.Forms gridView.CellStyle += ...
+            dataGridViewRainbow.CellFormatting += (sender, e) =>
             {
-                foreach (DataGridViewCell cell in row.Cells)
-                {
-                    // Generate distinct bright pastel colors
-                    cell.Style.BackColor = Color.FromArgb(255, rnd.Next(150, 256), rnd.Next(150, 256), rnd.Next(150, 256));
-                    cell.Style.ForeColor = Color.Black;
-                }
-            }
+                // 1. Safety check: Ignore headers and the placeholder row
+                if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
+
+                // 2. Generate a Deterministic Random Color
+                // We use Row/Col index as a seed so the color is stable.
+                // If we just used 'new Random()', the colors would flicker 
+                // every time you move the mouse over the grid.
+                int seed = (e.RowIndex * 100) + e.ColumnIndex;
+                Random rnd = new Random(seed);
+
+                // 3. Apply the style directly to the event arguments
+                e.CellStyle.BackColor = Color.FromArgb(255, rnd.Next(150, 256), rnd.Next(150, 256), rnd.Next(150, 256));
+                e.CellStyle.ForeColor = Color.Black;
+
+                // 4. Ensure selection transparency is respected
+                e.CellStyle.SelectionBackColor = dataGridViewRainbow.DefaultCellStyle.SelectionBackColor;
+            };
 
             grpRainbowData.Controls.Add(dataGridViewRainbow);
 
@@ -390,6 +400,7 @@ namespace SimpleTest
             dtStd.Columns.Add("ID"); dtStd.Columns.Add("Data");
             dtStd.Rows.Add(1, "Alpha"); dtStd.Rows.Add(2, "Beta");
             dataGridView1.DataSource = dtStd;
+            
 
             richTextBox1.Location = new Point(10, 200); richTextBox1.Size = new Size(250, 150);
             richTextBox1.Text = "Rich Text Area..."; richTextBox1.BackColor = Color.White;

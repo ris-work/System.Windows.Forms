@@ -5354,10 +5354,7 @@ namespace System.Windows.Forms
                 ? textBoxBase.BackColor
                 : ColorControl;
 
-            using (var brush = new SolidBrush(backColor))
-            {
-                RVUtils.FillRoundedRectangle(g, brush, textBoxRect, (int)radius);
-            }
+            
 
             // Draw the border if needed
             if (textBoxBase.BorderStyle != BorderStyle.None)
@@ -5370,6 +5367,7 @@ namespace System.Windows.Forms
 
             // Set the region to the entire TextBox with rounded corners
             bool regionNeedsUpdate = false;
+            bool IsInDataGrid(Control c) => c is DataGrid || (c != null && IsInDataGrid(c.Parent));
 
             if (textBoxBase.Region == null)
             {
@@ -5392,7 +5390,7 @@ namespace System.Windows.Forms
                 }
             }
 
-            if (regionNeedsUpdate)
+            if (regionNeedsUpdate && !IsInDataGrid(textBoxBase))
             {
                 using (var path = RVUtils.CreateRoundedRectanglePath(textBoxRect, radius))
                 {
@@ -5407,6 +5405,11 @@ namespace System.Windows.Forms
                         textBoxBase.ResumeLayout(false);
                     }
                 }
+            }
+            using (var brush = new SolidBrush(backColor))
+            {
+                //RVUtils.FillRoundedRectangle(g, brush, textBoxRect, (int)radius);
+				g.FillRectangle(brush, textBoxRect);
             }
         }
 

@@ -26,7 +26,7 @@ namespace System.Windows.Forms
         public static Brush DefaultInnerBrushD = new LinearGradientBrush(new Rectangle(0, 0, 100, 100), CielColorGenerator.RandomColorWithLightnessAndChroma(40, 65), CielColorGenerator.RandomColorWithLightnessAndChroma(40, 65), LinearGradientMode.Vertical) { WrapMode = WrapMode.Tile, GammaCorrection=true };
         public static Brush NewGradientPen() { return new LinearGradientBrush(new Rectangle(0, 0, 100, 100), CielColorGenerator.RandomColorWithLightnessAndChroma(40, 65), CielColorGenerator.RandomColorWithLightnessAndChroma(40, 65), LinearGradientMode.Vertical) { WrapMode = WrapMode.Tile, GammaCorrection = true }; }
         public static SolidBrush DefaultInnerBrushHover = new SolidBrush(Color.LightGoldenrodYellow) { };
-        public static int cornerRadius = 10;
+        public static int cornerRadius = 6;
 
         // near the top of RVUtils
         private static volatile int _captureOriginX = -1;
@@ -271,9 +271,10 @@ namespace System.Windows.Forms
                     //g.FillRectangle(brush3, new Rectangle(rect.Left - 1, rect.Top - 1, rect.Width + 1, rect.Height + 1));
 
                     g.SetClip(CreateRoundedRectanglePath(rect, cornerRadius));
-                    
-                    
+
+
                     g.FillPath(innerBrush, path);
+                    //g.FillRectangle(brush, rect);
                     g.ResetClip();
 
                 }
