@@ -36,6 +36,19 @@ namespace System.Windows.Forms
         private static readonly object _parentBgLock = new object();
         private static Color? _parentBackgroundColor = null;
 
+        public static Func<Control, Type, bool> IsTypeOrContainedInTypeRecursive = (Control x, Type T) =>
+                    {
+                        Logger.AddLog($"Encountered Type: {(x== null ? "null" : x.GetType().ToString())}");
+                        // 1. Termination condition: If we ran out of parents, return false
+                        if (x == null) return false;
+
+                        // 2. Check condition: Is this the type we are looking for?
+                        if (T.IsInstanceOfType(x)) return true;
+
+						// 3. Recursive step: Check the parent
+						
+                        return IsTypeOrContainedInTypeRecursive(x.Parent, T);
+        };
         public static void SetCaptureOrigin(int screenX, int screenY)
         {
             _captureOriginX = screenX;
