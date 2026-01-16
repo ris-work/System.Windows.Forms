@@ -1410,7 +1410,7 @@ namespace System.Windows.Forms
                 if (!tbstyle_flat)
                 {
                     Rectangle paintRect = pevent.ClipRectangle;
-                    if (this is Button or Panel or DataGrid or DataGridView or UpDownBase or DateTimePicker)
+                    if (this is Button or Panel or DataGrid or DataGridView or UpDownBase or DateTimePicker or ComboBox or MonthCalendar or GroupBox)
                     {
                         Size currentSize = paintRect.Size;
 
@@ -1437,10 +1437,21 @@ namespace System.Windows.Forms
 
                             Logger.AddLog($"Size changed to {currentSize}, updating Region");
 
-                            // Set the region
-                            using (var expectedPath = RVUtils.CreateRoundedRectanglePath(paintRect, RVUtils.cornerRadius))
-                            {
-                                this.Region = new Region(expectedPath);
+							// Set the region
+							if (this is ComboBox or NumericUpDown or DateTimePicker or MonthCalendar or GroupBox)
+							{
+                                using (var expectedPath = RVUtils.CreateRoundedRectanglePath(new Rectangle(0, 0, this.Width, this.Height), RVUtils.cornerRadius))
+                                {
+                                    this.Region = new Region(expectedPath);
+                                }
+                                
+							}
+							else
+							{
+                                using (var expectedPath = RVUtils.CreateRoundedRectanglePath(paintRect, RVUtils.cornerRadius))
+                                {
+                                    this.Region = new Region(expectedPath);
+                                }
                             }
                         }
                     }
