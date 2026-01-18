@@ -10,24 +10,17 @@ using System.Windows.Forms;
 
 namespace SimpleTest
 {
-    public partial class Form1 : Form
+    public partial class Form2 : Form
     {
         int i = 0;
-        public Form1()
+        public Form2()
         {
-            MonkeyPatch.WinForms.RegionValidatorTests.RunTest();
             InitializeComponent();
-            Resize += (_, __) => { 
-                //this.Invalidate(); 
-            };
         }
 
         private void button1_Click(object sender, EventArgs e)
         {
-            //label1.Text = i++.ToString();
-            //this.webBrowser1.Navigate("https://google.com");
-            MessageBox.Show(Logger.Log);
-            
+            label1.Text = i++.ToString();
         }
     }
 }

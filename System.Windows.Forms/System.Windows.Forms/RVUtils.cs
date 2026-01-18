@@ -21,7 +21,7 @@ namespace System.Windows.Forms
     }
     public static class RVUtils
     {
-        public static readonly ConcurrentDictionary<WeakReference, Size> _controlSizes = new ConcurrentDictionary<WeakReference, Size>();
+        public static ConcurrentDictionary<WeakReference, Size> _controlSizes = new ConcurrentDictionary<WeakReference, Size>();
         public static Brush DefaultInnerBrush = ColorUtils.CielRandomGradientGenerator.Generate(3, RandomColorMode.EquiSat, GradientDirection.ForwardDiagonal);
         public static Brush DefaultInnerBrushD = new LinearGradientBrush(new Rectangle(0, 0, 100, 100), CielColorGenerator.RandomColorWithLightnessAndChroma(40, 65), CielColorGenerator.RandomColorWithLightnessAndChroma(40, 65), LinearGradientMode.Vertical) { WrapMode = WrapMode.Tile, GammaCorrection=true };
         public static Brush NewGradientPen() { return new LinearGradientBrush(new Rectangle(0, 0, 100, 100), CielColorGenerator.RandomColorWithLightnessAndChroma(40, 65), CielColorGenerator.RandomColorWithLightnessAndChroma(40, 65), LinearGradientMode.Vertical) { WrapMode = WrapMode.Tile, GammaCorrection = true }; }
@@ -272,14 +272,14 @@ namespace System.Windows.Forms
                 {
                     Logger.AddLog($"Painting (4) {brush.GetType().Name}");
                     g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                    SolidBrush brush2 = (SolidBrush)brush.Clone();
+                    Brush brush2 = (Brush)brush.Clone();
                     Logger.AddLog($"brush2: {(brush2 is SolidBrush sb ? $"SolidBrush [A:{sb.Color.A} R:{sb.Color.R} G:{sb.Color.G} B:{sb.Color.B}]" : $"Type={brush2?.GetType().Name ?? "NULL"}")}");
                     // 2. Extract the RGB components from the original brush
-                    Color c = ((SolidBrush)brush).Color;
+                    //Color c = ((SolidBrush)brush).Color;
 
                     // 3. Construct brush3: Same Color, but Alpha = 0 (Transparent)
                     // This is effectively "Color to Alpha" like in Photoshop or Krita
-                    SolidBrush brush3 = new SolidBrush(Color.FromArgb(255, c.R, c.G, c.B));
+                    //SolidBrush brush3 = new SolidBrush(Color.FromArgb(255, c.R, c.G, c.B));
                     //brush3.Tra
                     //g.FillRectangle(brush3, new Rectangle(rect.Left - 1, rect.Top - 1, rect.Width + 1, rect.Height + 1));
 

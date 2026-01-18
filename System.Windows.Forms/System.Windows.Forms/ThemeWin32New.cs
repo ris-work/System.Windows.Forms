@@ -3068,7 +3068,11 @@ namespace System.Windows.Forms
 				state = columnHeader.Pressed ? ButtonState.Pushed : ButtonState.Normal;
 			else
 				state = ButtonState.Flat;
-			CPDrawButton (g, area, state);
+			try
+			{
+				CPDrawButton(g, area, state);
+			}
+			catch(Exception _) { }
 		}
 		
 		protected virtual void ListViewDrawUnusedHeaderBackground (ListView listView, Graphics g, Rectangle area, Rectangle clippingArea)
@@ -7024,7 +7028,7 @@ namespace System.Windows.Forms
                                      Color.FromArgb(Clamp(ColorControl.R + 3, 0, 255), ColorControl.G, ColorControl.B),
                                      ColorControl))
                 {
-                    dc.FillPath(brush, path);
+					try { dc.FillPath(brush, path); } catch (Exception E) { }
                 }
             }
 
@@ -7041,7 +7045,11 @@ namespace System.Windows.Forms
                     {
                         using (var brush = ResPool.GetHatchBrush(HatchStyle.Percent50, ColorControlLight, ColorControl))
                         {
-                            dc.FillPath(brush, innerPath);
+							try
+							{
+								dc.FillPath(brush, innerPath);
+							}
+							catch (Exception _) { }
                         }
                     }
                     dc.DrawPath(DarkPen, borderPath);

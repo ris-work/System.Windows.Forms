@@ -48,6 +48,9 @@ using System.Runtime.InteropServices;
 using System.Security;
 using System.Threading;
 using System.Windows.Forms.Layout;
+using System.Linq;
+using MonkeyPatch;
+using MonkeyPatch.WinForms;
 
 namespace System.Windows.Forms
 {
@@ -1442,9 +1445,9 @@ namespace System.Windows.Forms
 							{
                                 using (var expectedPath = RVUtils.CreateRoundedRectanglePath(new Rectangle(0, 0, this.Width, this.Height), RVUtils.cornerRadius))
                                 {
-                                    this.Region = new Region(expectedPath);
+                                    if(this.Region.IsRectangle(pevent.Graphics)) this.Region = new Region(expectedPath);
                                 }
-                                
+								System.Console.WriteLine($"{this.GetType}: Size: {this.Width}x{this.Height}, ClientRect: {this.ClientRectangle.Width}x{this.ClientRectangle.Height} - Reported to Paint: {paintRect.Size}");
 							}
 							else
 							{
@@ -1452,6 +1455,7 @@ namespace System.Windows.Forms
                                 {
                                     this.Region = new Region(expectedPath);
                                 }
+                                System.Console.WriteLine($"{this.GetType}: Size: {this.Width}x{this.Height}, ClientRect: {this.ClientRectangle.Width}x{this.ClientRectangle.Height} - Reported to Paint: {paintRect.Size}");
                             }
                         }
                     }
@@ -3856,6 +3860,8 @@ namespace System.Windows.Forms
 
 		public void Invalidate (Rectangle rc, bool invalidateChildren)
 		{
+			//if (invalidateChildren) RVUtils._controlSizes = new();
+			//else { try { RVUtils._controlSizes.TryRemove(RVUtils._controlSizes.Where((k) => { return k.Key.Target == this; }).First()); } catch (Exception _) { } }
 			// Win32 invalidates control including when Width and Height is equal 0
 			// or is not visible, only Paint event must be care about this.
 			if (!IsHandleCreated)
