@@ -24,7 +24,6 @@
 
 using System;
 using System.Drawing;
-using static System.Windows.Forms.RVUtils;
 
 namespace System.Windows.Forms.Theming.Default
 {
@@ -45,49 +44,57 @@ namespace System.Windows.Forms.Theming.Default
 		public virtual void Draw (Graphics g, Rectangle bounds, ButtonThemeState state, Color backColor, Color foreColor) {
 			bool is_themecolor = backColor.ToArgb () == ThemeEngine.Current.ColorControl.ToArgb () || backColor == Color.Empty ? true : false;
 			CPColor cpcolor = is_themecolor ? CPColor.Empty : ResPool.GetCPColor (backColor);
-			//Pen pen;
+			Pen pen;
+			
+			switch (state) {
+				case ButtonThemeState.Normal:
+				case ButtonThemeState.Entered:
+				case ButtonThemeState.Disabled:
+					pen = is_themecolor ? SystemPens.ControlLightLight : ResPool.GetPen (cpcolor.LightLight);
+					g.DrawLine (pen, bounds.X, bounds.Y, bounds.X, bounds.Bottom - 2);
+					g.DrawLine (pen, bounds.X + 1, bounds.Y, bounds.Right - 2, bounds.Y);
 
-            int cornerRadius = RVUtils.cornerRadius;
-            var originalSmoothingMode = g.SmoothingMode;
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
-            Rectangle borderRect = new Rectangle(bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
+					pen = is_themecolor ? SystemPens.Control : ResPool.GetPen (backColor);
+					g.DrawLine (pen, bounds.X + 1, bounds.Y + 1, bounds.X + 1, bounds.Bottom - 3);
+					g.DrawLine (pen, bounds.X + 2, bounds.Y + 1, bounds.Right - 3, bounds.Y + 1);
 
-            switch (state)
-            {
-                case ButtonThemeState.Normal:
-                case ButtonThemeState.Entered:
-                case ButtonThemeState.Disabled:
-                    // Draw a single, smooth, rounded border.
-                    Pen pen = is_themecolor ? SystemPens.ControlDark : ResPool.GetPen(cpcolor.Dark);
-                    pen = new Pen(RVUtils.NewGradientPen());
-                    using (var path = RVUtils.CreateRoundedRectanglePath(borderRect, cornerRadius))
-                    {
-                        g.DrawPath(pen, path);
-                    }
-                    break;
-                case ButtonThemeState.Pressed:
-                case ButtonThemeState.Default:
-                    // Draw the outer rounded border.
-                    Pen outerPen = is_themecolor ? SystemPens.ControlDarkDark : ResPool.GetPen(cpcolor.DarkDark);
-                    outerPen = new Pen(RVUtils.NewGradientPen());
-                    using (var path = RVUtils.CreateRoundedRectanglePath(borderRect, cornerRadius))
-                    {
-                        g.DrawPath(outerPen, path);
-                    }
+					pen = is_themecolor ? SystemPens.ControlDark : ResPool.GetPen (cpcolor.Dark);
+					g.DrawLine (pen, bounds.X + 1, bounds.Bottom - 2, bounds.Right - 2, bounds.Bottom - 2);
+					g.DrawLine (pen, bounds.Right - 2, bounds.Y + 1, bounds.Right - 2, bounds.Bottom - 3);
 
-                    // Inflate the bounds to get the inner rectangle for the inset look.
-                    Rectangle innerRect = new Rectangle(bounds.X + 2, bounds.Y + 2, bounds.Width - 5, bounds.Height - 5);
-                    Pen innerPen = is_themecolor ? SystemPens.ControlDark : ResPool.GetPen(cpcolor.Dark);
-                    innerPen = new Pen(RVUtils.NewGradientPen());
-                    using (var path = RVUtils.CreateRoundedRectanglePath(innerRect, cornerRadius - 2))
-                    {
-                        g.DrawPath(innerPen, path);
-                    }
-                    break;
-            }
+					pen = is_themecolor ? SystemPens.ControlDarkDark : ResPool.GetPen (cpcolor.DarkDark);
+					g.DrawLine (pen, bounds.X, bounds.Bottom - 1, bounds.Right - 1, bounds.Bottom - 1);
+					g.DrawLine (pen, bounds.Right - 1, bounds.Y, bounds.Right - 1, bounds.Bottom - 2);
+					break;
+				case ButtonThemeState.Pressed:
+					g.DrawRectangle (ResPool.GetPen (foreColor), bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
 
-            g.SmoothingMode = originalSmoothingMode;
-        }
+					bounds.Inflate (-1, -1);
+					pen = is_themecolor ? SystemPens.ControlDark : ResPool.GetPen (cpcolor.Dark);
+					g.DrawRectangle (pen, bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
+					break;
+				case ButtonThemeState.Default:
+					g.DrawRectangle (ResPool.GetPen (foreColor), bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
+
+					bounds.Inflate (-1, -1);
+					pen = is_themecolor ? SystemPens.ControlLightLight : ResPool.GetPen (cpcolor.LightLight);
+					g.DrawLine (pen, bounds.X, bounds.Y, bounds.X, bounds.Bottom - 2);
+					g.DrawLine (pen, bounds.X + 1, bounds.Y, bounds.Right - 2, bounds.Y);
+
+					pen = is_themecolor ? SystemPens.Control : ResPool.GetPen (backColor);
+					g.DrawLine (pen, bounds.X + 1, bounds.Y + 1, bounds.X + 1, bounds.Bottom - 3);
+					g.DrawLine (pen, bounds.X + 2, bounds.Y + 1, bounds.Right - 3, bounds.Y + 1);
+
+					pen = is_themecolor ? SystemPens.ControlDark : ResPool.GetPen (cpcolor.Dark);
+					g.DrawLine (pen, bounds.X + 1, bounds.Bottom - 2, bounds.Right - 2, bounds.Bottom - 2);
+					g.DrawLine (pen, bounds.Right - 2, bounds.Y + 1, bounds.Right - 2, bounds.Bottom - 3);
+
+					pen = is_themecolor ? SystemPens.ControlDarkDark : ResPool.GetPen (cpcolor.DarkDark);
+					g.DrawLine (pen, bounds.X, bounds.Bottom - 1, bounds.Right - 1, bounds.Bottom - 1);
+					g.DrawLine (pen, bounds.Right - 1, bounds.Y, bounds.Right - 1, bounds.Bottom - 2);
+					break;
+			}
+		}
 		#endregion
 
 		#region FlatStyle Button
@@ -95,147 +102,81 @@ namespace System.Windows.Forms.Theming.Default
 			bool is_themecolor = backColor.ToArgb () == ThemeEngine.Current.ColorControl.ToArgb () || backColor == Color.Empty ? true : false;
 			CPColor cpcolor = is_themecolor ? CPColor.Empty : ResPool.GetCPColor (backColor);
 			Pen pen;
-            var originalSmoothingMode = g.SmoothingMode;
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
-
-
-            int cornerRadius = RVUtils.cornerRadius;
-            switch (state)
-            {
-                case ButtonThemeState.Normal:
-                case ButtonThemeState.Disabled:
-                    // This will just use the BackColor
-                    break;
-                case ButtonThemeState.Entered:
-                case ButtonThemeState.Default | ButtonThemeState.Entered:
-                    if (appearance.MouseOverBackColor != Color.Empty)
-                        RVUtils.FillRoundedRectangle(g, ResPool.GetSolidBrush(appearance.MouseOverBackColor), bounds, cornerRadius, RVUtils.DefaultInnerBrush);
-                    else
-                        RVUtils.FillRoundedRectangle(g, ResPool.GetSolidBrush(ChangeIntensity(backColor, .9F)), bounds, cornerRadius, RVUtils.DefaultInnerBrush);
-                    break;
-                case ButtonThemeState.Pressed:
-                    if (appearance.MouseDownBackColor != Color.Empty)
-                        RVUtils.FillRoundedRectangle(g, ResPool.GetSolidBrush(appearance.MouseDownBackColor), bounds, cornerRadius, RVUtils.DefaultInnerBrush);
-                    else
-                        RVUtils.FillRoundedRectangle(g, ResPool.GetSolidBrush(ChangeIntensity(backColor, .95F)), bounds, cornerRadius, RVUtils.DefaultInnerBrush);
-                    break;
-                case ButtonThemeState.Default:
-                    if (appearance.CheckedBackColor != Color.Empty)
-                        RVUtils.FillRoundedRectangle(g, ResPool.GetSolidBrush(appearance.CheckedBackColor), bounds, cornerRadius, RVUtils.DefaultInnerBrush);
-                    break;
-            }
-
-            if (appearance.BorderColor == Color.Empty)
+			
+			switch (state) {
+				case ButtonThemeState.Normal:
+				case ButtonThemeState.Disabled:
+					// This will just use the BackColor
+					break;
+				case ButtonThemeState.Entered:
+				case ButtonThemeState.Default | ButtonThemeState.Entered:
+					if (appearance.MouseOverBackColor != Color.Empty)
+						g.FillRectangle (ResPool.GetSolidBrush (appearance.MouseOverBackColor), bounds);
+					else
+						g.FillRectangle (ResPool.GetSolidBrush (ChangeIntensity (backColor, .9F)), bounds);
+					break;
+				case ButtonThemeState.Pressed:
+					if (appearance.MouseDownBackColor != Color.Empty)
+						g.FillRectangle (ResPool.GetSolidBrush (appearance.MouseDownBackColor), bounds);
+					else
+						g.FillRectangle (ResPool.GetSolidBrush (ChangeIntensity (backColor, .95F)), bounds);
+					break;
+				case ButtonThemeState.Default:
+					if (appearance.CheckedBackColor != Color.Empty)
+						g.FillRectangle (ResPool.GetSolidBrush (appearance.CheckedBackColor), bounds);
+					break;
+			}
+			
+			if (appearance.BorderColor == Color.Empty)
 				pen = is_themecolor ? SystemPens.ControlDarkDark : ResPool.GetSizedPen (cpcolor.DarkDark, appearance.BorderSize);
 			else
 				pen = ResPool.GetSizedPen (appearance.BorderColor, appearance.BorderSize);
-            pen = new Pen(RVUtils.NewGradientPen());
-
-            bounds.Width -= 1;
+				
+			bounds.Width -= 1;
 			bounds.Height -= 1;
 				
 			if (appearance.BorderSize > 0)
 				g.DrawRectangle (pen, bounds);
-            g.SmoothingMode = originalSmoothingMode;
-        }
-        #endregion
+		}
+		#endregion
 
-        #region Popup Button
-        public virtual void DrawPopup(Graphics g, Rectangle bounds, ButtonThemeState state, Color backColor, Color foreColor)
-        {
-            bool is_themecolor = backColor.ToArgb() == ThemeEngine.Current.ColorControl.ToArgb() || backColor == Color.Empty;
-            CPColor cpcolor = is_themecolor ? CPColor.Empty : ResPool.GetCPColor(backColor);
-            Pen pen;
+		#region Popup Button
+		public virtual void DrawPopup (Graphics g, Rectangle bounds, ButtonThemeState state, Color backColor, Color foreColor) {
+			bool is_themecolor = backColor.ToArgb () == ThemeEngine.Current.ColorControl.ToArgb () || backColor == Color.Empty ? true : false;
+			CPColor cpcolor = is_themecolor ? CPColor.Empty : ResPool.GetCPColor (backColor);
+			Pen pen;
 
-            // --- START: New Rounded Drawing Logic ---
+			switch (state) {
+				case ButtonThemeState.Normal:
+				case ButtonThemeState.Disabled:
+				case ButtonThemeState.Pressed:
+				case ButtonThemeState.Default:
+					pen = is_themecolor ? SystemPens.ControlDarkDark : ResPool.GetPen (cpcolor.DarkDark);
 
-            // Define the radius for the corners.
-            int cornerRadius = RVUtils.cornerRadius;
+					bounds.Width -= 1;
+					bounds.Height -= 1;
+					g.DrawRectangle (pen, bounds);
 
-            // Set high-quality rendering for smooth curves.
-            var originalSmoothingMode = g.SmoothingMode;
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+					if (state == ButtonThemeState.Default || state == ButtonThemeState.Pressed) {
+						bounds.Inflate (-1, -1);
+						g.DrawRectangle (pen, bounds);
+					}
+					break;
+				case ButtonThemeState.Entered:
+					pen = is_themecolor ? SystemPens.ControlLightLight : ResPool.GetPen (cpcolor.LightLight);
+					g.DrawLine (pen, bounds.X, bounds.Y, bounds.X, bounds.Bottom - 2);
+					g.DrawLine (pen, bounds.X + 1, bounds.Y, bounds.Right - 2, bounds.Y);
 
-            switch (state)
-            {
-                case ButtonThemeState.Normal:
-                case ButtonThemeState.Disabled:
-                case ButtonThemeState.Pressed:
-                case ButtonThemeState.Default:
-                    pen = is_themecolor ? SystemPens.ControlDarkDark : ResPool.GetPen(cpcolor.DarkDark);
-                    pen = new Pen(RVUtils.NewGradientPen());
-
-                    Rectangle outerBounds = new Rectangle(bounds.Location, new Size(bounds.Width - 1, bounds.Height - 1));
-
-                    // Draw the outer rounded rectangle.
-                    using (var path = CreateRoundedRectanglePath(outerBounds, cornerRadius))
-                    {
-                        g.DrawPath(pen, path);
-                    }
-
-                    // For Default or Pressed states, draw a second, inner border.
-                    if (state == ButtonThemeState.Default || state == ButtonThemeState.Pressed)
-                    {
-                        Rectangle innerBounds = outerBounds;
-                        innerBounds.Inflate(-1, -1);
-                        using (var innerPath = CreateRoundedRectanglePath(innerBounds, cornerRadius > 1 ? cornerRadius - 1 : 1))
-                        {
-                            g.DrawPath(pen, innerPath);
-                        }
-                    }
-                    break;
-
-                case ButtonThemeState.Entered:
-                    // For the 3D effect, we must use clipping to draw the path in two different colors.
-                    Rectangle borderBounds = new Rectangle(bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
-                    using (var path = CreateRoundedRectanglePath(borderBounds, cornerRadius))
-                    {
-                        // Draw the top-left highlight using a diagonal clip.
-                        pen = is_themecolor ? SystemPens.ControlLightLight : ResPool.GetPen(cpcolor.LightLight);
-                        pen = new Pen(RVUtils.NewGradientPen());
-                        using (var clipPath = new System.Drawing.Drawing2D.GraphicsPath())
-                        {
-                            clipPath.AddPolygon(new Point[] {
-                        borderBounds.Location,
-                        new Point(borderBounds.Right, borderBounds.Top),
-                        new Point(borderBounds.Left, borderBounds.Bottom)
-                    });
-                            using (var clipRegion = new Region(clipPath))
-                            {
-                                g.SetClip(clipRegion, System.Drawing.Drawing2D.CombineMode.Intersect);
-                                g.DrawPath(pen, path);
-                                g.ResetClip();
-                            }
-                        }
-
-                        // Draw the bottom-right shadow using an inverted diagonal clip.
-                        pen = is_themecolor ? SystemPens.ControlDark : ResPool.GetPen(cpcolor.Dark);
-                        pen = new Pen(RVUtils.NewGradientPen());
-                        using (var clipPath = new System.Drawing.Drawing2D.GraphicsPath())
-                        {
-                            clipPath.AddPolygon(new Point[] {
-                        new Point(borderBounds.Right, borderBounds.Top),
-                        new Point(borderBounds.Right, borderBounds.Bottom),
-                        new Point(borderBounds.Left, borderBounds.Bottom)
-                    });
-                            using (var clipRegion = new Region(clipPath))
-                            {
-                                g.SetClip(clipRegion, System.Drawing.Drawing2D.CombineMode.Intersect);
-                                g.DrawPath(pen, path);
-                                g.ResetClip();
-                            }
-                        }
-                    }
-                    break;
-            }
-
-            // Restore the original graphics state.
-            g.SmoothingMode = originalSmoothingMode;
-        }
-        #endregion
-        #endregion
-
-        private static Color ChangeIntensity (Color baseColor, float percent)
+					pen = is_themecolor ? SystemPens.ControlDark : ResPool.GetPen (cpcolor.Dark);
+					g.DrawLine (pen, bounds.X, bounds.Bottom - 1, bounds.Right - 1, bounds.Bottom - 1);
+					g.DrawLine (pen, bounds.Right - 1, bounds.Y, bounds.Right - 1, bounds.Bottom - 2);
+					break;
+			}
+		}
+		#endregion
+		#endregion
+		
+		private static Color ChangeIntensity (Color baseColor, float percent)
 		{
 			int H, I, S;
 

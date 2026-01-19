@@ -259,7 +259,8 @@ namespace System.Windows.Forms.Theming.Default
 
 		public virtual void Draw (Graphics dc, Rectangle area, TabControl tab)
 		{
-			DrawBackground (dc, area, tab);
+            if (tab.Region == null) tab.Region = new Region(RVUtils.CreateRoundedRectanglePath(new Rectangle(new Point(0, 0), tab.Size), RVUtils.cornerRadius));
+            DrawBackground (dc, area, tab);
 
 			int start = 0;
 			int end = tab.TabPages.Count;

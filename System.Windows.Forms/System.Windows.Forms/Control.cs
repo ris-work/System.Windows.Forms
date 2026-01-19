@@ -1413,7 +1413,7 @@ namespace System.Windows.Forms
                 if (!tbstyle_flat)
                 {
                     Rectangle paintRect = pevent.ClipRectangle;
-                    if (this is Button or Panel or DataGrid or DataGridView or UpDownBase or DateTimePicker or ComboBox or MonthCalendar or GroupBox or TextBoxBase)
+                    if (this is Button or Panel or DataGrid or DataGridView or UpDownBase or DateTimePicker or ComboBox or MonthCalendar or GroupBox or TextBoxBase or ScrollableControl or ScrollBar)
                     {
                         Size currentSize = paintRect.Size;
 
@@ -1437,7 +1437,8 @@ namespace System.Windows.Forms
                             {
                                 this.Region = new Region(expectedPath);
                             }
-							
+                            pevent.Graphics.FillRectangle(BackColorBrush, paintRect);
+
                         }
 
                         // Update if not found or size changed

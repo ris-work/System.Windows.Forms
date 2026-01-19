@@ -1748,7 +1748,7 @@ namespace System.Windows.Forms
 		internal override void OnPaintInternal (PaintEventArgs pevent)
 		{
             //if (this.Region == null) this.Region = new Region(RVUtils.CreateRoundedRectanglePath(clippingArea, 50));
-            if (this.Region == null) this.Region = new Region(RVUtils.CreateRoundedRectanglePath(new Rectangle(new Point(0,0), this.Size), 10));
+            if (this.Region == null) this.Region = new Region(RVUtils.CreateRoundedRectanglePath(new Rectangle(new Point(0,0), this.Size), RVUtils.cornerRadius));
             Draw (pevent.Graphics, pevent.ClipRectangle);
 
 			//

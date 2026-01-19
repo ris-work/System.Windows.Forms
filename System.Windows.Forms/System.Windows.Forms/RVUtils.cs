@@ -35,6 +35,25 @@ namespace System.Windows.Forms
         // ParentBackgroundColor: plain static nullable Color plus a simple lock for thread-safety
         private static readonly object _parentBgLock = new object();
         private static Color? _parentBackgroundColor = null;
+        private static bool Initialized = false;
+
+        public static void Initialize() { 
+            if (!Initialized)
+            {
+                if(Environment.GetEnvironmentVariable("RV_CORNER_RADIUS") != null)
+                {
+                    try
+                    {
+                        cornerRadius = int.Parse(Environment.GetEnvironmentVariable("RV_CORNER_RADIUS"));
+                    }
+                    catch(Exception E)
+                    {
+                        System.Console.WriteLine($"Error setting cornerRadius to {Environment.GetEnvironmentVariable("RV_CORNER_RADIUS")}: {E.StackTrace}");
+                    }
+                    Initialized = true;
+                }
+            }
+        }
 
         public static Func<Control, Type, bool> IsTypeOrContainedInTypeRecursive = (Control x, Type T) =>
                     {
@@ -200,6 +219,7 @@ namespace System.Windows.Forms
         public static void FillRoundedRectangle(Graphics g, Brush brush, Rectangle rect, int cornerRadius, Brush? innerBrush = null)
 
         {
+            Initialize();
             DefaultInnerBrush = ColorUtils.CielRandomGradientGenerator.Generate(3, RandomColorMode.EquiSat, GradientDirection.ForwardDiagonal);
 
             if (innerBrush == null) { innerBrush = brush; }
@@ -303,10 +323,12 @@ namespace System.Windows.Forms
 
         public static void FillRoundedRect(this Graphics g, Brush brush, Rectangle rect, int? cornerRadius = null, Brush? innerBrush = null)
         {
+            Initialize();
             FillRoundedRectangle(g, brush, rect, cornerRadius ?? RVUtils.cornerRadius, innerBrush);
         }
         public static void DrawRoundedRectangle(this Graphics g, Pen pen, Rectangle rect, float cornerRadius)
         {
+            Initialize();
             if (g == null || pen == null) return;
 
             using (var path = CreateRoundedRectanglePath(rect, cornerRadius))
