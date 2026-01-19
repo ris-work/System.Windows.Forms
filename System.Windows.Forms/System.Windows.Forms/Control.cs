@@ -1413,7 +1413,7 @@ namespace System.Windows.Forms
                 if (!tbstyle_flat)
                 {
                     Rectangle paintRect = pevent.ClipRectangle;
-                    if (this is Button or Panel or DataGrid or DataGridView or UpDownBase or DateTimePicker or ComboBox or MonthCalendar or GroupBox)
+                    if (this is Button or Panel or DataGrid or DataGridView or UpDownBase or DateTimePicker or ComboBox or MonthCalendar or GroupBox or TextBoxBase)
                     {
                         Size currentSize = paintRect.Size;
 
@@ -1428,8 +1428,11 @@ namespace System.Windows.Forms
                             }
                         }
 
+						bool AlwaysRoundIfNotRound = false;
+						AlwaysRoundIfNotRound = this.Region == null || this.Region.IsRectangle() || this.Region.IsVisible(1,1);
+
                         // Update if not found or size changed
-                        if (key == null || !RVUtils._controlSizes[key].Equals(currentSize))
+                        if (key == null || !RVUtils._controlSizes[key].Equals(currentSize) || AlwaysRoundIfNotRound)
                         {
                             if (key == null)
                             {
@@ -1441,7 +1444,7 @@ namespace System.Windows.Forms
                             Logger.AddLog($"Size changed to {currentSize}, updating Region");
 
 							// Set the region
-							if (this is ComboBox or NumericUpDown or DateTimePicker or MonthCalendar or GroupBox)
+							if (this is ComboBox or NumericUpDown or DateTimePicker or MonthCalendar or GroupBox or TextBoxBase)
 							{
                                 using (var expectedPath = RVUtils.CreateRoundedRectanglePath(new Rectangle(0, 0, this.Width, this.Height), RVUtils.cornerRadius))
                                 {

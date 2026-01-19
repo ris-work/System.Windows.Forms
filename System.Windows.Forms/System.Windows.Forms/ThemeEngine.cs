@@ -38,7 +38,7 @@ namespace System.Windows.Forms
 			if (Application.VisualStylesEnabled) {
 				theme = new ThemeVisualStyles ();
 			} else {
-				theme = new ThemeWin32New ();
+				theme = new ThemeWin32Classic ();
 			}
 		}
 		

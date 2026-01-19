@@ -1747,7 +1747,9 @@ namespace System.Windows.Forms
 
 		internal override void OnPaintInternal (PaintEventArgs pevent)
 		{
-			Draw (pevent.Graphics, pevent.ClipRectangle);
+            //if (this.Region == null) this.Region = new Region(RVUtils.CreateRoundedRectanglePath(clippingArea, 50));
+            if (this.Region == null) this.Region = new Region(RVUtils.CreateRoundedRectanglePath(new Rectangle(new Point(0,0), this.Size), 10));
+            Draw (pevent.Graphics, pevent.ClipRectangle);
 
 			//
 			// OnPaint does not get raised on MS (see bug #80639)
@@ -1757,10 +1759,15 @@ namespace System.Windows.Forms
 
 		internal void Draw (Graphics g, Rectangle clippingArea)
 		{
-			ThemeEngine.Current.TextBoxBaseFillBackground (this, g, clippingArea);
+			//g.SetClip(RVUtils.CreateRoundedRectanglePath(clippingArea, 50));
 			
-			// Draw the viewable document
-			document.Draw(g, clippingArea);
+            //if (this.Region==null) this.Region= new Region(RVUtils.CreateRoundedRectanglePath(new Rectangle(this.Left, this.Top, this.Width, this.Height), 50));
+            ThemeEngine.Current.TextBoxBaseFillBackground (this, g, clippingArea);
+
+            // Draw the viewable document
+            //g.SetClip(RVUtils.CreateRoundedRectanglePath(clippingArea, 50));
+            document.Draw(g, clippingArea);
+			//g.ResetClip();
 		}
 
 		private void FixupHeight ()

@@ -37,7 +37,7 @@ namespace System.Windows.Forms
 	/// This theme uses only the managed VisualStyles API.
 	/// To select it, call <see cref="Application.EnableVisualStyles"/>.
 	/// </remarks>
-	class ThemeVisualStyles : ThemeWin32New
+	class ThemeVisualStyles : ThemeWin32Classic
 	{
 		static bool render_client_areas;
 		static bool render_non_client_areas;
