@@ -1431,8 +1431,17 @@ namespace System.Windows.Forms
 						bool AlwaysRoundIfNotRound = false;
 						AlwaysRoundIfNotRound = this.Region == null || this.Region.IsRectangle() || this.Region.IsVisible(1,1);
 
+						if(this.Region == null)
+						{
+                            using (var expectedPath = RVUtils.CreateRoundedRectanglePath(new Rectangle(0, 0, this.Width, this.Height), RVUtils.cornerRadius))
+                            {
+                                this.Region = new Region(expectedPath);
+                            }
+							
+                        }
+
                         // Update if not found or size changed
-                        if (key == null || !RVUtils._controlSizes[key].Equals(currentSize) || AlwaysRoundIfNotRound)
+                        /*if (key == null || !RVUtils._controlSizes[key].Equals(currentSize) || AlwaysRoundIfNotRound)
                         {
                             if (key == null)
                             {
@@ -1460,7 +1469,7 @@ namespace System.Windows.Forms
                                 }
                                 System.Console.WriteLine($"{this.GetType}: Size: {this.Width}x{this.Height}, ClientRect: {this.ClientRectangle.Width}x{this.ClientRectangle.Height} - Reported to Paint: {paintRect.Size}");
                             }
-                        }
+                        }*/
                     }
 					else
 					{
