@@ -1418,7 +1418,7 @@ namespace System.Windows.Forms
                         Size currentSize = paintRect.Size;
 
                         // Find the control in our dictionary
-                        WeakReference key = null;
+                        /*WeakReference key = null;
                         foreach (var kvp in RVUtils._controlSizes)
                         {
                             if (kvp.Key.IsAlive && kvp.Key.Target == this)
@@ -1426,7 +1426,7 @@ namespace System.Windows.Forms
                                 key = kvp.Key;
                                 break;
                             }
-                        }
+                        }*/
 
 						bool AlwaysRoundIfNotRound = false;
 						AlwaysRoundIfNotRound = this.Region == null || this.Region.IsRectangle() || this.Region.IsVisible(1,1);
@@ -1438,7 +1438,17 @@ namespace System.Windows.Forms
                                 this.Region = new Region(expectedPath);
                             }
                             pevent.Graphics.FillRectangle(BackColorBrush, paintRect);
+                            //if(RVUtils.IsFrutigerAero == true) RVUtils.DrawAeroGlassOverlay(pevent.Graphics, paintRect);
+                            Region originalClip = pevent.Graphics.Clip.Clone();
+                            pevent.Graphics.IntersectClip(this.Region);
+                            //if (RVUtils.IsFrutigerAero == true) RVUtils.DrawAeroGlassOverlay(pevent.Graphics, paintRect);
 
+                        }
+						else
+						{
+                            pevent.Graphics.FillRectangle(BackColorBrush, paintRect);
+                            pevent.Graphics.IntersectClip(this.Region);
+                            if (RVUtils.IsFrutigerAero == true) RVUtils.DrawAeroGlassOverlay(pevent.Graphics, paintRect);
                         }
 
                         // Update if not found or size changed
@@ -1476,6 +1486,7 @@ namespace System.Windows.Forms
 					{
                         
                         pevent.Graphics.FillRectangle(BackColorBrush, paintRect);
+                        //if (RVUtils.IsFrutigerAero == true) RVUtils.DrawAeroGlassOverlay(pevent.Graphics, paintRect);
                     }
                 }
                 return;
@@ -6180,9 +6191,11 @@ namespace System.Windows.Forms
 		[EditorBrowsable(EditorBrowsableState.Advanced)]
 		protected virtual void OnMouseLeave(EventArgs e) {
 			EventHandler eh = (EventHandler)(Events [MouseLeaveEvent]);
+			
 			if (eh != null)
 				eh (this, e);
-		}
+            
+        }
 
 		[EditorBrowsable(EditorBrowsableState.Advanced)]
 		protected virtual void OnMouseMove(MouseEventArgs e) {

@@ -37,6 +37,8 @@ namespace System.Windows.Forms
         private static Color? _parentBackgroundColor = null;
         private static bool Initialized = false;
 
+        public static bool IsFrutigerAero = true;
+
         public static void Initialize() { 
             if (!Initialized)
             {
@@ -50,8 +52,21 @@ namespace System.Windows.Forms
                     {
                         System.Console.WriteLine($"Error setting cornerRadius to {Environment.GetEnvironmentVariable("RV_CORNER_RADIUS")}: {E.StackTrace}");
                     }
-                    Initialized = true;
+                    
                 }
+                if (Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO") != null)
+                {
+                    try
+                    {
+                        IsFrutigerAero = Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO").ToLowerInvariant() == "true";
+                    }
+                    catch (Exception E)
+                    {
+                        System.Console.WriteLine($"Error setting cornerRadius to {Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO")}: {E.StackTrace}");
+                    }
+
+                }
+                Initialized = true;
             }
         }
 
@@ -184,7 +199,7 @@ namespace System.Windows.Forms
               ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw |
               ControlStyles.OptimizedDoubleBuffer, true);
         }
-        public static System.Drawing.Drawing2D.GraphicsPath CreateRoundedRectanglePath(Rectangle rect, float cornerRadius)
+        /*public static System.Drawing.Drawing2D.GraphicsPath CreateRoundedRectanglePath(Rectangle rect, float cornerRadius)
         {
             // Create a new path
             var path = new System.Drawing.Drawing2D.GraphicsPath();
@@ -202,7 +217,7 @@ namespace System.Windows.Forms
             //return path;
 
             // Define the rectangle for the arcs
-            RectangleF arcRect = new RectangleF(rect.Location, new Size((int)diameter, (int)diameter));
+            RectangleF arcRect = new RectangleF(rect.Location, new SizeF(diameter, diameter));
 
             // Add the arcs for each corner
             path.AddArc(arcRect, 180, 90); // Top-left
@@ -212,6 +227,55 @@ namespace System.Windows.Forms
             path.AddArc(arcRect, 0, 90);   // Bottom-right
             arcRect.X = rect.Left;
             path.AddArc(arcRect, 90, 90);  // Bottom-left
+
+            path.CloseFigure();
+            return path;
+        }*/
+        public static System.Drawing.Drawing2D.GraphicsPath CreateRoundedRectanglePath(Rectangle rect, float cornerRadius)
+        {
+            var path = new System.Drawing.Drawing2D.GraphicsPath();
+
+            // Adjust these values to correct for asymmetry or specific DPI clipping issues.
+            // insetTopLeft shifts the Top and Left edges inward (away from 0,0).
+            // insetBottomRight shifts the Bottom and Right edges inward (towards 0,0).
+            float insetTopLeft = 1.0f;     // Try 0.5f or 0f if left/top is too cut off
+            float insetBottomRight = 2.0f;  // Try 1.5f or 2f if right/bottom is still overflowing
+
+            float left = rect.Left + insetTopLeft;
+            float top = rect.Top + insetTopLeft;
+            float right = rect.Right - insetBottomRight;
+            float bottom = rect.Bottom - insetBottomRight;
+
+            // Calculate effective width/height based on the new insets
+            float width = right - left;
+            float height = bottom - top;
+
+            float diameter = Math.Min(Math.Min(width, height), cornerRadius * 2);
+
+            if (diameter <= 0)
+            {
+                // Fallback to a rectangle using the same insets
+                path.AddRectangle(new RectangleF(left, top, width, height));
+                return path;
+            }
+
+            float radius = diameter / 2f;
+
+            // Top-Left Arc
+            path.AddArc(left, top, diameter, diameter, 180, 90);
+            path.AddLine(left + radius, top, right - radius, top);
+
+            // Top-Right Arc
+            path.AddArc(right - diameter, top, diameter, diameter, 270, 90);
+            path.AddLine(right, top + radius, right, bottom - radius);
+
+            // Bottom-Right Arc
+            path.AddArc(right - diameter, bottom - diameter, diameter, diameter, 0, 90);
+            path.AddLine(right - radius, bottom, left + radius, bottom);
+
+            // Bottom-Left Arc
+            path.AddArc(left, bottom - diameter, diameter, diameter, 90, 90);
+            path.AddLine(left, bottom - radius, left, top + radius);
 
             path.CloseFigure();
             return path;
@@ -376,6 +440,61 @@ namespace System.Windows.Forms
                 default: return DashStyle.Solid;
             }
         }
+            // Wrapper for Interactive Controls
+            public static void DrawAeroInteractive(this Graphics g, Rectangle rect)
+            {
+                // 1. Top Sheen
+                using (var glossBrush = new LinearGradientBrush(rect, Color.Transparent, Color.Transparent, LinearGradientMode.Vertical))
+                {
+                    var blend = new ColorBlend();
+                    blend.Positions = new float[] { 0.0f, 0.05f, 0.35f, 0.45f, 1.0f };
+                    blend.Colors = new Color[] { Color.FromArgb(200, Color.White), Color.FromArgb(150, Color.White), Color.FromArgb(20, Color.White), Color.FromArgb(0, Color.White), Color.FromArgb(0, Color.White) };
+                    glossBrush.InterpolationColors = blend;
+                    g.FillRectangle(glossBrush, rect);
+                }
+
+                // 2. Bottom Depth
+                using (var depthBrush = new LinearGradientBrush(rect, Color.Transparent, Color.Transparent, LinearGradientMode.Vertical))
+                {
+                    var blend = new ColorBlend();
+                    blend.Positions = new float[] { 0.0f, 0.5f, 0.85f, 0.95f, 1.0f };
+                    blend.Colors = new Color[] { Color.FromArgb(0, Color.Black), Color.FromArgb(0, Color.Black), Color.FromArgb(40, Color.Black), Color.FromArgb(80, Color.Black), Color.FromArgb(100, Color.Black) };
+                    depthBrush.InterpolationColors = blend;
+                    g.FillRectangle(depthBrush, rect);
+                }
+
+                // 3. Subtle Reflection
+                using (var reflectionBrush = new LinearGradientBrush(rect, Color.Transparent, Color.Transparent, LinearGradientMode.Vertical))
+                {
+                    var blend = new ColorBlend();
+                    blend.Positions = new float[] { 0.0f, 0.42f, 0.45f, 0.48f, 1.0f };
+                    blend.Colors = new Color[] { Color.FromArgb(0, Color.White), Color.FromArgb(0, Color.White), Color.FromArgb(50, Color.White), Color.FromArgb(0, Color.White), Color.FromArgb(0, Color.White) };
+                    reflectionBrush.InterpolationColors = blend;
+                    g.FillRectangle(reflectionBrush, rect);
+                }
+
+                // 4. Borders
+                using (var pen = new Pen(Color.FromArgb(120, Color.White))) { g.DrawLine(pen, rect.X + 1, rect.Y + 1, rect.Right - 1, rect.Y + 1); g.DrawLine(pen, rect.X + 1, rect.Y + 1, rect.X + 1, rect.Bottom - 1); }
+                using (var pen = new Pen(Color.FromArgb(80, Color.Black))) { g.DrawLine(pen, rect.Right - 1, rect.Y + 1, rect.Right - 1, rect.Bottom - 1); g.DrawLine(pen, rect.X + 1, rect.Bottom - 1, rect.Right - 1, rect.Bottom - 1); }
+            }
+
+            // Wrapper for Container Controls
+            public static void DrawAeroContainer(this Graphics g, Rectangle rect)
+            {
+                // 1. Subtle Frost
+                using (var bgBrush = new LinearGradientBrush(rect, Color.Transparent, Color.Transparent, LinearGradientMode.Vertical))
+                {
+                    var blend = new ColorBlend();
+                    blend.Positions = new float[] { 0.0f, 0.4f, 1.0f };
+                    blend.Colors = new Color[] { Color.FromArgb(25, Color.White), Color.FromArgb(0, Color.White), Color.FromArgb(15, Color.Black) };
+                    bgBrush.InterpolationColors = blend;
+                    g.FillRectangle(bgBrush, rect);
+                }
+
+                // 2. Clean Border
+                using (var topPen = new Pen(Color.FromArgb(60, Color.White))) { g.DrawLine(topPen, rect.X, rect.Y, rect.Right, rect.Y); }
+                using (var borderPen = new Pen(Color.FromArgb(100, Color.Black))) { g.DrawRectangle(borderPen, rect.X, rect.Y, rect.Width - 1, rect.Height - 1); }
+            }
 
     }
 }
