@@ -1412,81 +1412,61 @@ namespace System.Windows.Forms
             {
                 if (!tbstyle_flat)
                 {
+					if (this.DoubleBuffered != true) this.DoubleBuffered = true;
                     Rectangle paintRect = pevent.ClipRectangle;
-                    if (this is Button or Panel or DataGrid or DataGridView or UpDownBase or DateTimePicker or ComboBox or MonthCalendar or GroupBox or TextBoxBase or ScrollableControl or ScrollBar)
+
+                    // Define groups
+                    bool isInteractive = this is Button or TextBoxBase or ComboBox or DateTimePicker or UpDownBase;
+                    bool isContainer = this is Panel or GroupBox or ScrollableControl or DataGrid or DataGridView;
+
+                    if (isInteractive || isContainer)
                     {
-                        Size currentSize = paintRect.Size;
+                        // 1. Define the FULL rectangle (0,0 to Width,Height)
+                        // We DO NOT use paintRect for the gradient geometry, or it will smear/distort on partial repaints.
+                        Rectangle fullRect = new Rectangle(0, 0, this.Width, this.Height);
 
-                        // Find the control in our dictionary
-                        /*WeakReference key = null;
-                        foreach (var kvp in RVUtils._controlSizes)
+                        // 2. Ensure Region exists
+                        if (this.Region == null)
                         {
-                            if (kvp.Key.IsAlive && kvp.Key.Target == this)
-                            {
-                                key = kvp.Key;
-                                break;
-                            }
-                        }*/
-
-						bool AlwaysRoundIfNotRound = false;
-						AlwaysRoundIfNotRound = this.Region == null || this.Region.IsRectangle() || this.Region.IsVisible(1,1);
-
-						if(this.Region == null)
-						{
-                            using (var expectedPath = RVUtils.CreateRoundedRectanglePath(new Rectangle(0, 0, this.Width, this.Height), RVUtils.cornerRadius))
+                            using (var expectedPath = RVUtils.CreateRoundedRectanglePath(fullRect, RVUtils.cornerRadius))
                             {
                                 this.Region = new Region(expectedPath);
                             }
-                            pevent.Graphics.FillRectangle(BackColorBrush, paintRect);
-                            //if(RVUtils.IsFrutigerAero == true) RVUtils.DrawAeroGlassOverlay(pevent.Graphics, paintRect);
-                            Region originalClip = pevent.Graphics.Clip.Clone();
-                            pevent.Graphics.IntersectClip(this.Region);
-                            //if (RVUtils.IsFrutigerAero == true) RVUtils.DrawAeroGlassOverlay(pevent.Graphics, paintRect);
-
-                        }
-						else
-						{
-                            pevent.Graphics.FillRectangle(BackColorBrush, paintRect);
-                            pevent.Graphics.IntersectClip(this.Region);
-                            if (RVUtils.IsFrutigerAero == true) RVUtils.DrawAeroGlassOverlay(pevent.Graphics, paintRect);
                         }
 
-                        // Update if not found or size changed
-                        /*if (key == null || !RVUtils._controlSizes[key].Equals(currentSize) || AlwaysRoundIfNotRound)
+                        // 3. SAVE STATE and APPLY CLIP FIRST
+                        // This is critical. We must restrict drawing to the rounded region BEFORE 
+                        // we paint the background or the gradient.
+                        Region originalClip = pevent.Graphics.Clip.Clone();
+                        pevent.Graphics.IntersectClip(this.Region);
+
+                        try
                         {
-                            if (key == null)
+                            // 4. Paint Background
+                            pevent.Graphics.FillRectangle(BackColorBrush, fullRect);
+
+                            // 5. Paint Overlay using Extension Methods
+                            if (RVUtils.IsFrutigerAero == true)
                             {
-                                key = new WeakReference(this);
-                            }
-
-                            RVUtils._controlSizes[key] = currentSize;
-
-                            Logger.AddLog($"Size changed to {currentSize}, updating Region");
-
-							// Set the region
-							if (this is ComboBox or NumericUpDown or DateTimePicker or MonthCalendar or GroupBox or TextBoxBase)
-							{
-                                using (var expectedPath = RVUtils.CreateRoundedRectanglePath(new Rectangle(0, 0, this.Width, this.Height), RVUtils.cornerRadius))
+                                if (isInteractive)
                                 {
-                                    if(this.Region.IsRectangle(pevent.Graphics)) this.Region = new Region(expectedPath);
+                                    pevent.Graphics.DrawAeroInteractive(fullRect);
                                 }
-								System.Console.WriteLine($"{this.GetType}: Size: {this.Width}x{this.Height}, ClientRect: {this.ClientRectangle.Width}x{this.ClientRectangle.Height} - Reported to Paint: {paintRect.Size}");
-							}
-							else
-							{
-                                using (var expectedPath = RVUtils.CreateRoundedRectanglePath(paintRect, RVUtils.cornerRadius))
+                                else if (isContainer)
                                 {
-                                    this.Region = new Region(expectedPath);
+                                    pevent.Graphics.DrawAeroContainer(fullRect);
                                 }
-                                System.Console.WriteLine($"{this.GetType}: Size: {this.Width}x{this.Height}, ClientRect: {this.ClientRectangle.Width}x{this.ClientRectangle.Height} - Reported to Paint: {paintRect.Size}");
                             }
-                        }*/
+                        }
+                        finally
+                        {
+                            // 6. Restore Clip
+                            pevent.Graphics.Clip = originalClip;
+                        }
                     }
-					else
-					{
-                        
+                    else
+                    {
                         pevent.Graphics.FillRectangle(BackColorBrush, paintRect);
-                        //if (RVUtils.IsFrutigerAero == true) RVUtils.DrawAeroGlassOverlay(pevent.Graphics, paintRect);
                     }
                 }
                 return;

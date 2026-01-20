@@ -37,7 +37,7 @@ namespace System.Windows.Forms
         private static Color? _parentBackgroundColor = null;
         private static bool Initialized = false;
 
-        public static bool IsFrutigerAero = true;
+        public static bool IsFrutigerAero = false;
 
         public static void Initialize() { 
             if (!Initialized)
