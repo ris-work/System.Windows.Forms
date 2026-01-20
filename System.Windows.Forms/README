@@ -1,3 +1,10 @@
+
+
+This is code obtained from System.Windows.Forms implementation from Mono
+by DanielVanNoord and ported to modern .net. This is a drop-in replacement
+to System.Windows.Forms and is cross-platform and works on Linux and on
+Microsoft Windows (R).
+
 System.Windows.Forms README
 
 * Introduction
