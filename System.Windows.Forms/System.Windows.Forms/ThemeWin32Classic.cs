@@ -259,7 +259,8 @@ namespace System.Windows.Forms
 		{
 			if (!button.Pressed) {
 				Color focus_color = ControlPaint.Dark (button.BackColor);
-				g.DrawRectangle (ResPool.GetPen (focus_color), new Rectangle (button.ClientRectangle.Left + 4, button.ClientRectangle.Top + 4, button.ClientRectangle.Width - 9, button.ClientRectangle.Height - 9));
+                g.DrawRoundedRectangle(ResPool.GetDashPen(focus_color, DashStyle.Dot), new Rectangle(button.ClientRectangle.Left + 4, button.ClientRectangle.Top + 4, button.ClientRectangle.Width - 9, button.ClientRectangle.Height - 9));
+                //g.DrawRectangle (ResPool.GetPen (focus_color), new Rectangle (button.ClientRectangle.Left + 4, button.ClientRectangle.Top + 4, button.ClientRectangle.Width - 9, button.ClientRectangle.Height - 9));
 			}
 		}
 
@@ -862,7 +863,7 @@ namespace System.Windows.Forms
 				if (button.FlatStyle == FlatStyle.Popup && !button.is_pressed)
 					focus_color = ControlPaint.Dark(button.BackColor);
 				
-				dc.DrawRectangle (ResPool.GetPen (focus_color), button.ClientRectangle.X, button.ClientRectangle.Y, 
+				dc.DrawRoundedRectangle (ResPool.GetPen (focus_color), button.ClientRectangle.X, button.ClientRectangle.Y, 
 						  button.ClientRectangle.Width - 1, button.ClientRectangle.Height - 1);
 			}
 			
@@ -6958,7 +6959,7 @@ namespace System.Windows.Forms
 			rect.Width--;
 			rect.Height--;			
 			
-			graphics.DrawRectangle (pen, rect);
+			graphics.DrawRoundedRectangle (pen, rect);
 			pen.Dispose ();
 		}
 		
