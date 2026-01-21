@@ -1464,6 +1464,19 @@ namespace System.Windows.Forms
                                     pevent.Graphics.DrawAeroContainer(fullRect);
                                 }
                             }
+							if(RVUtils.BorderWidth > 0)
+							{
+                                if (isInteractive)
+                                {
+                                    pevent.Graphics.DrawBorderInteractive(fullRect);
+
+                                }
+                                else if (isContainer)
+                                {
+                                    //pevent.Graphics.DrawAeroContainer(fullRect);
+                                }
+
+                            }
                         }
                         finally
                         {

@@ -42,6 +42,9 @@ namespace System.Windows.Forms
         public static int FrutigerAeroBorderInset = 2;
         public static int FrutigerAeroBorderThickness = 2;
         public static double Opacity = 1;
+        public static double BorderWidth = 0;
+
+        internal static SystemResPool ResPool = new SystemResPool();
 
         public static void Initialize() { 
             if (!Initialized)
@@ -66,7 +69,7 @@ namespace System.Windows.Forms
                     }
                     catch (Exception E)
                     {
-                        System.Console.WriteLine($"Error setting cornerRadius to {Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_BORDER_INSET")}: {E.StackTrace}");
+                        System.Console.WriteLine($"Error setting FrutigerAeroBorderInset to {Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_BORDER_INSET")}: {E.StackTrace}");
                     }
 
                 }
@@ -78,7 +81,7 @@ namespace System.Windows.Forms
                     }
                     catch (Exception E)
                     {
-                        System.Console.WriteLine($"Error setting cornerRadius to {Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_BORDER_THICKNESS")}: {E.StackTrace}");
+                        System.Console.WriteLine($"Error setting FrutigerAeroBorderThickness to {Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_BORDER_THICKNESS")}: {E.StackTrace}");
                     }
 
                 }
@@ -90,7 +93,7 @@ namespace System.Windows.Forms
                     }
                     catch (Exception E)
                     {
-                        System.Console.WriteLine($"Error setting cornerRadius to {Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO")}: {E.StackTrace}");
+                        System.Console.WriteLine($"Error setting IsFrutigerAero to {Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO")}: {E.StackTrace}");
                     }
 
                 }
@@ -102,7 +105,7 @@ namespace System.Windows.Forms
                     }
                     catch (Exception E)
                     {
-                        System.Console.WriteLine($"Error setting cornerRadius to {Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_BORDERS")}: {E.StackTrace}");
+                        System.Console.WriteLine($"Error setting IsFrutigerAeroEnableBorder to {Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_BORDERS")}: {E.StackTrace}");
                     }
 
                 }
@@ -114,7 +117,19 @@ namespace System.Windows.Forms
                     }
                     catch (Exception E)
                     {
-                        System.Console.WriteLine($"Error setting cornerRadius to {Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_OPACITY")}: {E.StackTrace}");
+                        System.Console.WriteLine($"Error setting Opacity to {Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_OPACITY")}: {E.StackTrace}");
+                    }
+
+                }
+                if (Environment.GetEnvironmentVariable("RV_BORDER_WIDTH") != null)
+                {
+                    try
+                    {
+                        BorderWidth = double.Parse(Environment.GetEnvironmentVariable("RV_BORDER_WIDTH"));
+                    }
+                    catch (Exception E)
+                    {
+                        System.Console.WriteLine($"Error setting BorderWidth to {Environment.GetEnvironmentVariable("RV_BORDER_WIDTH")}: {E.StackTrace}");
                     }
 
                 }
@@ -572,7 +587,19 @@ namespace System.Windows.Forms
                 // 4. Borders
                 using (var pen = new Pen(Color.FromArgb(120, Color.White))) { g.DrawLine(pen, rect.X + 1, rect.Y + 1, rect.Right - 1, rect.Y + 1); g.DrawLine(pen, rect.X + 1, rect.Y + 1, rect.X + 1, rect.Bottom - 1); }
                 using (var pen = new Pen(Color.FromArgb(80, Color.Black))) { g.DrawLine(pen, rect.Right - 1, rect.Y + 1, rect.Right - 1, rect.Bottom - 1); g.DrawLine(pen, rect.X + 1, rect.Bottom - 1, rect.Right - 1, rect.Bottom - 1); }
+
+            
             }
+
+        public static void DrawBorderInteractive(this Graphics g, Rectangle rect)
+        {
+            if (BorderWidth > 0)
+            {
+                g.SmoothingMode = SmoothingMode.HighQuality;
+                //Rectangle R2 = new Rectangle(rect.Top + 10, rect.Left + 10, rect.Width - 10, rect.Height - 10);
+                g.DrawRoundedRectangle(new Pen(Color.FromArgb(255, Color.Black), (int) BorderWidth), rect);
+            }
+        }
 
             // Wrapper for Container Controls
             public static void DrawAeroContainer(this Graphics g, Rectangle rect)
