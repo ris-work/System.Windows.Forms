@@ -1762,7 +1762,18 @@ namespace System.Windows.Forms {
 			if (Width <= 0 || Height <=  0 || Visible == false)
     				return;
 
-			Draw (pe.ClipRectangle, pe.Graphics);
+            Rectangle fullRectOrig = new Rectangle(0, 0, this.Width, this.Height);
+
+            if (this.Region == null || !this.rv_region_set)
+            {
+                using (var expectedPath = RVUtils.CreateRoundedRectanglePath(fullRectOrig, RVUtils.cornerRadius))
+                {
+                    this.Region = new Region(expectedPath);
+                }
+                rv_region_set = true;
+            }
+
+            Draw (pe.ClipRectangle, pe.Graphics);
 		}
 		
 		void OnMouseEnter (object sender, EventArgs e)

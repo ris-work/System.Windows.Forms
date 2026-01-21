@@ -54,6 +54,7 @@ namespace System.Windows.Forms
 			private int		repeat_counter;
 			bool top_button_entered;
 			bool bottom_button_entered;
+			//bool rv_region_set = false;
 			#endregion	// Local Variables
 
 			#region Constructors
@@ -271,7 +272,8 @@ namespace System.Windows.Forms
 
 			protected override void OnPaint(PaintEventArgs e)
 			{
-				redraw(e.Graphics);
+                
+                redraw(e.Graphics);
 			}
 
 			protected override void OnResize(EventArgs e)
@@ -431,7 +433,8 @@ namespace System.Windows.Forms
 
 		internal override void OnPaintInternal (PaintEventArgs e)
 		{
-			e.Graphics.FillRectangle(ThemeEngine.Current.ResPool.GetSolidBrush(BackColor), ClientRectangle);
+            
+            e.Graphics.FillRectangle(ThemeEngine.Current.ResPool.GetSolidBrush(BackColor), ClientRectangle);
 		}
 
 		#endregion	// Private Methods

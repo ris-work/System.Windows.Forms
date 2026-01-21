@@ -160,6 +160,8 @@ namespace System.Windows.Forms
 		private AutoSizeMode auto_size_mode;
 		private bool suppressing_key_press;
 
+		public bool rv_region_set = false;
+
 		#endregion	// Local Variables
 
 		#region Private Classes
@@ -1343,8 +1345,9 @@ namespace System.Windows.Forms
 
 		// This method exists so controls overriding OnPaintBackground can have default background painting done
 		internal virtual void PaintControlBackground (PaintEventArgs pevent) {
+            
 
-			bool tbstyle_flat = ((CreateParams.Style & (int) ToolBarStyles.TBSTYLE_FLAT) != 0);
+            bool tbstyle_flat = ((CreateParams.Style & (int) ToolBarStyles.TBSTYLE_FLAT) != 0);
 			
             // If we have transparent background
             if (((BackColor.A != 0xff) && GetStyle(ControlStyles.SupportsTransparentBackColor)) || tbstyle_flat) {
@@ -1416,8 +1419,8 @@ namespace System.Windows.Forms
                     Rectangle paintRect = pevent.ClipRectangle;
 
                     // Define groups
-                    bool isInteractive = this is Button or TextBoxBase or ComboBox or DateTimePicker or UpDownBase;
-                    bool isContainer = this is Panel or GroupBox or ScrollableControl or DataGrid or DataGridView;
+                    bool isInteractive = this is Button or TextBoxBase or ComboBox or DateTimePicker or UpDownBase or ListBox or MonthCalendar or ProgressBar or ScrollBar or TreeView;
+                    bool isContainer = this is Panel or GroupBox or ScrollableControl or DataGrid or DataGridView or ContainerControl;
 
                     if (isInteractive || isContainer)
                     {
@@ -1426,12 +1429,13 @@ namespace System.Windows.Forms
                         Rectangle fullRect = new Rectangle(0, 0, this.Width, this.Height);
 
                         // 2. Ensure Region exists
-                        if (this.Region == null)
+                        if (this.Region == null || !this.rv_region_set)
                         {
                             using (var expectedPath = RVUtils.CreateRoundedRectanglePath(fullRect, RVUtils.cornerRadius))
                             {
                                 this.Region = new Region(expectedPath);
                             }
+							rv_region_set = true;
                         }
                         pevent.Graphics.FillRectangle(BackColorBrush, paintRect);
 

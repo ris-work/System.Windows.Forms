@@ -113,6 +113,7 @@ namespace System.Windows.Forms {
 			thousands_separator = false;
 
 			Text = "0";
+			//this.Region = null;
 		}
 		#endregion	// Public Constructors
 
@@ -427,10 +428,24 @@ namespace System.Windows.Forms {
 //			isSpinning = true;
 			base.OnKeyDown (e);
 		}
-		#endregion	// Protected Instance Methods
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Rectangle fullRectOrig = new Rectangle(0, 0, this.Width, this.Height);
 
-		#region Events
-		[Browsable (false)]
+            if (this.Region == null || !this.rv_region_set)
+            {
+                using (var expectedPath = RVUtils.CreateRoundedRectanglePath(fullRectOrig, RVUtils.cornerRadius))
+                {
+                    this.Region = new Region(expectedPath);
+                }
+                rv_region_set = true;
+            }
+            base.OnPaint(e);
+        }
+        #endregion // Protected Instance Methods                               
+
+        #region Events
+        [Browsable (false)]
 		[EditorBrowsable (EditorBrowsableState.Never)]
 		public new event EventHandler PaddingChanged {
 			add { base.PaddingChanged += value; }
