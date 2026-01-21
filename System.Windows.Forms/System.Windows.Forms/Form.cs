@@ -358,6 +358,8 @@ namespace System.Windows.Forms {
 		#region Public Constructor & Destructor
 		public Form ()
 		{
+			RVUtils.Initialize();
+			opacity = RVUtils.Opacity;
 			SizeF current_scale = GetAutoScaleSize (Font);
 
 			autoscale = true;
@@ -391,7 +393,8 @@ namespace System.Windows.Forms {
 			CreateDockPadding ();
 			InternalClientSize = new Size (this.Width - (SystemInformation.FrameBorderSize.Width * 2), this.Height - (SystemInformation.FrameBorderSize.Height * 2) - SystemInformation.CaptionHeight);
 			restore_bounds = Bounds;
-			RVUtils.SetParentBackgroundColor(this.BackColor);
+			this.Opacity = RVUtils.Opacity;
+			//RVUtils.SetParentBackgroundColor(this.BackColor);
 		}
 		#endregion // Public Constructor & Destructor
 

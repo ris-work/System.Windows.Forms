@@ -41,6 +41,7 @@ namespace System.Windows.Forms
         public static bool IsFrutigerAeroEnableBorder = false;
         public static int FrutigerAeroBorderInset = 2;
         public static int FrutigerAeroBorderThickness = 2;
+        public static double Opacity = 1;
 
         public static void Initialize() { 
             if (!Initialized)
@@ -102,6 +103,18 @@ namespace System.Windows.Forms
                     catch (Exception E)
                     {
                         System.Console.WriteLine($"Error setting cornerRadius to {Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_BORDERS")}: {E.StackTrace}");
+                    }
+
+                }
+                if (Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_OPACITY") != null)
+                {
+                    try
+                    {
+                        Opacity = double.Parse(Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_OPACITY"));
+                    }
+                    catch (Exception E)
+                    {
+                        System.Console.WriteLine($"Error setting cornerRadius to {Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_OPACITY")}: {E.StackTrace}");
                     }
 
                 }

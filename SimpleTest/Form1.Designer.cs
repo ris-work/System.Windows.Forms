@@ -35,13 +35,18 @@ namespace SimpleTest
         /// </summary>
         private void InitializeComponent()
         {
+            this.AllowTransparency = true;
+            //this.BackColor = Color.Transparent;
             //Application.EnableVisualStyles();
             this.components = new System.ComponentModel.Container();
 
             // Form Setup
             this.AutoScaleMode = AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(1800, 950);
-            this.BackColor = System.Drawing.Color.FromArgb(45, 45, 48);
+            this.BackColor = System.Drawing.Color.FromArgb(45, 48, 45);
+            RVUtils.Initialize();
+            if(RVUtils.Opacity == 1) this.Opacity = 0.96;
+            
             this.Text = "Ultimate Control Test Bench";
             this.WindowState = FormWindowState.Maximized;
             this.DoubleBuffered = true;

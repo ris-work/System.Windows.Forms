@@ -1433,8 +1433,8 @@ namespace System.Windows.Forms
                                 this.Region = new Region(expectedPath);
                             }
                         }
+                        pevent.Graphics.FillRectangle(BackColorBrush, paintRect);
 
-						
 
                         // 3. SAVE STATE and APPLY CLIP FIRST
                         // This is critical. We must restrict drawing to the rounded region BEFORE 
