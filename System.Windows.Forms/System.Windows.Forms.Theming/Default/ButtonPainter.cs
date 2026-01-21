@@ -111,15 +111,26 @@ namespace System.Windows.Forms.Theming.Default
 				case ButtonThemeState.Entered:
 				case ButtonThemeState.Default | ButtonThemeState.Entered:
 					if (appearance.MouseOverBackColor != Color.Empty)
-						g.FillRectangle (ResPool.GetSolidBrush (appearance.MouseOverBackColor), bounds);
+					{
+						g.FillRectangle(ResPool.GetSolidBrush(appearance.MouseOverBackColor), bounds);
+					}
 					else
-						g.FillRectangle (ResPool.GetSolidBrush (ChangeIntensity (backColor, .9F)), bounds);
+					{
+						g.FillRectangle(ResPool.GetSolidBrush(ChangeIntensity(backColor, .9F)), bounds);
+						
+					}
 					break;
 				case ButtonThemeState.Pressed:
 					if (appearance.MouseDownBackColor != Color.Empty)
-						g.FillRectangle (ResPool.GetSolidBrush (appearance.MouseDownBackColor), bounds);
+					{
+						g.FillRectangle(ResPool.GetSolidBrush(appearance.MouseDownBackColor), bounds);
+                        if (RVUtils.IsFrutigerAero) g.DrawAeroPressed(bounds);
+                    }
 					else
-						g.FillRectangle (ResPool.GetSolidBrush (ChangeIntensity (backColor, .95F)), bounds);
+					{
+						g.FillRectangle(ResPool.GetSolidBrush(ChangeIntensity(backColor, .95F)), bounds);
+                        if(RVUtils.IsFrutigerAero) g.DrawAeroPressed(bounds);
+                    }
 					break;
 				case ButtonThemeState.Default:
 					if (appearance.CheckedBackColor != Color.Empty)

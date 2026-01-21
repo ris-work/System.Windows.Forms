@@ -19,10 +19,11 @@
     <PackageLicenseFile>License.txt</PackageLicenseFile>
     <Version>1.0.2-alpha1</Version>
     <PackageId>Rishi.Core.System.Windows.Forms</PackageId>
-	<!--<PackageReadmeFile>System.Windows.Forms\README.md</PackageReadmeFile>-->
+	<PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
+	<None Include="README.md" Pack="true" PackagePath="\"/>
     <None Remove="resources\1-up.png" />
     <None Remove="resources\16_computer.png" />
     <None Remove="resources\16_dialog-error.png" />
@@ -91,6 +92,12 @@
     <Compile Include="..\Mono.Shared\Consts.cs" Link="Consts.cs" />
     <Compile Include="..\Mono.Shared\MonoTODOAttribute.cs" Link="MonoTODOAttribute.cs" />
     <Compile Include="..\Mono.Shared\MonoToolsLocator.cs" Link="MonoToolsLocator.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="README.md">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

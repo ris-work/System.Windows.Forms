@@ -1434,6 +1434,8 @@ namespace System.Windows.Forms
                             }
                         }
 
+						
+
                         // 3. SAVE STATE and APPLY CLIP FIRST
                         // This is critical. We must restrict drawing to the rounded region BEFORE 
                         // we paint the background or the gradient.
@@ -1451,6 +1453,7 @@ namespace System.Windows.Forms
                                 if (isInteractive)
                                 {
                                     pevent.Graphics.DrawAeroInteractive(fullRect);
+                                    
                                 }
                                 else if (isContainer)
                                 {
@@ -1463,15 +1466,17 @@ namespace System.Windows.Forms
                             // 6. Restore Clip
                             pevent.Graphics.Clip = originalClip;
                         }
+                        if (this is ButtonBase) { if (RVUtils.IsFrutigerAeroEnableBorder == true) pevent.Graphics.DrawRoundedRectangleBorder(new Rectangle(0, 0, this.Width, this.Height) { }, RVUtils.cornerRadius, 1); }
                     }
                     else
                     {
                         pevent.Graphics.FillRectangle(BackColorBrush, paintRect);
+                        if (this is ButtonBase && this is not CheckBox or RadioButton) { if (RVUtils.IsFrutigerAeroEnableBorder == true) pevent.Graphics.DrawRoundedRectangleBorder(new Rectangle(0, 0, this.Width, this.Height) { }, RVUtils.cornerRadius, 1); }
                     }
                 }
                 return;
             }
-
+			
             DrawBackgroundImage (pevent.Graphics);
 		}
 

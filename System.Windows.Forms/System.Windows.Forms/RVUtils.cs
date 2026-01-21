@@ -38,6 +38,9 @@ namespace System.Windows.Forms
         private static bool Initialized = false;
 
         public static bool IsFrutigerAero = false;
+        public static bool IsFrutigerAeroEnableBorder = false;
+        public static int FrutigerAeroBorderInset = 2;
+        public static int FrutigerAeroBorderThickness = 2;
 
         public static void Initialize() { 
             if (!Initialized)
@@ -54,6 +57,30 @@ namespace System.Windows.Forms
                     }
                     
                 }
+                if (Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_BORDER_INSET") != null)
+                {
+                    try
+                    {
+                        FrutigerAeroBorderInset = int.Parse(Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_BORDER_INSET"));
+                    }
+                    catch (Exception E)
+                    {
+                        System.Console.WriteLine($"Error setting cornerRadius to {Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_BORDER_INSET")}: {E.StackTrace}");
+                    }
+
+                }
+                if (Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_BORDER_THICKNESS") != null)
+                {
+                    try
+                    {
+                        FrutigerAeroBorderThickness = int.Parse(Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_BORDER_THICKNESS"));
+                    }
+                    catch (Exception E)
+                    {
+                        System.Console.WriteLine($"Error setting cornerRadius to {Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_BORDER_THICKNESS")}: {E.StackTrace}");
+                    }
+
+                }
                 if (Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO") != null)
                 {
                     try
@@ -63,6 +90,18 @@ namespace System.Windows.Forms
                     catch (Exception E)
                     {
                         System.Console.WriteLine($"Error setting cornerRadius to {Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO")}: {E.StackTrace}");
+                    }
+
+                }
+                if (Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_BORDERS") != null)
+                {
+                    try
+                    {
+                        IsFrutigerAeroEnableBorder = Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_BORDERS").ToLowerInvariant() == "true";
+                    }
+                    catch (Exception E)
+                    {
+                        System.Console.WriteLine($"Error setting cornerRadius to {Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_BORDERS")}: {E.StackTrace}");
                     }
 
                 }
@@ -280,6 +319,50 @@ namespace System.Windows.Forms
             path.CloseFigure();
             return path;
         }
+
+        public static void DrawRoundedRectangleBorder(this Graphics g, Rectangle rect, float cornerRadius, float borderThickness, ColorBlend blend = null, DashStyle dashStyle = DashStyle.Solid)
+        {
+            // 1. Handle Thickness Inset
+            // We shift the path inward by half the thickness so the pen draws strictly inside the rect.
+            float borderInset = 2;
+            float thicknessInset = borderInset +  borderThickness / 2.0f;
+
+            Rectangle pathRect = new Rectangle(
+                (int)(rect.X + thicknessInset),
+                (int)(rect.Y + thicknessInset),
+                (int)(rect.Width - (thicknessInset * 2)),
+                (int)(rect.Height - (thicknessInset * 2))
+            );
+
+            if (pathRect.Width < 1 || pathRect.Height < 1) return;
+
+            // 2. Generate the Path (reusing the helper which applies its own internal 1.0/2.0 insets)
+            using (var path = CreateRoundedRectanglePath(pathRect, cornerRadius))
+            {
+                // 3. Handle Color Blend (Default to Aero-like if null)
+                // Mimics the Top(White) -> Bottom(Black) border from your original code
+                ColorBlend activeBlend = blend ?? new ColorBlend
+                {
+                    Positions = new float[] { 0.0f, 1.0f },
+                    Colors = new Color[] { Color.FromArgb(120, Color.White), Color.FromArgb(80, Color.Black) }
+                };
+
+                using (var brush = new LinearGradientBrush(rect, Color.Black, Color.Black, LinearGradientMode.Vertical))
+                {
+                    brush.InterpolationColors = activeBlend;
+
+                    using (var pen = new Pen(brush, borderThickness))
+                    {
+                        pen.DashStyle = dashStyle; // Apply Solid, Dash, Dot, etc.
+
+                        // Optional: Align dashes to corners for cleaner look on rounded rects
+                        // pen.DashCap = DashCap.Flat; 
+
+                        g.DrawPath(pen, path);
+                    }
+                }
+            }
+        }
         public static void FillRoundedRectangle(Graphics g, Brush brush, Rectangle rect, int cornerRadius, Brush? innerBrush = null)
 
         {
@@ -495,6 +578,33 @@ namespace System.Windows.Forms
                 using (var topPen = new Pen(Color.FromArgb(60, Color.White))) { g.DrawLine(topPen, rect.X, rect.Y, rect.Right, rect.Y); }
                 using (var borderPen = new Pen(Color.FromArgb(100, Color.Black))) { g.DrawRectangle(borderPen, rect.X, rect.Y, rect.Width - 1, rect.Height - 1); }
             }
+
+        public static void DrawAeroPressed(this Graphics g, Rectangle rect)
+        {
+            // 1. Top Shadow (Inverse of Sheen)
+            using (var shadowBrush = new LinearGradientBrush(rect, Color.Transparent, Color.Transparent, LinearGradientMode.Vertical))
+            {
+                var blend = new ColorBlend();
+                blend.Positions = new float[] { 0.0f, 0.05f, 0.35f, 0.45f, 1.0f };
+                blend.Colors = new Color[] { Color.FromArgb(200, Color.Black), Color.FromArgb(150, Color.Black), Color.FromArgb(20, Color.Black), Color.FromArgb(0, Color.Black), Color.FromArgb(0, Color.Black) };
+                shadowBrush.InterpolationColors = blend;
+                g.FillRectangle(shadowBrush, rect);
+            }
+
+            // 2. Bottom Highlight (Inverse of Depth)
+            using (var highlightBrush = new LinearGradientBrush(rect, Color.Transparent, Color.Transparent, LinearGradientMode.Vertical))
+            {
+                var blend = new ColorBlend();
+                blend.Positions = new float[] { 0.0f, 0.5f, 0.85f, 0.95f, 1.0f };
+                blend.Colors = new Color[] { Color.FromArgb(0, Color.White), Color.FromArgb(0, Color.White), Color.FromArgb(40, Color.White), Color.FromArgb(80, Color.White), Color.FromArgb(100, Color.White) };
+                highlightBrush.InterpolationColors = blend;
+                g.FillRectangle(highlightBrush, rect);
+            }
+
+            // 3. Borders Swapped (Inverse)
+            using (var pen = new Pen(Color.FromArgb(80, Color.Black))) { g.DrawLine(pen, rect.X + 1, rect.Y + 1, rect.Right - 1, rect.Y + 1); g.DrawLine(pen, rect.X + 1, rect.Y + 1, rect.X + 1, rect.Bottom - 1); }
+            using (var pen = new Pen(Color.FromArgb(120, Color.White))) { g.DrawLine(pen, rect.Right - 1, rect.Y + 1, rect.Right - 1, rect.Bottom - 1); g.DrawLine(pen, rect.X + 1, rect.Bottom - 1, rect.Right - 1, rect.Bottom - 1); }
+        }
 
     }
 }
