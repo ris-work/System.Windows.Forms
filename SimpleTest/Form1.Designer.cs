@@ -41,7 +41,7 @@ namespace SimpleTest
             this.components = new System.ComponentModel.Container();
 
             // Form Setup
-            this.AutoScaleMode = AutoScaleMode.Font;
+            //this.AutoScaleMode = AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(1800, 950);
             this.BackColor = System.Drawing.Color.FromArgb(45, 48, 45);
             RVUtils.Initialize();
@@ -216,7 +216,7 @@ namespace SimpleTest
 
             txtPassword.Location = new Point(20, 70); txtPassword.Size = new Size(360, 25);
             txtPassword.UseSystemPasswordChar = true; txtPassword.Text = "password";
-            txtPassword.ForeColor = Color.Black; txtPassword.BackColor = Color.Violet;
+            txtPassword.ForeColor = Color.Black; txtPassword.BackColor = Color.FromArgb(200, 125, 75, 175);
             //txtPassword.BorderStyle = BorderStyle.FixedSingle;
 
             txtMulti.Location = new Point(20, 110); txtMulti.Size = new Size(360, 100);

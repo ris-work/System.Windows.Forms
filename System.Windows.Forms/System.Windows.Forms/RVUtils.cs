@@ -43,6 +43,7 @@ namespace System.Windows.Forms
         public static int FrutigerAeroBorderThickness = 2;
         public static double Opacity = 1;
         public static double BorderWidth = 0;
+        public static bool FakeAA = false;
 
         internal static SystemResPool ResPool = new SystemResPool();
 
@@ -130,6 +131,18 @@ namespace System.Windows.Forms
                     catch (Exception E)
                     {
                         System.Console.WriteLine($"Error setting BorderWidth to {Environment.GetEnvironmentVariable("RV_BORDER_WIDTH")}: {E.StackTrace}");
+                    }
+
+                }
+                if (Environment.GetEnvironmentVariable("RV_SIM_AA") != null)
+                {
+                    try
+                    {
+                        FakeAA = Environment.GetEnvironmentVariable("RV_SIM_AA").ToLowerInvariant() == "true";
+                    }
+                    catch (Exception E)
+                    {
+                        System.Console.WriteLine($"Error setting FakeAA to {Environment.GetEnvironmentVariable("RV_SIM_AA")}: {E.StackTrace}");
                     }
 
                 }
@@ -596,8 +609,11 @@ namespace System.Windows.Forms
             if (BorderWidth > 0)
             {
                 g.SmoothingMode = SmoothingMode.HighQuality;
-                //Rectangle R2 = new Rectangle(rect.Top + 10, rect.Left + 10, rect.Width - 10, rect.Height - 10);
-                g.DrawRoundedRectangle(new Pen(Color.FromArgb(255, Color.Black), (int) BorderWidth), rect);
+                Rectangle R2 = new Rectangle(rect.Top + 1, rect.Left + 1, rect.Width - 1, rect.Height - 1);
+                Rectangle R3 = new Rectangle(rect.Top - 1, rect.Left - 1, rect.Width + 1, rect.Height + 1);
+                g.DrawRoundedRectangle(new Pen(Color.FromArgb(255, 40, 40, 40), (int) BorderWidth), rect);
+                g.DrawRoundedRectangle(new Pen(Color.FromArgb(255, 40, 40, 40), (int)BorderWidth), R2);
+                g.DrawRoundedRectangle(new Pen(Color.FromArgb(255, 40, 40, 40), (int)BorderWidth), R3);
             }
         }
 

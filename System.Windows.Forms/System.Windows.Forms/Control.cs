@@ -1345,7 +1345,12 @@ namespace System.Windows.Forms
 
 		// This method exists so controls overriding OnPaintBackground can have default background painting done
 		internal virtual void PaintControlBackground (PaintEventArgs pevent) {
-            
+
+            pevent.Graphics.SmoothingMode = SmoothingMode.HighQuality;
+            pevent.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            pevent.Graphics.CompositingQuality = CompositingQuality.HighQuality;
+            pevent.Graphics.TextRenderingHint = Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+			
 
             bool tbstyle_flat = ((CreateParams.Style & (int) ToolBarStyles.TBSTYLE_FLAT) != 0);
 			
@@ -1448,7 +1453,8 @@ namespace System.Windows.Forms
 
                         try
                         {
-                            // 4. Paint Background
+							if (RVUtils.cornerRadius > 0 && this.BackColor.A == 255 && RVUtils.FakeAA) { this.BackColor = Color.FromArgb(250, this.BackColor); }
+                                // 4. Paint Background
                             pevent.Graphics.FillRectangle(BackColorBrush, fullRect);
 
                             // 5. Paint Overlay using Extension Methods
@@ -1477,6 +1483,26 @@ namespace System.Windows.Forms
                                 }
 
                             }
+							if (RVUtils.cornerRadius > 0 && RVUtils.FakeAA)
+							{
+								// FIX: Anti-aliased inner stroke to mask Region aliasing
+								using (var path = RVUtils.CreateRoundedRectanglePath(fullRect, RVUtils.cornerRadius))
+								{
+									var originalMode = pevent.Graphics.SmoothingMode;
+									pevent.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+									// Alpha 80: Adjust for intensity. Black for shadow, White for highlight
+									Color aaColor = Color.FromArgb(125, 50, 50, 50);
+
+									// Inset ensures the stroke stays inside the visible (clipped) area
+									using (var pen = new Pen(aaColor, 1.5f) { Alignment = System.Drawing.Drawing2D.PenAlignment.Inset })
+									{
+										pevent.Graphics.DrawPath(pen, path);
+									}
+
+									pevent.Graphics.SmoothingMode = originalMode;
+								}
+							}
                         }
                         finally
                         {
@@ -4517,6 +4543,10 @@ namespace System.Windows.Forms
 		}
 
 		protected void InvokePaint(Control c, PaintEventArgs e) {
+			e.Graphics.SmoothingMode = SmoothingMode.HighQuality;
+			e.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+			e.Graphics.CompositingQuality = CompositingQuality.HighQuality;
+			e.Graphics.TextRenderingHint = Drawing.Text.TextRenderingHint.AntiAliasGridFit;
 			c.OnPaint (e);
 		}
 
