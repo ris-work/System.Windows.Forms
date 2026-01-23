@@ -45,6 +45,10 @@ namespace System.Windows.Forms
         public static double BorderWidth = 0;
         public static bool FakeAA = false;
 
+        public static bool SetRegion = true;
+        public static bool UseClipping = false;
+        public static int UniversalAlpha = 250;
+
         internal static SystemResPool ResPool = new SystemResPool();
 
         public static void Initialize() { 
@@ -143,6 +147,42 @@ namespace System.Windows.Forms
                     catch (Exception E)
                     {
                         System.Console.WriteLine($"Error setting FakeAA to {Environment.GetEnvironmentVariable("RV_SIM_AA")}: {E.StackTrace}");
+                    }
+
+                }
+                if (Environment.GetEnvironmentVariable("RV_UNIVERSAL_ALPHA") != null)
+                {
+                    try
+                    {
+                        UniversalAlpha = int.Parse(Environment.GetEnvironmentVariable("RV_UNIVERSAL_ALPHA"));
+                    }
+                    catch (Exception E)
+                    {
+                        System.Console.WriteLine($"Error setting UniversalAlpha to {Environment.GetEnvironmentVariable("RV_UNIVERSAL_ALPHA")}: {E.StackTrace}");
+                    }
+
+                }
+                if (Environment.GetEnvironmentVariable("RV_SET_REGION") != null)
+                {
+                    try
+                    {
+                        SetRegion = Environment.GetEnvironmentVariable("RV_SET_REGION").ToLowerInvariant() == "true";
+                    }
+                    catch (Exception E)
+                    {
+                        System.Console.WriteLine($"Error setting FakeAA to {Environment.GetEnvironmentVariable("RV_SET_REGION")}: {E.StackTrace}");
+                    }
+
+                }
+                if (Environment.GetEnvironmentVariable("RV_USE_CLIPPING") != null)
+                {
+                    try
+                    {
+                        UseClipping = Environment.GetEnvironmentVariable("RV_USE_CLIPPING").ToLowerInvariant() == "true";
+                    }
+                    catch (Exception E)
+                    {
+                        System.Console.WriteLine($"Error setting FakeAA to {Environment.GetEnvironmentVariable("RV_USE_CLIPPING")}: {E.StackTrace}");
                     }
 
                 }
@@ -320,6 +360,7 @@ namespace System.Windows.Forms
             // insetBottomRight shifts the Bottom and Right edges inward (towards 0,0).
             float insetTopLeft = 1.0f;     // Try 0.5f or 0f if left/top is too cut off
             float insetBottomRight = 2.0f;  // Try 1.5f or 2f if right/bottom is still overflowing
+            //insetTopLeft = 0; insetBottomRight = 0;
 
             float left = rect.Left + insetTopLeft;
             float top = rect.Top + insetTopLeft;

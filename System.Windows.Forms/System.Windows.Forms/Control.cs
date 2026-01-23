@@ -1346,9 +1346,9 @@ namespace System.Windows.Forms
 		// This method exists so controls overriding OnPaintBackground can have default background painting done
 		internal virtual void PaintControlBackground (PaintEventArgs pevent) {
 
-            pevent.Graphics.SmoothingMode = SmoothingMode.HighQuality;
-            pevent.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            pevent.Graphics.CompositingQuality = CompositingQuality.HighQuality;
+            //pevent.Graphics.SmoothingMode = SmoothingMode.HighQuality;
+            //pevent.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            //pevent.Graphics.CompositingQuality = CompositingQuality.HighQuality;
             pevent.Graphics.TextRenderingHint = Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 			
 
@@ -1420,7 +1420,12 @@ namespace System.Windows.Forms
             {
                 if (!tbstyle_flat)
                 {
-					if (this.DoubleBuffered != true) this.DoubleBuffered = true;
+					pevent.Graphics.CompositingQuality = CompositingQuality.Default;
+					pevent.Graphics.InterpolationMode = InterpolationMode.Low;
+					pevent.Graphics.SmoothingMode = SmoothingMode.None;
+					//if (RVUtils.UseClipping &&  this.BackColor.A == 255) this.BackColor = Color.FromArgb(150, this.BackColor);
+                    if (this.BackColor.A == 255) this.BackColor = Color.FromArgb(RVUtils.UniversalAlpha, this.BackColor);
+                    if (this.DoubleBuffered != true) this.DoubleBuffered = true;
                     Rectangle paintRect = pevent.ClipRectangle;
 
                     // Define groups
@@ -1438,18 +1443,29 @@ namespace System.Windows.Forms
                         {
                             using (var expectedPath = RVUtils.CreateRoundedRectanglePath(fullRect, RVUtils.cornerRadius))
                             {
-                                this.Region = new Region(expectedPath);
+                                if(RVUtils.SetRegion) this.Region = new Region(expectedPath);
+                                //this.Region = new Region(fullRect);
                             }
 							rv_region_set = true;
                         }
-                        pevent.Graphics.FillRectangle(BackColorBrush, paintRect);
+                        Region originalClipO = pevent.Graphics.Clip.Clone();
+						if (RVUtils.UseClipping)
+						{
+							using (var expectedPath = RVUtils.CreateRoundedRectanglePath(fullRect, RVUtils.cornerRadius))
+							{
+								expectedPath.CloseFigure();
+								pevent.Graphics.SetClip(expectedPath);
+								//pevent.Graphics.FillPath(BackColorBrush, expectedPath);
+							}
+						}
+						//pevent.Graphics.Clip = originalClipO;
 
 
                         // 3. SAVE STATE and APPLY CLIP FIRST
                         // This is critical. We must restrict drawing to the rounded region BEFORE 
                         // we paint the background or the gradient.
                         Region originalClip = pevent.Graphics.Clip.Clone();
-                        pevent.Graphics.IntersectClip(this.Region);
+                        //pevent.Graphics.IntersectClip(this.Region);
 
                         try
                         {
@@ -1510,6 +1526,7 @@ namespace System.Windows.Forms
                             pevent.Graphics.Clip = originalClip;
                         }
                         if (this is ButtonBase) { if (RVUtils.IsFrutigerAeroEnableBorder == true) pevent.Graphics.DrawRoundedRectangleBorder(new Rectangle(0, 0, this.Width, this.Height) { }, RVUtils.cornerRadius, 1); }
+						pevent.Graphics.Clip = originalClipO;
                     }
                     else
                     {
