@@ -123,6 +123,7 @@ namespace System.Windows.Forms
 					return res;
 			
 				SolidBrush brush = new SolidBrush (color);
+				if(!solidbrushes.ContainsKey(hash))
 				solidbrushes.Add (hash, brush);
 				return brush;
 			}

@@ -5092,10 +5092,15 @@ namespace System.Windows.Forms
 		public override void TextBoxBaseFillBackground (TextBoxBase textBoxBase, Graphics g, Rectangle clippingArea)
 		{
 			if (textBoxBase.backcolor_set || (textBoxBase.Enabled && !textBoxBase.read_only)) {
-				g.FillRectangle(ResPool.GetSolidBrush(textBoxBase.BackColor), clippingArea);
-			} else {
-				g.FillRectangle(ResPool.GetSolidBrush(ColorControl), clippingArea);
-			}
+				Color x = Color.FromArgb(RVUtils.UniversalAlpha, textBoxBase.BackColor);
+
+                //g.FillRectangle(ResPool.GetSolidBrush(textBoxBase.BackColor), clippingArea);
+                g.FillRectangle(new SolidBrush(x), clippingArea);
+            } else {
+                Color x = Color.FromArgb(RVUtils.UniversalAlpha, ColorControl);
+                //g.FillRectangle(ResPool.GetSolidBrush(ColorControl), clippingArea);
+                g.FillRectangle(new SolidBrush(x), clippingArea);
+            }
 		}
 
 		public override bool TextBoxBaseHandleWmNcPaint (TextBoxBase textBoxBase, ref Message m)
@@ -6579,8 +6584,18 @@ namespace System.Windows.Forms
 
 		private void CPDrawButtonInternal (Graphics dc, Rectangle rectangle, ButtonState state, Pen DarkPen, Pen NormalPen, Pen LightPen)
 		{
-			// sadly enough, the rectangle gets always filled with a hatchbrush
-			dc.FillRectangle (ResPool.GetHatchBrush (HatchStyle.Percent50,
+            // sadly enough, the rectangle gets always filled with a hatchbrush
+            Region originalClipO = dc.Clip.Clone();
+            if (RVUtils.UseClipping)
+            {
+                using (var expectedPath = RVUtils.CreateRoundedRectanglePath(rectangle, RVUtils.cornerRadius))
+                {
+                    expectedPath.CloseFigure();
+                    dc.SetClip(expectedPath);
+                    //pevent.Graphics.FillPath(BackColorBrush, expectedPath);
+                }
+            }
+            dc.FillRectangle (ResPool.GetHatchBrush (HatchStyle.Percent50,
 								 Color.FromArgb (Clamp (ColorControl.R + 3, 0, 255),
 										 ColorControl.G, ColorControl.B),
 								 ColorControl),
@@ -6635,6 +6650,7 @@ namespace System.Windows.Forms
 				dc.DrawLine (pen, rectangle.X, rectangle.Bottom - 1, rectangle.Right - 1, rectangle.Bottom - 1);
 				dc.DrawLine (pen, rectangle.Right - 1, rectangle.Y, rectangle.Right - 1, rectangle.Bottom - 2);
 			}
+			dc.Clip = originalClipO;
 		}
 
 

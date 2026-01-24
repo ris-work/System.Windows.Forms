@@ -117,11 +117,13 @@ namespace System.Windows.Forms
 			current_link = null;
 			show_caret_w_selection = (this is TextBox);
 			document = new Document(this);
+			
 			document.SizeChanged += new EventHandler<Document.SizeChangedEventArgs> (document_SizeChanged);
 			//document.CaretMoved += new EventHandler(CaretMoved);
 			document.Wrap = false;
 			click_last = DateTime.Now;
 			click_mode = CaretSelection.Position;
+			Padding = new Padding(RVUtils.cornerRadius);
 
 			MouseDown += new MouseEventHandler(TextBoxBase_MouseDown);
 			MouseUp += new MouseEventHandler(TextBoxBase_MouseUp);
@@ -156,10 +158,13 @@ namespace System.Windows.Forms
 			SetStyle (ControlStyles.UserPaint | ControlStyles.StandardClick, false);
 			SetStyle (ControlStyles.UseTextForAccessibility, false);
 			SetStyle (ControlStyles.FixedHeight, true);
+            SetStyle(ControlStyles.SupportsTransparentBackColor, true);
+			SetStyle(ControlStyles.UserPaint, true);
 			
-			//base.SetAutoSizeMode (AutoSizeMode.GrowAndShrink);
 
-			canvas_width = ClientSize.Width;
+            //base.SetAutoSizeMode (AutoSizeMode.GrowAndShrink);
+
+            canvas_width = ClientSize.Width;
 			canvas_height = ClientSize.Height;
 			document.ViewPortWidth = canvas_width;
 			document.ViewPortHeight = canvas_height;
@@ -1747,15 +1752,35 @@ namespace System.Windows.Forms
 
 		internal override void OnPaintInternal (PaintEventArgs pevent)
 		{
+			base.PaintControlBackground(pevent);
+            //base.OnPaint(pevent);
+            //this.OnPaint(pevent);
             //if (this.Region == null) this.Region = new Region(RVUtils.CreateRoundedRectanglePath(clippingArea, 50));
-            if (this.Region == null) this.Region = new Region(RVUtils.CreateRoundedRectanglePath(new Rectangle(new Point(0,0), this.Size), RVUtils.cornerRadius));
+            if (RVUtils.SetRegion && this.Region == null) this.Region = new Region(RVUtils.CreateRoundedRectanglePath(new Rectangle(new Point(0,0), this.Size), RVUtils.cornerRadius));
+			if (this.BackColor.A == 255) this.BackColor = Color.FromArgb(RVUtils.UniversalAlpha, this.BackColor);
+            //this.BackColor = Color.FromArgb(RVUtils.UniversalAlpha, this.BackColor);
+
+            Region originalClipO = pevent.Graphics.Clip.Clone();
+            if (RVUtils.UseClipping)
+            {
+                using (var expectedPath = RVUtils.CreateRoundedRectanglePath(this.ClientRectangle, RVUtils.cornerRadius))
+                {
+                    expectedPath.CloseFigure();
+                    pevent.Graphics.SetClip(expectedPath);
+                    //pevent.Graphics.FillPath(BackColorBrush, expectedPath);
+                }
+            }
             Draw (pevent.Graphics, pevent.ClipRectangle);
+			//this.OnPaint(pevent);
+			
 
 			//
 			// OnPaint does not get raised on MS (see bug #80639)
 			// 
 			pevent.Handled = true;
-		}
+			pevent.Graphics.Clip = originalClipO;
+
+        }
 
 		internal void Draw (Graphics g, Rectangle clippingArea)
 		{

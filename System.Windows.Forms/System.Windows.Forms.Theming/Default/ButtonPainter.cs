@@ -102,8 +102,18 @@ namespace System.Windows.Forms.Theming.Default
 			bool is_themecolor = backColor.ToArgb () == ThemeEngine.Current.ColorControl.ToArgb () || backColor == Color.Empty ? true : false;
 			CPColor cpcolor = is_themecolor ? CPColor.Empty : ResPool.GetCPColor (backColor);
 			Pen pen;
-			
-			switch (state) {
+            Region originalClipO = g.Clip.Clone();
+            if (RVUtils.UseClipping)
+            {
+                using (var expectedPath = RVUtils.CreateRoundedRectanglePath(bounds, RVUtils.cornerRadius))
+                {
+                    expectedPath.CloseFigure();
+                    g.SetClip(expectedPath);
+                    //pevent.Graphics.FillPath(BackColorBrush, expectedPath);
+                }
+            }
+
+            switch (state) {
 				case ButtonThemeState.Normal:
 				case ButtonThemeState.Disabled:
 					// This will just use the BackColor
@@ -148,6 +158,7 @@ namespace System.Windows.Forms.Theming.Default
 				
 			if (appearance.BorderSize > 0)
 				g.DrawRectangle (pen, bounds);
+			g.Clip = originalClipO;
 		}
 		#endregion
 
