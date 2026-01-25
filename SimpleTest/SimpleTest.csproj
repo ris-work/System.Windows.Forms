@@ -15,4 +15,10 @@
     <ProjectReference Include="..\System.Windows.Forms\System.Windows.Forms.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="237824_openclipart_pagarminda.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

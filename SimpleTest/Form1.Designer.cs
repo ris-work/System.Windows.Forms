@@ -35,10 +35,13 @@ namespace SimpleTest
         /// </summary>
         private void InitializeComponent()
         {
+            
             this.AllowTransparency = true;
             //this.BackColor = Color.Transparent;
             //Application.EnableVisualStyles();
             this.components = new System.ComponentModel.Container();
+            this.BackgroundImage = Image.FromFile("237824_openclipart_pagarminda.png");
+            this.BackgroundImageLayout = ImageLayout.None;
 
             // Form Setup
             //this.AutoScaleMode = AutoScaleMode.Font;
@@ -65,7 +68,7 @@ namespace SimpleTest
             this.grpInputs.Text = "Zone 1: Inputs & Basics";
             this.grpInputs.Location = new Point(20, 40);
             this.grpInputs.Size = new Size(400, 420);
-            this.grpInputs.BackColor = Color.FromArgb(60, 60, 65);
+            this.grpInputs.BackColor = Color.FromArgb(150, 60, 60, 65);
             this.grpInputs.ForeColor = Color.White;
             this.grpInputs.FlatStyle = FlatStyle.Flat; // GroupBox FlatStyle (WinForms 2.0+)
 
