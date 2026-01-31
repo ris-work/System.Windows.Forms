@@ -19,6 +19,9 @@
     <None Update="237824_openclipart_pagarminda.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="328551_openclipart_transparent_cube_jarda.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

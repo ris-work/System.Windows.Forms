@@ -37,18 +37,19 @@ namespace SimpleTest
         {
             
             this.AllowTransparency = true;
-            //this.BackColor = Color.Transparent;
+            this.BackColor = Color.Transparent;
             //Application.EnableVisualStyles();
             this.components = new System.ComponentModel.Container();
-            this.BackgroundImage = Image.FromFile("237824_openclipart_pagarminda.png");
+            this.BackgroundImage = Image.FromFile("328551_openclipart_transparent_cube_jarda.png");
             this.BackgroundImageLayout = ImageLayout.None;
+            
 
             // Form Setup
             //this.AutoScaleMode = AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(1800, 950);
             this.BackColor = System.Drawing.Color.FromArgb(45, 48, 45);
             RVUtils.Initialize();
-            if(RVUtils.Opacity == 1) this.Opacity = 0.96;
+            //if(RVUtils.Opacity == 1) this.Opacity = 0.96;
             
             this.Text = "Ultimate Control Test Bench";
             this.WindowState = FormWindowState.Maximized;

@@ -66,6 +66,18 @@ namespace System.Windows.Forms
                     }
                     
                 }
+                if (Environment.GetEnvironmentVariable("RV_OPACITY") != null)
+                {
+                    try
+                    {
+                        Opacity = double.Parse(Environment.GetEnvironmentVariable("RV_OPACITY"));
+                    }
+                    catch (Exception E)
+                    {
+                        System.Console.WriteLine($"Error setting Opacity to {Environment.GetEnvironmentVariable("RV_OPACITY")}: {E.StackTrace}");
+                    }
+
+                }
                 if (Environment.GetEnvironmentVariable("RV_FRUTIGER_AERO_BORDER_INSET") != null)
                 {
                     try

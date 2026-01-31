@@ -1418,19 +1418,22 @@ namespace System.Windows.Forms
 
             if (background_image == null)
             {
-                if (!tbstyle_flat)
+                bool isInteractive = this is Button or TextBoxBase or ComboBox or DateTimePicker or UpDownBase or ListBox or MonthCalendar or ProgressBar or ScrollBar or TreeView;
+                bool isContainer = this is Panel or GroupBox or ScrollableControl or DataGrid or DataGridView or ContainerControl or Form;
+                if (!tbstyle_flat || isContainer)
                 {
 					pevent.Graphics.CompositingQuality = CompositingQuality.Default;
 					pevent.Graphics.InterpolationMode = InterpolationMode.Low;
 					pevent.Graphics.SmoothingMode = SmoothingMode.None;
 					//if (RVUtils.UseClipping &&  this.BackColor.A == 255) this.BackColor = Color.FromArgb(150, this.BackColor);
                     if (this.BackColor.A == 255) this.BackColor = Color.FromArgb(RVUtils.UniversalAlpha, this.BackColor);
+					//if (this.BackColor.A > RVUtils.UniversalAlpha) this.BackColor = Color.FromArgb(RVUtils.UniversalAlpha, this.BackColor);
+					//if (this is Form F) { if(!F.AllowTransparency) F.AllowTransparency = true; if (F.Opacity != 1) F.Opacity = 0.3; }
                     if (this.DoubleBuffered != true) this.DoubleBuffered = true;
                     Rectangle paintRect = pevent.ClipRectangle;
 
                     // Define groups
-                    bool isInteractive = this is Button or TextBoxBase or ComboBox or DateTimePicker or UpDownBase or ListBox or MonthCalendar or ProgressBar or ScrollBar or TreeView;
-                    bool isContainer = this is Panel or GroupBox or ScrollableControl or DataGrid or DataGridView or ContainerControl;
+                    
 
                     if (isInteractive || isContainer)
                     {

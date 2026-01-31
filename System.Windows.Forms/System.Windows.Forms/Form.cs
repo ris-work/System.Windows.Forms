@@ -394,8 +394,10 @@ namespace System.Windows.Forms {
 			InternalClientSize = new Size (this.Width - (SystemInformation.FrameBorderSize.Width * 2), this.Height - (SystemInformation.FrameBorderSize.Height * 2) - SystemInformation.CaptionHeight);
 			restore_bounds = Bounds;
 			this.Opacity = RVUtils.Opacity;
-			//RVUtils.SetParentBackgroundColor(this.BackColor);
-		}
+            if (!this.AllowTransparency) this.AllowTransparency = true; 
+			if (this.Opacity == 1) this.Opacity = RVUtils.Opacity == 1 ? 0.97 : RVUtils.Opacity;
+            //RVUtils.SetParentBackgroundColor(this.BackColor);
+        }
 		#endregion // Public Constructor & Destructor
 
 		#region Public Static Properties (with helper functions)
