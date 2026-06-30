@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net11.0</TargetFramework>
-	  <NoWarn>$(NoWarn);SYSLIB0011;CS3003;CS3002;CS3001;CS3008</NoWarn>
+	  <NoWarn>$(NoWarn);SYSLIB0011;CS3003;CS3002;CS3001;CS3008;CS8981;</NoWarn>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -20,6 +20,7 @@
     <Version>1.0.6-alpha1</Version>
     <PackageId>Rishi.Core.System.Windows.Forms</PackageId>
 	<PackageReadmeFile>README.md</PackageReadmeFile>
+	  <DisableImplicitSystemDrawingCoreFrameworkReference>true</DisableImplicitSystemDrawingCoreFrameworkReference>
   </PropertyGroup>
 
   <ItemGroup>
@@ -276,13 +277,7 @@
       <LogicalName>user-home.png</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
-	<Target Name="RemoveFrameworkDrawingRefs" AfterTargets="ResolveTargetingPackAssets">
-		<ItemGroup>
-			<Reference Remove="@(Reference)" Condition="'%(FileName)' == 'System.Drawing.Primitives'" />
-
-			<Reference Remove="@(Reference)" Condition="'%(FileName)' == 'System.Drawing'" />
-		</ItemGroup>
-	</Target>
+	
 
 	<ItemGroup>
 		<!-- Alias the implicit runtime System.Drawing.Primitives so it doesn't collide with our custom one -->
@@ -290,8 +285,22 @@
 			<Aliases>sysdrawing</Aliases>
 		</Reference>
 	</ItemGroup>
+	<!-- ADD THIS SINGLE TARGET -->
+	<Target Name="AliasFrameworkDrawingReferences" AfterTargets="ResolveAssemblyReferences" BeforeTargets="CoreCompile">
+		<ItemGroup>
+			<!-- Alias the framework's System.Drawing.Primitives so it doesn't collide with your custom System.Drawing.dll -->
+			<ReferencePath Condition="'%(FileName)' == 'System.Drawing.Primitives'">
+				<Aliases>sysdrawing</Aliases>
+			</ReferencePath>
+			<!-- Also alias System.Drawing.Common just in case ConfigurationManager pulls it in -->
+			<ReferencePath Condition="'%(FileName)' == 'System.Drawing.Common'">
+				<Aliases>sysdrawingcommon</Aliases>
+			</ReferencePath>
+		</ItemGroup>
+	</Target>
 
-  <ItemGroup>
+
+	<ItemGroup>
     <PackageReference Include="Accessibility" Version="4.6.0-preview3-27504-2" />
     <PackageReference Include="Microsoft.Win32.Registry" Version="4.7.0" />
     <PackageReference Include="Mono.Posix.NETStandard" Version="1.0.0" />
@@ -333,13 +342,5 @@
     </EmbeddedResource>
   </ItemGroup>
 
-	<Target Name="ForceRemoveSystemDrawingCommon" AfterTargets="ResolveAssemblyReferences">
-		<ItemGroup>
-			<ReferencePath Remove="@(ReferencePath)" Condition="'%(FileName)' == 'System.Drawing.Common'" />
-
-			<ReferencePath Remove="@(ReferencePath)" Condition="'%(FileName)' == 'System.Drawing.Primitives'" />
-			<ReferencePath Remove="@(ReferencePath)" Condition="'%(FileName)' == 'System.Drawing'" />
-		</ItemGroup>
-	</Target>
-
+	
 </Project>
