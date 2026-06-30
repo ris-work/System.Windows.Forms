@@ -333,4 +333,13 @@
     </EmbeddedResource>
   </ItemGroup>
 
+	<Target Name="ForceRemoveSystemDrawingCommon" AfterTargets="ResolveAssemblyReferences">
+		<ItemGroup>
+			<ReferencePath Remove="@(ReferencePath)" Condition="'%(FileName)' == 'System.Drawing.Common'" />
+
+			<ReferencePath Remove="@(ReferencePath)" Condition="'%(FileName)' == 'System.Drawing.Primitives'" />
+			<ReferencePath Remove="@(ReferencePath)" Condition="'%(FileName)' == 'System.Drawing'" />
+		</ItemGroup>
+	</Target>
+
 </Project>
