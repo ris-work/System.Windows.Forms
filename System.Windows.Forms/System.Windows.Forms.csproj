@@ -1,8 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-	  <NoWarn>$(NoWarn);SYSLIB0011</NoWarn>
+    <TargetFramework>net11.0</TargetFramework>
+	  <NoWarn>$(NoWarn);SYSLIB0011;CS3003;CS3002;CS3001;CS3008</NoWarn>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -23,7 +23,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-	<None Include="README.md" Pack="true" PackagePath="\"/>
+	<None Include="README.md" Pack="true" PackagePath="\" />
     <None Remove="resources\1-up.png" />
     <None Remove="resources\16_computer.png" />
     <None Remove="resources\16_dialog-error.png" />
@@ -276,12 +276,26 @@
       <LogicalName>user-home.png</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
+	<Target Name="RemoveFrameworkDrawingRefs" AfterTargets="ResolveTargetingPackAssets">
+		<ItemGroup>
+			<Reference Remove="@(Reference)" Condition="'%(FileName)' == 'System.Drawing.Primitives'" />
+
+			<Reference Remove="@(Reference)" Condition="'%(FileName)' == 'System.Drawing'" />
+		</ItemGroup>
+	</Target>
+
+	<ItemGroup>
+		<!-- Alias the implicit runtime System.Drawing.Primitives so it doesn't collide with our custom one -->
+		<Reference Update="System.Drawing.Primitives">
+			<Aliases>sysdrawing</Aliases>
+		</Reference>
+	</ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Accessibility" Version="4.6.0-preview3-27504-2" />
     <PackageReference Include="Microsoft.Win32.Registry" Version="4.7.0" />
     <PackageReference Include="Mono.Posix.NETStandard" Version="1.0.0" />
-    <PackageReference Include="System.Drawing.Common" Version="6.0.0" />
+    <!--<PackageReference Include="System.Drawing.Common" Version="6.0.0" />-->
     <PackageReference Include="System.Resources.Extensions" Version="6.0.0" />
     <PackageReference Include="System.Security.Permissions" Version="6.0.0" />
     <PackageReference Include="System.Configuration.ConfigurationManager" Version="6.0.0" />
@@ -290,7 +304,10 @@
   <ItemGroup>
     <ProjectReference Include="..\Mono.WebBrowser\Mono.WebBrowser.csproj" />
     <ProjectReference Include="..\System.Drawing.Design\System.Drawing.Design.csproj" />
+    <ProjectReference Include="..\..\..\..\invnew\System.Drawing\System.Drawing.csproj" />
   </ItemGroup>
+	
+	
 
   <ItemGroup>
     <Compile Update="resources\keyboards.Designer.cs">

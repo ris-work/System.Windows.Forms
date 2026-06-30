@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <Copyright>(c) Various Mono authors, Daniel Van Noord 2019</Copyright>
     <Authors>Various Mono authors, Daniel Van Noord</Authors>
@@ -14,6 +14,14 @@
     <Version>1.0.0-alpha7</Version>
     <PackageId>Core.System.Drawing.Design</PackageId>
   </PropertyGroup>
+
+	<Target Name="RemoveFrameworkDrawingRefs" AfterTargets="ResolveTargetingPackAssets">
+		<ItemGroup>
+			<Reference Remove="@(Reference)" Condition="'%(FileName)' == 'System.Drawing.Primitives'" />
+
+			<Reference Remove="@(Reference)" Condition="'%(FileName)' == 'System.Drawing'" />
+		</ItemGroup>
+	</Target>
 
   <ItemGroup>
     <Compile Remove="System.Drawing.Design\BitmapEditor.cs" />
@@ -40,8 +48,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Drawing.Common" Version="6.0.0" />
+    <!--<PackageReference Include="System.Drawing.Common" Version="6.0.0" />-->
+	  <ProjectReference Include="..\..\..\..\invnew\System.Drawing\System.Drawing.csproj" />
   </ItemGroup>
+	<ItemGroup>
+		<!-- Alias the implicit runtime System.Drawing.Primitives so it doesn't collide with our custom one -->
+		<Reference Update="System.Drawing.Primitives">
+			<Aliases>sysdrawing</Aliases>
+		</Reference>
+	</ItemGroup>
 
   <ItemGroup>
     <None Include="..\License.txt">
