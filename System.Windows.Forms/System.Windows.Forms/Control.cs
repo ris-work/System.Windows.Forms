@@ -1446,7 +1446,7 @@ namespace System.Windows.Forms
                         {
                             using (var expectedPath = RVUtils.CreateRoundedRectanglePath(fullRect, RVUtils.cornerRadius))
                             {
-                                if(RVUtils.SetRegion) this.Region = new Region(expectedPath);
+                                if(RVUtils.SetRegion && this is not Form) this.Region = new Region(expectedPath);
                                 //this.Region = new Region(fullRect);
                             }
 							rv_region_set = true;
