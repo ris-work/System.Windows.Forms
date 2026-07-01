@@ -1865,12 +1865,16 @@ namespace System.Windows.Forms {
                 nativeContext = hdc;
             }
 
-            // Create a managed bitmap for painting
-            int bmpWidth = Math.Max(1, clip_rect.Width);
-            int bmpHeight = Math.Max(1, clip_rect.Height);
-            Bitmap paintBitmap = new Bitmap(bmpWidth, bmpHeight);
+            // Get the full client area size for the bitmap
+            RECT clientRect;
+            Win32GetClientRect(handle, out clientRect);
+            int fullWidth = Math.Max(1, clientRect.right - clientRect.left);
+            int fullHeight = Math.Max(1, clientRect.bottom - clientRect.top);
+
+            // Create a managed bitmap for painting - use full client area
+            Bitmap paintBitmap = new Bitmap(fullWidth, fullHeight);
             Graphics dc = Graphics.FromImage(paintBitmap);
-            dc.TranslateTransform(-clip_rect.X, -clip_rect.Y);
+            // Don't translate - paint at 0,0 relative to client area
 
             var context = new Win32PaintContext { Bitmap = paintBitmap, Hdc = hdc, ClipRect = clip_rect, NativeContext = nativeContext };
             paint_event = new Win32PaintEventArgs(dc, clip_rect, context);
@@ -2534,24 +2538,54 @@ namespace System.Windows.Forms {
 			Win32SetCursorPos(x, y);
 		}
 
-		internal override Region GetClipRegion(IntPtr hwnd) {
-			Region region;
+        internal override Region GetClipRegion(IntPtr hwnd)
+        {
+            Region region = new Region();
+            region.MakeInfinite();
+            return region;
+        }
 
-			region = new Region();
+        internal override void SetClipRegion(IntPtr hwnd, Region region)
+        {
+            try
+            {
+                if (region == null)
+                {
+                    Win32SetWindowRgn(hwnd, IntPtr.Zero, true);
+                }
+                else
+                {
+                    IntPtr hrgn = IntPtr.Zero;
+                    using (var g = Graphics.FromHwnd(hwnd))
+                    {
+                        if (region.IsEmpty(g))
+                        {
+                            hrgn = Win32CreateRectRgn(0, 0, 0, 0);
+                        }
+                        else if (!region.IsInfinite(g))
+                        {
+                            var bounds = region.GetBounds(g);
+                            hrgn = Win32CreateRectRgn((int)bounds.Left, (int)bounds.Top, (int)bounds.Right, (int)bounds.Bottom);
+                        }
+                    }
 
-			Win32GetWindowRgn(hwnd, region.GetHrgn(Graphics.FromHwnd(hwnd)));
+                    if (hrgn != IntPtr.Zero)
+                    {
+                        Win32SetWindowRgn(hwnd, hrgn, true);
+                    }
+                    else
+                    {
+                        Win32SetWindowRgn(hwnd, IntPtr.Zero, true);
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore region errors - Skia handles clipping during painting
+            }
+        }
 
-			return region;
-		}
-
-		internal override void SetClipRegion(IntPtr hwnd, Region region) {
-			if (region == null)
-				Win32SetWindowRgn (hwnd, IntPtr.Zero, true);
-			else
-				Win32SetWindowRgn(hwnd, region.GetHrgn(Graphics.FromHwnd(hwnd)), true);
-		}
-
-		internal override void EnableWindow(IntPtr handle, bool Enable) {
+        internal override void EnableWindow(IntPtr handle, bool Enable) {
 			Win32EnableWindow(handle, Enable);
 		}
 
