@@ -121,167 +121,203 @@ namespace System.Windows.Forms
 		{
 			return MeasureTextInternal (dc, text, font, proposedSize, flags, false);
 		}
-		#endregion
+        #endregion
 
-		#region Internal Methods That Do Stuff
-		internal static void DrawTextInternal (IDeviceContext dc, string text, Font font, Rectangle bounds, Color foreColor, Color backColor, TextFormatFlags flags, bool useDrawString)
-		{
-			if (dc == null)
-				throw new ArgumentNullException ("dc");
+        #region Internal Methods That Do Stuff
+        internal static void DrawTextInternal(IDeviceContext dc, string text, Font font, Rectangle bounds, Color foreColor, Color backColor, TextFormatFlags flags, bool useDrawString)
+        {
+            if (dc == null)
+                throw new ArgumentNullException("dc");
+            if (text == null || text.Length == 0)
+                return;
 
-			if (text == null || text.Length == 0)
-				return;
+            // Try GDI if requested and on Windows
+            if (!useDrawString && !XplatUI.RunningOnUnix)
+            {
+                try
+                {
+                    // Original GDI drawing logic from user's code
+                    if ((flags & TextFormatFlags.VerticalCenter) == TextFormatFlags.VerticalCenter || (flags & TextFormatFlags.Bottom) == TextFormatFlags.Bottom)
+                        flags |= TextFormatFlags.SingleLine;
 
-			// We use MS GDI API's unless told not to, or we aren't on Windows
-			if (!useDrawString && !XplatUI.RunningOnUnix) {
-				if ((flags & TextFormatFlags.VerticalCenter) == TextFormatFlags.VerticalCenter || (flags & TextFormatFlags.Bottom) == TextFormatFlags.Bottom)
-					flags |= TextFormatFlags.SingleLine;
+                    Rectangle new_bounds = PadRectangle(bounds, flags);
+                    new_bounds.Offset((int)(dc as Graphics).Transform.OffsetX, (int)(dc as Graphics).Transform.OffsetY);
 
-				// Calculate the text bounds (there is often padding added)
-				Rectangle new_bounds = PadRectangle (bounds, flags);
-				new_bounds.Offset ((int)(dc as Graphics).Transform.OffsetX, (int)(dc as Graphics).Transform.OffsetY);
+                    IntPtr hdc = IntPtr.Zero;
+                    bool clear_clip_region = false;
 
-				IntPtr hdc = IntPtr.Zero;
-				bool clear_clip_region = false;
-				
-				// If we need to use the graphics clipping region, add it to our hdc
-				if ((flags & TextFormatFlags.PreserveGraphicsClipping) == TextFormatFlags.PreserveGraphicsClipping) {
-					Graphics graphics = (Graphics)dc;
-					Region clip_region = graphics.Clip;
-					
-					if (!clip_region.IsInfinite (graphics)) {
-						IntPtr hrgn = clip_region.GetHrgn (graphics);
-						hdc = dc.GetHdc ();
-						SelectClipRgn (hdc, hrgn);
-						DeleteObject (hrgn);
-						
-						clear_clip_region = true;
-					}
-				}
-				
-				if (hdc == IntPtr.Zero)
-					hdc = dc.GetHdc ();
-					
-				// Set the fore color
-				if (foreColor != Color.Empty)
-					SetTextColor (hdc, ColorTranslator.ToWin32 (foreColor));
+                    if ((flags & TextFormatFlags.PreserveGraphicsClipping) == TextFormatFlags.PreserveGraphicsClipping)
+                    {
+                        Graphics graphics = (Graphics)dc;
+                        Region clip_region = graphics.Clip;
+                        if (!clip_region.IsInfinite(graphics))
+                        {
+                            IntPtr hrgn = clip_region.GetHrgn(graphics);
+                            hdc = dc.GetHdc();
+                            SelectClipRgn(hdc, hrgn);
+                            DeleteObject(hrgn);
+                            clear_clip_region = true;
+                        }
+                    }
 
-				// Set the back color
-				if (backColor != Color.Transparent && backColor != Color.Empty) {
-					SetBkMode (hdc, 2);	//1-Transparent, 2-Opaque
-					SetBkColor (hdc, ColorTranslator.ToWin32 (backColor));
-				}
-				else {
-					SetBkMode (hdc, 1);	//1-Transparent, 2-Opaque
-				}
+                    if (hdc == IntPtr.Zero)
+                        hdc = dc.GetHdc();
 
-				XplatUIWin32.RECT r = XplatUIWin32.RECT.FromRectangle (new_bounds);
+                    if (foreColor != Color.Empty)
+                        SetTextColor(hdc, ColorTranslator.ToWin32(foreColor));
 
-				IntPtr prevobj;
+                    if (backColor != Color.Transparent && backColor != Color.Empty)
+                    {
+                        SetBkMode(hdc, 2);
+                        SetBkColor(hdc, ColorTranslator.ToWin32(backColor));
+                    }
+                    else
+                    {
+                        SetBkMode(hdc, 1);
+                    }
 
-				if (font != null) {
-					prevobj = SelectObject (hdc, font.ToHfont ());
-					Win32DrawText (hdc, text, text.Length, ref r, (int)flags);
-					prevobj = SelectObject (hdc, prevobj);
-					DeleteObject (prevobj);
-				}
-				else {
-					Win32DrawText (hdc, text, text.Length, ref r, (int)flags);
-				}
+                    XplatUIWin32.RECT r = XplatUIWin32.RECT.FromRectangle(new_bounds);
+                    IntPtr prevobj;
 
-				if (clear_clip_region)
-					SelectClipRgn (hdc, IntPtr.Zero);
+                    if (font != null)
+                    {
+                        prevobj = SelectObject(hdc, font.ToHfont());
+                        Win32DrawText(hdc, text, text.Length, ref r, (int)flags);
+                        prevobj = SelectObject(hdc, prevobj);
+                        DeleteObject(prevobj);
+                    }
+                    else
+                    {
+                        Win32DrawText(hdc, text, text.Length, ref r, (int)flags);
+                    }
 
-				dc.ReleaseHdc ();
-			}
-			// Use Graphics.DrawString as a fallback method
-			else {
-				Graphics g;
-				IntPtr hdc = IntPtr.Zero;
-				
-				if (dc is Graphics)
-					g = (Graphics)dc;
-				else {
-					hdc = dc.GetHdc ();
-					g = Graphics.FromHdc (hdc);
-				}
+                    if (clear_clip_region)
+                        SelectClipRgn(hdc, IntPtr.Zero);
 
-				StringFormat sf = FlagsToStringFormat (flags);
+                    dc.ReleaseHdc();
+                    return; // Success, exit
+                }
+                catch (PlatformNotSupportedException)
+                {
+                    // Fallback to DrawString below
+                }
+            }
 
-				Rectangle new_bounds = PadDrawStringRectangle (bounds, flags);
+            // Use Graphics.DrawString as a fallback method
+            {
+                Graphics g;
+                IntPtr hdc = IntPtr.Zero;
 
-				g.DrawString (text, font, ThemeEngine.Current.ResPool.GetSolidBrush (foreColor), new_bounds, sf);
+                if (dc is Graphics)
+                    g = (Graphics)dc;
+                else
+                {
+                    try
+                    {
+                        hdc = dc.GetHdc();
+                        g = Graphics.FromHdc(hdc);
+                    }
+                    catch (PlatformNotSupportedException)
+                    {
+                        return; // Cannot draw without HDC or Graphics
+                    }
+                }
 
-				if (!(dc is Graphics)) {
-					g.Dispose ();
-					dc.ReleaseHdc ();
-				}
-			}
-		}
+                StringFormat sf = FlagsToStringFormat(flags);
+                Rectangle new_bounds = PadDrawStringRectangle(bounds, flags);
+                g.DrawString(text, font, ThemeEngine.Current.ResPool.GetSolidBrush(foreColor), new_bounds, sf);
 
-		internal static Size MeasureTextInternal (IDeviceContext dc, string text, Font font, Size proposedSize, TextFormatFlags flags, bool useMeasureString)
-		{
-			if (!useMeasureString && !XplatUI.RunningOnUnix) {
-				// Tell DrawText to calculate size instead of draw
-				flags |= (TextFormatFlags)1024;		// DT_CALCRECT
+                if (!(dc is Graphics))
+                {
+                    g.Dispose();
+                    try { dc.ReleaseHdc(); } catch { }
+                }
+            }
+        }
 
-				IntPtr hdc = dc.GetHdc ();
+        internal static Size MeasureTextInternal(IDeviceContext dc, string text, Font font, Size proposedSize, TextFormatFlags flags, bool useMeasureString)
+        {
+            if (dc == null)
+                throw new ArgumentNullException("dc");
+            if (text == null || text.Length == 0)
+                return Size.Empty;
 
-				XplatUIWin32.RECT r = XplatUIWin32.RECT.FromRectangle (new Rectangle (Point.Empty, proposedSize));
+            // Try GDI if requested and on Windows
+            if (!useMeasureString && !XplatUI.RunningOnUnix)
+            {
+                try
+                {
+                    IntPtr hdc = dc.GetHdc();
+                    try
+                    {
+                        // Original GDI measurement logic
+                        if ((flags & TextFormatFlags.VerticalCenter) == TextFormatFlags.VerticalCenter || (flags & TextFormatFlags.Bottom) == TextFormatFlags.Bottom)
+                            flags |= TextFormatFlags.SingleLine;
 
-				IntPtr prevobj;
+                        XplatUIWin32.RECT rect = XplatUIWin32.RECT.FromRectangle(new Rectangle(Point.Empty, proposedSize));
 
-				if (font != null) {
-					prevobj = SelectObject (hdc, font.ToHfont ());
-					Win32DrawText (hdc, text, text.Length, ref r, (int)flags);
-					prevobj = SelectObject (hdc, prevobj);
-					DeleteObject (prevobj);
-				}
-				else {
-					Win32DrawText (hdc, text, text.Length, ref r, (int)flags);
-				}
+                        IntPtr prevobj = IntPtr.Zero;
+                        if (font != null)
+                        {
+                            prevobj = SelectObject(hdc, font.ToHfont());
+                        }
 
-				dc.ReleaseHdc ();
+                        Win32DrawText(hdc, text, text.Length, ref rect, (int)flags | 0x400); // DT_CALCRECT
 
-				// Really, I am just making something up here, which as far as I can tell, MS
-				// just makes something up as well.  This will require lots of tweaking to match MS.  :(
-				Size retval = r.ToRectangle ().Size;
+                        if (prevobj != IntPtr.Zero)
+                        {
+                            prevobj = SelectObject(hdc, prevobj);
+                            DeleteObject(prevobj);
+                        }
 
-				if (retval.Width > 0 && (flags & TextFormatFlags.NoPadding) == 0) {
-					retval.Width += 6;
-					retval.Width += (int)retval.Height / 8;
-				}
+                        return new Size(rect.right - rect.left, rect.bottom - rect.top);
+                    }
+                    finally
+                    {
+                        dc.ReleaseHdc();
+                    }
+                }
+                catch (PlatformNotSupportedException)
+                {
+                    // Fallback to Graphics.MeasureString below
+                }
+            }
 
-				return retval;
-			}
-			else {
-			StringFormat sf = FlagsToStringFormat (flags);
+            // Fallback to Graphics.MeasureString
+            Graphics g;
+            if (dc is Graphics)
+            {
+                g = (Graphics)dc;
+            }
+            else
+            {
+                try
+                {
+                    IntPtr hdc = dc.GetHdc();
+                    g = Graphics.FromHdc(hdc);
+                }
+                catch (PlatformNotSupportedException)
+                {
+                    return Size.Empty;
+                }
+            }
 
-				Size retval;
+            StringFormat sf = FlagsToStringFormat(flags);
+            SizeF size = g.MeasureString(text, font, proposedSize, sf);
 
-				int proposedWidth;
-				if (proposedSize.Width == 0)
-					proposedWidth = Int32.MaxValue;
-				else {
-					proposedWidth = proposedSize.Width;
-					if ((flags & TextFormatFlags.NoPadding) == 0)
-						proposedWidth -= 9;
-				}
-				if (dc is Graphics)
-					retval = (dc as Graphics).MeasureString (text, font, proposedWidth, sf).ToSize ();
-				else
-					retval = TextRenderer.MeasureString (text, font, proposedWidth, sf).ToSize ();
+            if (!(dc is Graphics))
+            {
+                g.Dispose();
+                try { dc.ReleaseHdc(); } catch { }
+            }
 
-				if (retval.Width > 0 && (flags & TextFormatFlags.NoPadding) == 0)
-					retval.Width += 9;
+            return Size.Ceiling(size);
+        }
 
-				return retval;
-			}
-		}
-		#endregion
+        #endregion
 
-#region Internal Methods That Are Just Overloads
-		internal static void DrawTextInternal (IDeviceContext dc, string text, Font font, Point pt, Color foreColor, bool useDrawString)
+        #region Internal Methods That Are Just Overloads
+        internal static void DrawTextInternal (IDeviceContext dc, string text, Font font, Point pt, Color foreColor, bool useDrawString)
 		{
 			DrawTextInternal (dc, text, font, pt, foreColor, Color.Transparent, TextFormatFlags.Default, useDrawString);
 		}

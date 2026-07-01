@@ -1866,14 +1866,13 @@ namespace System.Windows.Forms {
             }
 
             // Get the full client area size for the bitmap
-            RECT clientRect;
-            Win32GetClientRect(handle, out clientRect);
-            int fullWidth = Math.Max(1, clientRect.right - clientRect.left);
-            int fullHeight = Math.Max(1, clientRect.bottom - clientRect.top);
-
-            // Create a managed bitmap for painting - use full client area
-            Bitmap paintBitmap = new Bitmap(fullWidth, fullHeight);
+            // Create a managed bitmap for painting the invalidated area
+            int bmpWidth = Math.Max(1, clip_rect.Width);
+            int bmpHeight = Math.Max(1, clip_rect.Height);
+            Bitmap paintBitmap = new Bitmap(bmpWidth, bmpHeight);
+            paintBitmap.SetResolution(GetScreenDpi(), GetScreenDpi()); // Set DPI for better quality
             Graphics dc = Graphics.FromImage(paintBitmap);
+            dc.TranslateTransform(-clip_rect.X, -clip_rect.Y);
             // Don't translate - paint at 0,0 relative to client area
 
             var context = new Win32PaintContext { Bitmap = paintBitmap, Hdc = hdc, ClipRect = clip_rect, NativeContext = nativeContext };
@@ -1881,6 +1880,24 @@ namespace System.Windows.Forms {
 
             return paint_event;
         }
+        private float GetScreenDpi()
+        {
+            try
+            {
+                IntPtr hdc = Win32GetDC(IntPtr.Zero);
+                if (hdc != IntPtr.Zero)
+                {
+                    // LOGPIXELSX = 88
+                    int dpi = Win32GetDeviceCaps(hdc, 88);
+                    Win32ReleaseDC(IntPtr.Zero, hdc);
+                    return dpi > 0 ? dpi : 96f;
+                }
+            }
+            catch { }
+            return 96f;
+        }
+        [DllImport("gdi32.dll", EntryPoint = "GetDeviceCaps", CallingConvention = CallingConvention.StdCall)]
+        internal static extern int Win32GetDeviceCaps(IntPtr hdc, int nIndex);
 
         internal override void PaintEventEnd(ref Message m, IntPtr handle, bool client, PaintEventArgs pevent)
         {
