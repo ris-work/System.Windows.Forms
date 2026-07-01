@@ -3598,9 +3598,15 @@ namespace System.Windows.Forms {
 
         internal override Region GetClipRegion(IntPtr handle)
         {
-            Region region = new Region();
-            region.MakeInfinite();
-            return region;
+            Hwnd hwnd;
+
+            hwnd = Hwnd.ObjectFromHandle(handle);
+            if (hwnd != null)
+            {
+                return hwnd.UserClip;
+            }
+
+            return null;
         }
 
 
@@ -5429,18 +5435,22 @@ namespace System.Windows.Forms {
 
         internal override void SetClipRegion(IntPtr handle, Region region)
         {
-            Hwnd hwnd = Hwnd.ObjectFromHandle(handle);
-            if (hwnd == null)
-                return;
+            Hwnd hwnd;
 
-            try
+            hwnd = Hwnd.ObjectFromHandle(handle);
+            if (hwnd == null)
+            {
+                return;
+            }
+
+            if (hwnd.UserClip != region)
             {
                 hwnd.UserClip = region;
 
                 if (!HasShapeExtension)
                     return;
 
-                XRectangle[] rects = null;
+                XRectangle[] rects = null; ;
                 if (region == null)
                 {
                     rects = new XRectangle[1];
@@ -5464,10 +5474,6 @@ namespace System.Windows.Forms {
                     }
                 }
                 XShapeCombineRectangles(DisplayHandle, hwnd.WholeWindow, XShapeKind.ShapeBounding, 0, 0, rects, rects.Length, XShapeOperation.ShapeSet, XOrdering.Unsorted);
-            }
-            catch
-            {
-                // Ignore region errors - Skia handles clipping during painting
             }
         }
 
