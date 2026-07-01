@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -366,6 +367,7 @@ namespace System.Windows.Forms
         public static System.Drawing.Drawing2D.GraphicsPath CreateRoundedRectanglePath(Rectangle rect, float cornerRadius)
         {
             var path = new System.Drawing.Drawing2D.GraphicsPath();
+            
 
             // Adjust these values to correct for asymmetry or specific DPI clipping issues.
             // insetTopLeft shifts the Top and Left edges inward (away from 0,0).
@@ -384,6 +386,14 @@ namespace System.Windows.Forms
             float height = bottom - top;
 
             float diameter = Math.Min(Math.Min(width, height), cornerRadius * 2);
+            if (diameter <= 0)
+            {
+                // Fallback to a rectangle using the same insets
+                // FIX: Prevent ArgumentException from negative width/height
+                if (width > 0 && height > 0)
+                    path.AddRectangle(new RectangleF(left, top, width, height));
+                return path;
+            }
 
             if (diameter <= 0)
             {
@@ -466,6 +476,11 @@ namespace System.Windows.Forms
             if (innerBrush == null) { innerBrush = brush; }
             if (g == null) return;
 
+            
+
+            // SAFETY CHECK: Prevent exceptions from negative or zero-size rectangles
+            if (rect.Width <= 0 || rect.Height <= 0) return;
+
             bool paintedBackground = false;
 
             // 1) Try screen capture if origin set
@@ -528,6 +543,7 @@ namespace System.Windows.Forms
             // 4) Draw anti-aliased rounded path on top
             using (var path = CreateRoundedRectanglePath(rect, cornerRadius))
             {
+                
                 var oldSmoothing = g.SmoothingMode;
                 try
                 {

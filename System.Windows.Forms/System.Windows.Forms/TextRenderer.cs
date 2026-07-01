@@ -128,15 +128,16 @@ namespace System.Windows.Forms
         {
             if (dc == null)
                 throw new ArgumentNullException("dc");
+
             if (text == null || text.Length == 0)
                 return;
 
-            // Try GDI if requested and on Windows
+            // We use MS GDI API's unless told not to, or we aren't on Windows
             if (!useDrawString && !XplatUI.RunningOnUnix)
             {
                 try
                 {
-                    // Original GDI drawing logic from user's code
+                    // Original GDI drawing logic
                     if ((flags & TextFormatFlags.VerticalCenter) == TextFormatFlags.VerticalCenter || (flags & TextFormatFlags.Bottom) == TextFormatFlags.Bottom)
                         flags |= TextFormatFlags.SingleLine;
 
@@ -146,26 +147,37 @@ namespace System.Windows.Forms
                     IntPtr hdc = IntPtr.Zero;
                     bool clear_clip_region = false;
 
+                    // If we need to use the graphics clipping region, add it to our hdc
                     if ((flags & TextFormatFlags.PreserveGraphicsClipping) == TextFormatFlags.PreserveGraphicsClipping)
                     {
                         Graphics graphics = (Graphics)dc;
                         Region clip_region = graphics.Clip;
+
                         if (!clip_region.IsInfinite(graphics))
                         {
                             IntPtr hrgn = clip_region.GetHrgn(graphics);
                             hdc = dc.GetHdc();
-                            SelectClipRgn(hdc, hrgn);
-                            DeleteObject(hrgn);
-                            clear_clip_region = true;
+                            if (hdc != IntPtr.Zero)
+                            {
+                                SelectClipRgn(hdc, hrgn);
+                                DeleteObject(hrgn);
+                                clear_clip_region = true;
+                            }
                         }
                     }
 
                     if (hdc == IntPtr.Zero)
                         hdc = dc.GetHdc();
 
+                    // If hdc is still IntPtr.Zero, fall back to DrawString
+                    if (hdc == IntPtr.Zero)
+                        throw new PlatformNotSupportedException();
+
+                    // Set the fore color
                     if (foreColor != Color.Empty)
                         SetTextColor(hdc, ColorTranslator.ToWin32(foreColor));
 
+                    // Set the back color
                     if (backColor != Color.Transparent && backColor != Color.Empty)
                     {
                         SetBkMode(hdc, 2);
@@ -177,6 +189,7 @@ namespace System.Windows.Forms
                     }
 
                     XplatUIWin32.RECT r = XplatUIWin32.RECT.FromRectangle(new_bounds);
+
                     IntPtr prevobj;
 
                     if (font != null)
@@ -201,21 +214,28 @@ namespace System.Windows.Forms
                 {
                     // Fallback to DrawString below
                 }
+                catch (Exception)
+                {
+                    // Fallback to DrawString below
+                }
             }
 
-            // Use Graphics.DrawString as a fallback method
+            // Fallback: Use Graphics.DrawString (SkiaSharp backend)
             {
                 Graphics g;
-                IntPtr hdc = IntPtr.Zero;
+                IntPtr hdcFallback = IntPtr.Zero;
 
                 if (dc is Graphics)
+                {
                     g = (Graphics)dc;
+                }
                 else
                 {
                     try
                     {
-                        hdc = dc.GetHdc();
-                        g = Graphics.FromHdc(hdc);
+                        hdcFallback = dc.GetHdc();
+                        if (hdcFallback == IntPtr.Zero) return; // Cannot draw without HDC or Graphics
+                        g = Graphics.FromHdc(hdcFallback);
                     }
                     catch (PlatformNotSupportedException)
                     {
@@ -224,8 +244,19 @@ namespace System.Windows.Forms
                 }
 
                 StringFormat sf = FlagsToStringFormat(flags);
-                Rectangle new_bounds = PadDrawStringRectangle(bounds, flags);
-                g.DrawString(text, font, ThemeEngine.Current.ResPool.GetSolidBrush(foreColor), new_bounds, sf);
+                Rectangle new_bounds_fallback = bounds;
+
+                // FILL BACKGROUND to prevent ghosting - TextRenderer in GDI usually draws opaque backgrounds
+                if (backColor != Color.Transparent && backColor != Color.Empty)
+                {
+                    using (var bgBrush = new SolidBrush(backColor))
+                        g.FillRectangle(bgBrush, new_bounds_fallback);
+                }
+
+                if (font != null)
+                {
+                    g.DrawString(text, font, ThemeEngine.Current.ResPool.GetSolidBrush(foreColor), new_bounds_fallback, sf);
+                }
 
                 if (!(dc is Graphics))
                 {

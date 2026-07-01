@@ -1388,24 +1388,24 @@ namespace System.Windows.Forms {
 			return ThemeEngine.Current.ResPool.GetPen (DataGridView.GridColor);
 		}
 
-		internal virtual void PaintPartContent (Graphics graphics, Rectangle cellBounds, int rowIndex, DataGridViewElementStates cellState, DataGridViewCellStyle cellStyle, object formattedValue)
-		{
-			if (IsInEditMode)
-				return;
-				
-			Color color = Selected ? cellStyle.SelectionForeColor : cellStyle.ForeColor;
+        internal virtual void PaintPartContent(Graphics graphics, Rectangle cellBounds, int rowIndex, DataGridViewElementStates cellState, DataGridViewCellStyle cellStyle, object formattedValue)
+        {
+            if (IsInEditMode)
+                return;
 
-			TextFormatFlags flags = TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter | TextFormatFlags.TextBoxControl;
-			flags |= AlignmentToFlags (style.Alignment);
-			
-			cellBounds.Height -= 2;
-			cellBounds.Width -= 2;
+            Color color = Selected ? cellStyle.SelectionForeColor : cellStyle.ForeColor;
 
-			if (formattedValue != null)
-				TextRenderer.DrawText (graphics, formattedValue.ToString (), cellStyle.Font, cellBounds, color, flags);
-		}
-		
-		private void PaintPartFocus (Graphics graphics, Rectangle cellBounds)
+            TextFormatFlags flags = TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter | TextFormatFlags.TextBoxControl;
+            flags |= AlignmentToFlags(cellStyle.Alignment); // <--- FIXED HERE
+
+            cellBounds.Height -= 2;
+            cellBounds.Width -= 2;
+
+            if (formattedValue != null)
+                TextRenderer.DrawText(graphics, formattedValue.ToString(), cellStyle.Font, cellBounds, color, flags);
+        }
+
+        private void PaintPartFocus (Graphics graphics, Rectangle cellBounds)
 		{
 			cellBounds.Width--;
 			cellBounds.Height--;

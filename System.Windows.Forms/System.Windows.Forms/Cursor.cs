@@ -580,102 +580,120 @@ namespace System.Windows.Forms {
 			reader.Close();
 		}
 
-		private Bitmap ToBitmap(bool xor, bool transparent)
-		{
-			CursorImage		ci;
-			CursorInfoHeader	cih;
-			int			ncolors;
-			Bitmap			bmp;
-			BitmapData		bits;
-			ColorPalette		pal;
-			int			biHeight;
-			int			bytesPerLine;
+        private Bitmap ToBitmap(bool xor, bool transparent)
+        {
+            CursorImage ci;
+            CursorInfoHeader cih;
+            int ncolors;
+            Bitmap bmp;
+            int biHeight;
+            int bytesPerLine;
 
-			if (cursor_data == null)
-				return new Bitmap(32, 32);
+            if (cursor_data == null)
+                return new Bitmap(32, 32);
 
-			ci = cursor_data[this.id];
-			cih = ci.cursorHeader;
-			biHeight = cih.biHeight / 2;
+            ci = cursor_data[this.id];
+            cih = ci.cursorHeader;
+            biHeight = cih.biHeight / 2;
 
-			if (!xor) {
-				// The AND mask is 1bit - very straightforward
-				bmp = new Bitmap(cih.biWidth, biHeight, PixelFormat.Format1bppIndexed);
-				pal = bmp.Palette;
-				pal.Entries[0] = Color.FromArgb(0, 0, 0);
-				pal.Entries[1] = Color.FromArgb(unchecked((int)0xffffffffff));
-				bits = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), ImageLockMode.WriteOnly, bmp.PixelFormat);
+            // Always create a 32bpp bitmap to safely use SetPixel
+            bmp = new Bitmap(cih.biWidth, biHeight, PixelFormat.Format32bppArgb);
 
-				for (int y = 0; y < biHeight; y++) {
-					Marshal.Copy(ci.cursorAND, bits.Stride * y, (IntPtr)(bits.Scan0.ToInt64() + bits.Stride * (biHeight - 1 - y)), bits.Stride);
-				}
+            if (!xor)
+            {
+                // The AND mask is 1bit
+                bytesPerLine = (int)((((cih.biWidth * 1) + 31) & ~31) >> 3);
+                for (int y = 0; y < biHeight; y++)
+                {
+                    for (int x = 0; x < cih.biWidth; x++)
+                    {
+                        int byteIndex = y * bytesPerLine + x / 8;
+                        int bitIndex = 7 - (x % 8);
+                        bool isSet = ((ci.cursorAND[byteIndex] >> bitIndex) & 1) != 0;
+                        bmp.SetPixel(x, biHeight - 1 - y, isSet ? Color.White : Color.Black);
+                    }
+                }
+            }
+            else
+            {
+                // XOR mask
+                ncolors = (int)cih.biClrUsed;
+                if (ncolors == 0 && cih.biBitCount < 24)
+                {
+                    ncolors = (int)(1 << cih.biBitCount);
+                }
 
-				bmp.UnlockBits(bits);
-			} else {
-				ncolors = (int)cih.biClrUsed;
-				if (ncolors == 0) {
-					if (cih.biBitCount < 24) {
-						ncolors = (int)(1 << cih.biBitCount);
-					}
-				}
+                bytesPerLine = (int)((((cih.biWidth * cih.biBitCount) + 31) & ~31) >> 3);
+                int andBytesPerLine = (int)((((cih.biWidth * 1) + 31) & ~31) >> 3);
 
-				switch(cih.biBitCount) {
-				case 1: {	// Monochrome
-					bmp = new Bitmap (cih.biWidth, biHeight, PixelFormat.Format1bppIndexed);
-					break;
-				}
-					
-				case 4: {	// 4bpp
-					bmp = new Bitmap (cih.biWidth, biHeight, PixelFormat.Format4bppIndexed);
-					break;
-				}
-					
-				case 8: {	// 8bpp
-					bmp = new Bitmap (cih.biWidth, biHeight, PixelFormat.Format8bppIndexed);
-					break;
-				}
-					
-				case 24:
-				case 32: {	// 32bpp
-					bmp = new Bitmap (cih.biWidth, biHeight, PixelFormat.Format32bppArgb);
-					break;
-				}
-					
-				default: 
-					throw new Exception("Unexpected number of bits:" + cih.biBitCount.ToString());
-				}
-				
-				if (cih.biBitCount < 24) {
-					pal = bmp.Palette;				// Managed palette
-					for (int i = 0; i < ci.cursorColors.Length; i++) 
-						pal.Entries[i] = Color.FromArgb((int)ci.cursorColors[i] | unchecked((int)0xff000000));
-					bmp.Palette = pal;
-				}
+                for (int y = 0; y < biHeight; y++)
+                {
+                    for (int x = 0; x < cih.biWidth; x++)
+                    {
+                        int byteIndex = y * bytesPerLine + (x * cih.biBitCount) / 8;
+                        Color color = Color.Transparent;
 
-				bytesPerLine = (int)((((cih.biWidth * cih.biBitCount) + 31) & ~31) >> 3);
-				bits = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), ImageLockMode.WriteOnly, bmp.PixelFormat);
+                        if (cih.biBitCount == 32)
+                        {
+                            int b = ci.cursorXOR[byteIndex];
+                            int g = ci.cursorXOR[byteIndex + 1];
+                            int r = ci.cursorXOR[byteIndex + 2];
+                            int a = ci.cursorXOR[byteIndex + 3];
+                            color = Color.FromArgb(a, r, g, b);
+                        }
+                        else if (cih.biBitCount == 24)
+                        {
+                            int b = ci.cursorXOR[byteIndex];
+                            int g = ci.cursorXOR[byteIndex + 1];
+                            int r = ci.cursorXOR[byteIndex + 2];
+                            color = Color.FromArgb(255, r, g, b);
+                        }
+                        else if (cih.biBitCount == 8)
+                        {
+                            int palIndex = ci.cursorXOR[byteIndex];
+                            if (palIndex < ncolors)
+                            {
+                                uint col = ci.cursorColors[palIndex];
+                                color = Color.FromArgb((int)(col | unchecked((int)0xff000000)));
+                            }
+                        }
+                        else if (cih.biBitCount == 4)
+                        {
+                            int palIndex = (ci.cursorXOR[byteIndex] >> (4 * (1 - (x % 2)))) & 0x0F;
+                            if (palIndex < ncolors)
+                            {
+                                uint col = ci.cursorColors[palIndex];
+                                color = Color.FromArgb((int)(col | unchecked((int)0xff000000)));
+                            }
+                        }
+                        else if (cih.biBitCount == 1)
+                        {
+                            int palIndex = (ci.cursorXOR[byteIndex] >> (7 - (x % 8))) & 0x01;
+                            if (palIndex < ncolors)
+                            {
+                                uint col = ci.cursorColors[palIndex];
+                                color = Color.FromArgb((int)(col | unchecked((int)0xff000000)));
+                            }
+                        }
 
-				for (int y = 0; y < biHeight; y++) 
-					Marshal.Copy(ci.cursorXOR, bytesPerLine * y, (IntPtr)(bits.Scan0.ToInt64() + bits.Stride * (biHeight - 1 - y)), bytesPerLine);
-				
-				bmp.UnlockBits(bits);
-			}
+                        if (transparent)
+                        {
+                            int andByteIndex = y * andBytesPerLine + x / 8;
+                            int andBitIndex = 7 - (x % 8);
+                            bool isTransparent = ((ci.cursorAND[andByteIndex] >> andBitIndex) & 1) != 0;
+                            if (isTransparent)
+                            {
+                                color = Color.Transparent;
+                            }
+                        }
 
-			if (transparent) {
-				bmp = new Bitmap(bmp);	// This makes a 32bpp image out of an indexed one
-				// Apply the mask to make properly transparent
-				for (int y = 0; y < biHeight; y++) {
-					for (int x = 0; x < cih.biWidth / 8; x++) {
-						for (int bit = 7; bit >= 0; bit--) {
-							if (((ci.cursorAND[y * cih.biWidth / 8 +x] >> bit) & 1) != 0) 
-								bmp.SetPixel(x*8 + 7-bit, biHeight - y - 1, Color.Transparent);
-						}
-					}
-				}
-			}
+                        bmp.SetPixel(x, biHeight - 1 - y, color);
+                    }
+                }
+            }
 
-			return bmp;
-		}
-		#endregion	// Private Methods
-	}
+            return bmp;
+        }
+        #endregion // Private Methods                    
+    }
 }

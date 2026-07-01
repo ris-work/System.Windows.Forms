@@ -39,36 +39,28 @@ namespace System.Windows.Forms
 		private static StringFormat sf_nonprinting;
 		private static StringFormat sf_printing;
 		private static Hashtable measure_cache;
-				
-		static TextBoxTextRenderer ()
-		{
-			// On Windows, we want to use TextRenderer (GDI)
-			// On Linux, we want to use DrawString (GDI+)
-			// TextRenderer provides translation from TextRenderer to
-			// DrawString, but I doubt it's exact enough.
-			// Another option would be to put Pango here for Linux.
-			int platform = (int)Environment.OSVersion.Platform;
-			
-			if (platform == 4 || platform == 128 || platform == 6)
-				use_textrenderer = false;
-			else
-				use_textrenderer = true;
 
-			// windows 2000 doesn't draw with gdi if bounds are In32.MaxValue
-			max_size = new Size (Int16.MaxValue, Int16.MaxValue);
-			
-			sf_nonprinting = new StringFormat (StringFormat.GenericTypographic);
-			sf_nonprinting.Trimming = StringTrimming.None;
-			sf_nonprinting.FormatFlags = StringFormatFlags.DisplayFormatControl;	
-			sf_nonprinting.HotkeyPrefix = HotkeyPrefix.None;		
+        static TextBoxTextRenderer()
+        {
+            // Force use of DrawString (Skia backend) instead of TextRenderer (GDI)
+            // because our System.Drawing.Graphics is backed by SkiaSharp and does not support native GDI HDC.
+            use_textrenderer = false;
 
-			sf_printing = StringFormat.GenericTypographic;
-			sf_printing.HotkeyPrefix = HotkeyPrefix.None;
-			
-			measure_cache = new Hashtable ();
-		}
-		
-		public static void DrawText (Graphics g, string text, Font font, Color color, float x, float y, bool showNonPrint)
+            // windows 2000 doesn't draw with gdi if bounds are In32.MaxValue
+            max_size = new Size(Int16.MaxValue, Int16.MaxValue);
+
+            sf_nonprinting = new StringFormat(StringFormat.GenericTypographic);
+            sf_nonprinting.Trimming = StringTrimming.None;
+            sf_nonprinting.FormatFlags = StringFormatFlags.DisplayFormatControl;
+            sf_nonprinting.HotkeyPrefix = HotkeyPrefix.None;
+
+            sf_printing = StringFormat.GenericTypographic;
+            sf_printing.HotkeyPrefix = HotkeyPrefix.None;
+
+            measure_cache = new Hashtable();
+        }
+
+        public static void DrawText (Graphics g, string text, Font font, Color color, float x, float y, bool showNonPrint)
 		{
 			if (!use_textrenderer) {
 				if (showNonPrint)

@@ -29,6 +29,7 @@
 using SkiaSharp;
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
@@ -834,10 +835,12 @@ namespace System.Windows.Forms {
 			public Int32 _BatteryLifeTime;
 			public Int32 _BatteryFullLifeTime;
 		}
-		#endregion
+        #endregion
 
-		#region Constructor & Destructor
-		private XplatUIWin32() {
+        private Dictionary<IntPtr, Bitmap> _backBuffers = new Dictionary<IntPtr, Bitmap>();
+
+        #region Constructor & Destructor
+        private XplatUIWin32() {
 			// Handle singleton stuff first
 			ref_count=0;
 
@@ -1828,6 +1831,30 @@ namespace System.Windows.Forms {
 
             if (client)
             {
+                // Always get the full client rect for the back buffer size
+                RECT clientRect;
+                Win32GetClientRect(handle, out clientRect);
+                int width = clientRect.right - clientRect.left;
+                int height = clientRect.bottom - clientRect.top;
+
+                if (width <= 0 || height <= 0)
+                {
+                    hdc = Win32GetDC(handle);
+                    return new Win32PaintEventArgs(Graphics.FromImage(new Bitmap(1, 1)), Rectangle.Empty, new Win32PaintContext { Hdc = hdc, NativeContext = hdc });
+                }
+
+                // Get or create the persistent back buffer
+                if (!_backBuffers.TryGetValue(handle, out Bitmap backBuffer) || backBuffer.Width != width || backBuffer.Height != height)
+                {
+                    backBuffer?.Dispose();
+                    backBuffer = new Bitmap(width, height);
+                    backBuffer.SetResolution(GetScreenDpi(), GetScreenDpi());
+                    _backBuffers[handle] = backBuffer;
+                }
+
+                Graphics dc = Graphics.FromImage(backBuffer);
+
+                // Determine the actual invalidated region
                 if (Win32GetUpdateRect(msg.HWnd, ref rect, false))
                 {
                     if (handle != msg.HWnd)
@@ -1845,41 +1872,38 @@ namespace System.Windows.Forms {
                 else
                 {
                     hdc = Win32GetDC(handle);
+                    rect = clientRect; // Paint whole client area if no update rect
                 }
+
                 clip_rect = rect.ToRectangle();
+                // Intersect with client area just to be safe
+                clip_rect.Intersect(new Rectangle(0, 0, width, height));
+
+                // Set the clip on the graphics object so WinForms only paints the invalidated area
+                //dc.SetClip(clip_rect);
+
+                var context = new Win32PaintContext { Bitmap = backBuffer, Hdc = hdc, ClipRect = new Rectangle(0, 0, width, height), NativeContext = (ps.hdc != IntPtr.Zero ? (object)ps : (object)hdc) };
+                paint_event = new Win32PaintEventArgs(dc, clip_rect, context);
+                return paint_event;
             }
             else
             {
+                // NC painting (borders, etc.) - use a temporary bitmap
                 hdc = Win32GetWindowDC(handle);
                 Win32GetWindowRect(handle, out rect);
                 clip_rect = new Rectangle(0, 0, rect.Width, rect.Height);
+
+                int width = Math.Max(1, rect.Width);
+                int height = Math.Max(1, rect.Height);
+                Bitmap paintBitmap = new Bitmap(width, height);
+                Graphics dc = Graphics.FromImage(paintBitmap);
+
+                var context = new Win32PaintContext { Bitmap = paintBitmap, Hdc = hdc, ClipRect = clip_rect, NativeContext = hdc };
+                paint_event = new Win32PaintEventArgs(dc, clip_rect, context);
+                return paint_event;
             }
-
-            object nativeContext;
-            if (ps.hdc != IntPtr.Zero)
-            {
-                nativeContext = ps;
-            }
-            else
-            {
-                nativeContext = hdc;
-            }
-
-            // Get the full client area size for the bitmap
-            // Create a managed bitmap for painting the invalidated area
-            int bmpWidth = Math.Max(1, clip_rect.Width);
-            int bmpHeight = Math.Max(1, clip_rect.Height);
-            Bitmap paintBitmap = new Bitmap(bmpWidth, bmpHeight);
-            paintBitmap.SetResolution(GetScreenDpi(), GetScreenDpi()); // Set DPI for better quality
-            Graphics dc = Graphics.FromImage(paintBitmap);
-            dc.TranslateTransform(-clip_rect.X, -clip_rect.Y);
-            // Don't translate - paint at 0,0 relative to client area
-
-            var context = new Win32PaintContext { Bitmap = paintBitmap, Hdc = hdc, ClipRect = clip_rect, NativeContext = nativeContext };
-            paint_event = new Win32PaintEventArgs(dc, clip_rect, context);
-
-            return paint_event;
         }
+
         private float GetScreenDpi()
         {
             try
@@ -1915,36 +1939,30 @@ namespace System.Windows.Forms {
                         SKBitmapInfo bmi = new SKBitmapInfo();
                         bmi.biSize = (uint)Marshal.SizeOf(typeof(SKBitmapInfo));
                         bmi.biWidth = pc.Bitmap.Width;
-                        bmi.biHeight = -pc.Bitmap.Height;
+                        bmi.biHeight = -pc.Bitmap.Height; // Top-down
                         bmi.biPlanes = 1;
                         bmi.biBitCount = 32;
-                        bmi.biCompression = 0;
+                        bmi.biCompression = 0; // BI_RGB
 
-                        Win32SetDIBitsToDevice(pc.Hdc, pc.ClipRect.X, pc.ClipRect.Y, pc.Bitmap.Width, pc.Bitmap.Height, 0, 0, 0, pc.Bitmap.Height, pc.Bitmap.GetSKBitmapPixels(), ref bmi, 0);
+                        // Blit the whole back buffer to the screen
+                        Win32SetDIBitsToDevice(pc.Hdc, 0, 0, pc.Bitmap.Width, pc.Bitmap.Height, 0, 0, 0, pc.Bitmap.Height, pc.Bitmap.GetSKBitmapPixels(), ref bmi, 0);
                     }
                     catch
                     {
+                        // Ignore blitting errors
                     }
                     finally
                     {
-                        pc.Bitmap.Dispose();
+                        // Only dispose if it's a temporary NC bitmap
+                        if (!client)
+                        {
+                            pc.Bitmap.Dispose();
+                        }
+                        // If it's the client back buffer, we keep it cached in _backBuffers
                     }
 
+                    // Release native context
                     object o = pc.NativeContext;
-                    if (o is IntPtr)
-                    {
-                        IntPtr hdc = (IntPtr)o;
-                        Win32ReleaseDC(handle, hdc);
-                    }
-                    else if (o is PAINTSTRUCT)
-                    {
-                        PAINTSTRUCT ps = (PAINTSTRUCT)o;
-                        Win32EndPaint(handle, ref ps);
-                    }
-                }
-                else
-                {
-                    object o = wpea.Context;
                     if (o is IntPtr)
                     {
                         IntPtr hdc = (IntPtr)o;
@@ -2230,11 +2248,25 @@ namespace System.Windows.Forms {
 			return Win32TranslateMessage(ref msg);
 		}
 
-		internal override IntPtr DispatchMessage(ref MSG msg) {
+        /*internal override IntPtr DispatchMessage(ref MSG msg) {
 			return Win32DispatchMessage(ref msg);
-		}
+		}*/
+        internal override IntPtr DispatchMessage(ref MSG msg)
+        {
+            try
+            {
+                return Win32DispatchMessage(ref msg);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("--- EXCEPTION DURING DISPATCH ---");
+                Console.WriteLine(ex.ToString());
+                Console.WriteLine("---------------------------------");
+                return IntPtr.Zero;
+            }
+        }
 
-		internal override bool SetZOrder(IntPtr hWnd, IntPtr AfterhWnd, bool Top, bool Bottom) {
+        internal override bool SetZOrder(IntPtr hWnd, IntPtr AfterhWnd, bool Top, bool Bottom) {
 			if (Top) {
 				Win32SetWindowPos(hWnd, SetWindowPosZOrder.HWND_TOP, 0, 0, 0, 0, SetWindowPosFlags.SWP_NOMOVE | SetWindowPosFlags.SWP_NOSIZE);
 				return true;
@@ -3438,7 +3470,9 @@ namespace System.Windows.Forms {
 			Win32SetForegroundWindow(handle);
 		}
 
-		internal override event EventHandler Idle;
+        
+
+        internal override event EventHandler Idle;
 		#endregion	// Public Static Methods
 
 		#region Win32 Imports
