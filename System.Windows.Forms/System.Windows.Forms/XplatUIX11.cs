@@ -50,9 +50,13 @@
 //#define TRACE
 //#define DEBUG
 
+using Mono.Unix;
+using Mono.Unix.Native;
+using SkiaSharp;
 using System;
-using System.ComponentModel;
 using System.Collections;
+using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -66,12 +70,19 @@ using System.Runtime.Serialization;
 using System.Runtime.Serialization.Formatters.Binary;
 using System.Text;
 using System.Threading;
-using Mono.Unix.Native;
-using Mono.Unix;
 
 /// X11 Version
 namespace System.Windows.Forms {
-	internal class XplatUIX11 : XplatUIDriver {
+    class X11PaintEventArgs : PaintEventArgs
+    {
+        public X11PaintEventArgs(Graphics g, Rectangle clip, object context)
+            : base(g, clip)
+        {
+            this.Context = context;
+        }
+        public object Context { get; private set; }
+    }
+    internal class XplatUIX11 : XplatUIDriver {
 		#region Local Variables
 		// General
 		static volatile XplatUIX11	Instance;
@@ -239,10 +250,11 @@ namespace System.Windows.Forms {
 
 		// messages WaitForHwndMwssage is waiting on
 		static Hashtable	messageHold;
+        private Dictionary<IntPtr, Bitmap> _backBuffers = new Dictionary<IntPtr, Bitmap>();
 
-		#endregion	// Local Variables
-		#region Constructors
-		XplatUIX11()
+        #endregion   // Local Variables                    
+        #region Constructors
+        XplatUIX11()
 		{
 			// Handle singleton stuff first
 			RefCount = 0;
@@ -3322,8 +3334,13 @@ namespace System.Windows.Forms {
 			foreach (Hwnd h in windows)
 			{
 				h.BeginAsyncDestroy();
+                if (_backBuffers.ContainsKey(h.Handle))
+                {
+                    _backBuffers[h.Handle]?.Dispose();
+                    _backBuffers.Remove(h.Handle);
+                }
 
-				h.expose_pending = h.nc_expose_pending = false;
+                h.expose_pending = h.nc_expose_pending = false;
 				h.Queue.Paint.Remove (h);
 			}
 		}
@@ -3579,19 +3596,15 @@ namespace System.Windows.Forms {
 			return active;
 		}
 
-		internal override Region GetClipRegion(IntPtr handle)
-		{
-			Hwnd	hwnd;
+        internal override Region GetClipRegion(IntPtr handle)
+        {
+            Region region = new Region();
+            region.MakeInfinite();
+            return region;
+        }
 
-			hwnd = Hwnd.ObjectFromHandle(handle);
-			if (hwnd != null) {
-				return hwnd.UserClip;
-			}
 
-			return null;
-		}
-
-		internal override void GetCursorInfo(IntPtr cursor, out int width, out int height, out int hotspot_x, out int hotspot_y)
+        internal override void GetCursorInfo(IntPtr cursor, out int width, out int height, out int hotspot_x, out int hotspot_y)
 		{
 			width = 20;
 			height = 20;
@@ -3611,20 +3624,21 @@ namespace System.Windows.Forms {
 			size = new Size(attributes.width, attributes.height);
 		}
 
-		internal override SizeF GetAutoScaleSize(Font font)
-		{
-			float		width;
-			string		magic_string = "The quick brown fox jumped over the lazy dog.";
-			double		magic_number = 44.549996948242189;
+        internal override SizeF GetAutoScaleSize(Font font)
+        {
+            float width;
+            string magic_string = "The quick brown fox jumped over the lazy dog.";
+            double magic_number = 44.549996948242189;
 
-			using (Graphics g = Graphics.FromHwnd(FosterParent))
-			{
-				width = (float)(g.MeasureString(magic_string, font).Width / magic_number);
-				return new SizeF(width, font.Height);
-			}
-		}
+            using (Bitmap bmp = new Bitmap(1, 1))
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
+                width = (float)(g.MeasureString(magic_string, font).Width / magic_number);
+                return new SizeF(width, font.Height);
+            }
+        }
 
-		internal override IntPtr GetParent(IntPtr handle, bool with_owner)
+        internal override IntPtr GetParent(IntPtr handle, bool with_owner)
 		{
 			Hwnd	hwnd;
 
@@ -4783,87 +4797,174 @@ namespace System.Windows.Forms {
 			OverrideCursorHandle = cursor;
 		}
 
-		internal override PaintEventArgs PaintEventStart(ref Message msg, IntPtr handle, bool client)
-		{
-			PaintEventArgs	paint_event;
-			Hwnd		hwnd;
-			Hwnd		paint_hwnd;
-			
-			// 
-			// handle  (and paint_hwnd) refers to the window that is should be painted.
-			// msg.HWnd (and hwnd) refers to the window that got the paint message.
-			// 
-			
-			hwnd = Hwnd.ObjectFromHandle(msg.HWnd);
-			if (msg.HWnd == handle) {
-				paint_hwnd = hwnd;
-			} else {
-				paint_hwnd = Hwnd.ObjectFromHandle (handle);
-			}
-	
-			if (Caret.Visible == true) {
-				Caret.Paused = true;
-				HideCaret();
-			}
+        internal override PaintEventArgs PaintEventStart(ref Message msg, IntPtr handle, bool client)
+        {
+            Hwnd hwnd;
+            Hwnd paint_hwnd;
 
-			Graphics dc;
+            hwnd = Hwnd.ObjectFromHandle(msg.HWnd);
+            if (msg.HWnd == handle)
+            {
+                paint_hwnd = hwnd;
+            }
+            else
+            {
+                paint_hwnd = Hwnd.ObjectFromHandle(handle);
+            }
 
-			if (client) {
-				dc = Graphics.FromHwnd (paint_hwnd.client_window);
+            if (Caret.Visible == true)
+            {
+                Caret.Paused = true;
+                HideCaret();
+            }
 
-				Region clip_region = new Region ();
-				clip_region.MakeEmpty();
+            int width;
+            int height;
+            IntPtr drawable;
 
-				foreach (Rectangle r in hwnd.ClipRectangles) {
-					/* Expand the region slightly.
-					 * See bug 464464.
-					 */
-					Rectangle r2 = Rectangle.FromLTRB (r.Left, r.Top, r.Right, r.Bottom + 1);
-					clip_region.Union (r2);
-				}
+            if (client)
+            {
+                width = hwnd.ClientRect.Width;
+                height = hwnd.ClientRect.Height;
+                drawable = paint_hwnd.client_window;
+            }
+            else
+            {
+                width = hwnd.Width;
+                height = hwnd.Height;
+                drawable = paint_hwnd.whole_window;
+            }
 
-				if (hwnd.UserClip != null) {
-					clip_region.Intersect(hwnd.UserClip);
-				}
+            if (width <= 0 || height <= 0)
+            {
+                width = 1;
+                height = 1;
+            }
 
-				dc.Clip = clip_region;
-				paint_event = new PaintEventArgs(dc, hwnd.Invalid);
-				hwnd.expose_pending = false;
+            Console.WriteLine($"[X11 PaintStart] handle={handle}, client={client}, width={width}, height={height}");
 
-				hwnd.ClearInvalidArea();
+            Bitmap backBuffer;
+            if (!_backBuffers.TryGetValue(handle, out backBuffer) || backBuffer.Width != width || backBuffer.Height != height)
+            {
+                backBuffer?.Dispose();
+                backBuffer = new Bitmap(width, height);
+                _backBuffers[handle] = backBuffer;
+            }
 
-				return paint_event;
-			} else {
-				dc = Graphics.FromHwnd (paint_hwnd.whole_window);
+            Graphics dc = Graphics.FromImage(backBuffer);
 
-				if (!hwnd.nc_invalid.IsEmpty) {
-					dc.SetClip (hwnd.nc_invalid);
-					paint_event = new PaintEventArgs(dc, hwnd.nc_invalid);
-				} else {
-					paint_event = new PaintEventArgs(dc, new Rectangle(0, 0, hwnd.width, hwnd.height));
-				}
-				hwnd.nc_expose_pending = false;
+            PaintEventArgs paint_event;
 
-				hwnd.ClearNcInvalidArea ();
+            if (client)
+            {
+                Region clip_region = new Region();
+                clip_region.MakeEmpty();
 
-				return paint_event;
-			}
-		}
+                foreach (Rectangle r in hwnd.ClipRectangles)
+                {
+                    Rectangle r2 = Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom + 1);
+                    clip_region.Union(r2);
+                }
 
-		internal override void PaintEventEnd(ref Message msg, IntPtr handle, bool client, PaintEventArgs pevent)
-		{
-			if (pevent.Graphics != null)
-				pevent.Graphics.Dispose();
-			pevent.SetGraphics(null);
-			pevent.Dispose();
+                if (hwnd.UserClip != null)
+                {
+                    clip_region.Intersect(hwnd.UserClip);
+                }
 
-			if (Caret.Visible == true) {
-				ShowCaret();
-				Caret.Paused = false;
-			}
-		}
+                dc.Clip = clip_region;
+                paint_event = new PaintEventArgs(dc, hwnd.Invalid);
+                hwnd.expose_pending = false;
+                hwnd.ClearInvalidArea();
+            }
+            else
+            {
+                if (!hwnd.nc_invalid.IsEmpty)
+                {
+                    dc.SetClip(hwnd.nc_invalid);
+                    paint_event = new PaintEventArgs(dc, hwnd.nc_invalid);
+                }
+                else
+                {
+                    paint_event = new PaintEventArgs(dc, new Rectangle(0, 0, width, height));
+                }
+                hwnd.nc_expose_pending = false;
+                hwnd.ClearNcInvalidArea();
+            }
 
-		[MonoTODO("Implement filtering and PM_NOREMOVE")]
+            var context = new X11PaintContext { Bitmap = backBuffer, Drawable = drawable, ClipRect = paint_event.ClipRectangle, IsPixmap = false };
+
+            return new X11PaintEventArgs(dc, paint_event.ClipRectangle, context);
+        }
+
+        internal override void PaintEventEnd(ref Message msg, IntPtr handle, bool client, PaintEventArgs pevent)
+        {
+            if (pevent.Graphics != null)
+            {
+                pevent.Graphics.Flush();
+                pevent.Graphics.Dispose();
+            }
+            pevent.SetGraphics(null);
+
+            var xpea = pevent as X11PaintEventArgs;
+            if (xpea != null)
+            {
+                var pc = (X11PaintContext)xpea.Context;
+                if (pc.Bitmap != null && pc.Drawable != IntPtr.Zero)
+                {
+                    try
+                    {
+                        BlitBitmapToDrawable(pc.Bitmap, pc.Drawable);
+                    }
+                    catch
+                    {
+                        // Ignore blitting errors
+                    }
+                }
+            }
+
+            pevent.Dispose();
+
+            if (Caret.Visible == true)
+            {
+                ShowCaret();
+                Caret.Paused = false;
+            }
+        }
+
+        private void BlitBitmapToDrawable(Bitmap bitmap, IntPtr drawable)
+        {
+            int width = bitmap.Width;
+            int height = bitmap.Height;
+            int skiaStride = bitmap._skBitmap.RowBytes;
+            IntPtr pixels = bitmap._skBitmap.GetPixels();
+
+            if (pixels == IntPtr.Zero || width <= 0 || height <= 0)
+                return;
+
+            IntPtr visual = XDefaultVisual(DisplayHandle, ScreenNo);
+            uint depth = XDefaultDepth(DisplayHandle, ScreenNo);
+
+            if (depth == 0)
+                depth = 24;
+
+            IntPtr image = XCreateImage(DisplayHandle, visual, depth, ZPixmap, 0, pixels, (uint)width, (uint)height, 32, skiaStride);
+            if (image == IntPtr.Zero)
+                return;
+
+            XGCValues gc_values = new XGCValues();
+            IntPtr gc = XCreateGC(DisplayHandle, drawable, IntPtr.Zero, ref gc_values);
+            if (gc != IntPtr.Zero)
+            {
+                XPutImage(DisplayHandle, drawable, gc, image, 0, 0, 0, 0, (uint)width, (uint)height);
+                XFreeGC(DisplayHandle, gc);
+            }
+
+            // Set data pointer to null so XDestroyImage doesn't free our bitmap data
+            Marshal.WriteIntPtr(image, 16, IntPtr.Zero);
+            XDestroyImage(image);
+        }
+
+        [MonoTODO("Implement filtering and PM_NOREMOVE")]
 		internal override bool PeekMessage(Object queue_id, ref MSG msg, IntPtr hWnd, int wFilterMin, int wFilterMax, uint flags)
 		{
 			XEventQueue queue = (XEventQueue) queue_id;
@@ -5326,45 +5427,51 @@ namespace System.Windows.Forms {
 			}
 		}
 
-		internal override void SetClipRegion(IntPtr handle, Region region)
-		{
-			Hwnd	hwnd;
+        internal override void SetClipRegion(IntPtr handle, Region region)
+        {
+            Hwnd hwnd = Hwnd.ObjectFromHandle(handle);
+            if (hwnd == null)
+                return;
 
-			hwnd = Hwnd.ObjectFromHandle(handle);
-			if (hwnd == null) {
-				return;
-			}
+            try
+            {
+                hwnd.UserClip = region;
 
-			if (hwnd.UserClip != region) {
-				hwnd.UserClip = region;
+                if (!HasShapeExtension)
+                    return;
 
-				if (!HasShapeExtension)
-					return;
+                XRectangle[] rects = null;
+                if (region == null)
+                {
+                    rects = new XRectangle[1];
+                    rects[0].X = 0;
+                    rects[0].Y = 0;
+                    rects[0].Width = (ushort)hwnd.Width;
+                    rects[0].Height = (ushort)hwnd.Height;
+                }
+                else
+                {
+                    RectangleF[] scans;
+                    using (var m = new Matrix())
+                        scans = region.GetRegionScans(m);
+                    rects = new XRectangle[scans.Length];
+                    for (int i = 0; i < scans.Length; i++)
+                    {
+                        rects[i].X = (short)Clamp(scans[i].X, short.MinValue, short.MaxValue);
+                        rects[i].Y = (short)Clamp(scans[i].Y, short.MinValue, short.MaxValue);
+                        rects[i].Width = (ushort)Clamp(scans[i].Width, ushort.MinValue, ushort.MaxValue);
+                        rects[i].Height = (ushort)Clamp(scans[i].Height, ushort.MinValue, ushort.MaxValue);
+                    }
+                }
+                XShapeCombineRectangles(DisplayHandle, hwnd.WholeWindow, XShapeKind.ShapeBounding, 0, 0, rects, rects.Length, XShapeOperation.ShapeSet, XOrdering.Unsorted);
+            }
+            catch
+            {
+                // Ignore region errors - Skia handles clipping during painting
+            }
+        }
 
-				XRectangle[] rects = null;;
-				if (region == null) {
-					rects = new XRectangle[1];
-					rects[0].X = 0;
-					rects[0].Y = 0;
-					rects[0].Width = (ushort)hwnd.Width;
-					rects[0].Height = (ushort)hwnd.Height;
-				} else {
-					RectangleF[] scans;
-					using (var m = new Matrix())
-						scans = region.GetRegionScans(m);
-					rects = new XRectangle[scans.Length];
-					for (int i = 0; i < scans.Length; i++) {
-						rects[i].X = (short) Clamp(scans[i].X, short.MinValue, short.MaxValue);
-						rects[i].Y = (short) Clamp(scans[i].Y, short.MinValue, short.MaxValue);
-						rects[i].Width = (ushort) Clamp(scans[i].Width, ushort.MinValue, ushort.MaxValue);
-						rects[i].Height = (ushort) Clamp(scans[i].Height, ushort.MinValue, ushort.MaxValue);
-					}
-				}
-				XShapeCombineRectangles(DisplayHandle, hwnd.WholeWindow, XShapeKind.ShapeBounding, 0, 0, rects, rects.Length, XShapeOperation.ShapeSet, XOrdering.Unsorted);
-			}
-		}
-
-		public static T Clamp<T>(T val, T min, T max) where T : IComparable<T>
+        public static T Clamp<T>(T val, T min, T max) where T : IComparable<T>
 		{
 			if (val.CompareTo(min) < 0) return min;
 			else if(val.CompareTo(max) > 0) return max;
@@ -6152,61 +6259,37 @@ namespace System.Windows.Forms {
 			hwnd.Queue.Paint.Remove(hwnd);
 		}
 
-		internal override void CreateOffscreenDrawable (IntPtr handle,
-								int width, int height,
-								out object offscreen_drawable)
-		{
-			IntPtr root_out;
-			int x_out, y_out, width_out, height_out, border_width_out, depth_out;
+        internal override void CreateOffscreenDrawable(IntPtr handle, int width, int height, out object offscreen_drawable)
+        {
+            offscreen_drawable = new Bitmap(width, height);
+        }
 
-			XGetGeometry (DisplayHandle, handle,
-				      out root_out,
-				      out x_out, out y_out,
-				      out width_out, out height_out,
-				      out border_width_out, out depth_out);
+        internal override Graphics GetOffscreenGraphics(object offscreen_drawable)
+        {
+            if (offscreen_drawable is Image img)
+                return Graphics.FromImage(img);
+            return Graphics.FromImage(new Bitmap(1, 1));
+        }
 
-			IntPtr pixmap = XCreatePixmap (DisplayHandle, handle, width, height, depth_out);
+        internal override void BlitFromOffscreen(IntPtr dest_handle, Graphics dest_dc, object offscreen_drawable, Graphics offscreen_dc, Rectangle r)
+        {
+            dest_dc.DrawImage((Image)offscreen_drawable, r.X, r.Y, r.Width, r.Height);
+        }
 
-			offscreen_drawable = pixmap;
+        internal override void DestroyOffscreenDrawable(object offscreen_drawable)
+        {
+            ((Image)offscreen_drawable).Dispose();
+        }
 
-		}
-
-		internal override void DestroyOffscreenDrawable (object offscreen_drawable)
-		{
-			XFreePixmap (DisplayHandle, (IntPtr)offscreen_drawable);
-		}
-
-		internal override Graphics GetOffscreenGraphics (object offscreen_drawable)
-		{
-			return Graphics.FromHwnd ((IntPtr) offscreen_drawable);
-		}
-		
-		internal override void BlitFromOffscreen (IntPtr dest_handle,
-							  Graphics dest_dc,
-							  object offscreen_drawable,
-							  Graphics offscreen_dc,
-							  Rectangle r)
-		{
-			XGCValues gc_values;
-			IntPtr gc;
-
-			gc_values = new XGCValues();
-
-			gc = XCreateGC (DisplayHandle, dest_handle, IntPtr.Zero, ref gc_values);
-
-			XCopyArea (DisplayHandle, (IntPtr)offscreen_drawable, dest_handle,
-				   gc, r.X, r.Y, r.Width, r.Height, r.X, r.Y);
-
-			XFreeGC (DisplayHandle, gc);
-		}
+        
 
 		#endregion	// Public Static Methods
 
 		#region Events
 		internal override event EventHandler Idle;
-		#endregion	// Events
+        #endregion    // Events           
 
-		
+
 #if TRACE && false
 		
 #region Xcursor imports
@@ -6228,6 +6311,7 @@ namespace System.Windows.Forms {
 		[DllImport ("libXcursor", EntryPoint = "XcursorGetTheme")]
 		internal extern static IntPtr XcursorGetTheme (IntPtr display);
 #endregion
+
 #region X11 Imports
 		[DllImport ("libX11", EntryPoint="XOpenDisplay")]
 		internal extern static IntPtr XOpenDisplay(IntPtr display);
@@ -7090,6 +7174,27 @@ namespace System.Windows.Forms {
 			DebugHelper.TraceWriteLine ("XIfEvent");
 			_XIfEvent (display, ref xevent, event_predicate, arg);
 		}
+		[DllImport("libX11", EntryPoint="XCreateImage")]
+		internal extern static IntPtr XCreateImage(IntPtr display, IntPtr visual, uint depth, int format, int offset, IntPtr data, uint width, uint height, int bitmap_pad, int bytes_per_line);
+
+		[DllImport("libX11", EntryPoint="XPutImage")]
+		internal extern static int XPutImage(IntPtr display, IntPtr drawable, IntPtr gc, IntPtr image, int src_x, int src_y, int dest_x, int dest_y, uint width, uint height);
+
+		[DllImport("libX11", EntryPoint="XDestroyImage")]
+		internal extern static IntPtr XDestroyImage(IntPtr image);
+
+		[StructLayout(LayoutKind.Sequential)]
+		internal struct X11PaintContext
+		{
+			public Bitmap Bitmap;
+			public IntPtr Drawable;
+			public Rectangle ClipRect;
+			public bool IsPixmap;
+		}
+
+		internal const int ZPixmap = 2;
+
+		
 #endregion
 
 #region Fixes extension imports
@@ -7169,8 +7274,8 @@ namespace System.Windows.Forms {
 
 #else //no TRACE defined
 
-#region Xcursor imports
-		[DllImport ("libXcursor", EntryPoint = "XcursorLibraryLoadCursor")]
+        #region Xcursor imports
+        [DllImport ("libXcursor", EntryPoint = "XcursorLibraryLoadCursor")]
 		internal extern static IntPtr XcursorLibraryLoadCursor (IntPtr display, [MarshalAs (UnmanagedType.LPStr)] string name);
 
 		[DllImport ("libXcursor", EntryPoint = "XcursorLibraryLoadImages")]
@@ -7527,10 +7632,30 @@ namespace System.Windows.Forms {
 
 		[DllImport ("libX11", EntryPoint="XGetInputFocus")]
 		internal extern static void XGetInputFocus (IntPtr display, out IntPtr focus, out IntPtr revert_to);
-		#endregion
 
-#region Fixes extension imports
-		[DllImport("libXfixes")]
+        [DllImport("libX11", EntryPoint = "XCreateImage")]
+        internal extern static IntPtr XCreateImage(IntPtr display, IntPtr visual, uint depth, int format, int offset, IntPtr data, uint width, uint height, int bitmap_pad, int bytes_per_line);
+
+        [DllImport("libX11", EntryPoint = "XPutImage")]
+        internal extern static int XPutImage(IntPtr display, IntPtr drawable, IntPtr gc, IntPtr image, int src_x, int src_y, int dest_x, int dest_y, uint width, uint height);
+
+        [DllImport("libX11", EntryPoint = "XDestroyImage")]
+        internal extern static IntPtr XDestroyImage(IntPtr image);
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct X11PaintContext
+        {
+            public Bitmap Bitmap;
+            public IntPtr Drawable;
+            public Rectangle ClipRect;
+            public bool IsPixmap;
+        }
+
+        internal const int ZPixmap = 2;
+        #endregion
+
+        #region Fixes extension imports
+        [DllImport("libXfixes")]
 		internal extern static bool XFixesQueryExtension(IntPtr display, out int event_base, out int error_base);
 
 		[DllImport("libXfixes")]

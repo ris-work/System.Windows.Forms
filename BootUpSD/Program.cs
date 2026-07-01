@@ -222,7 +222,7 @@ var comboBox = new ComboBox
     Size = new Size(150, 25),
     DropDownStyle = ComboBoxStyle.DropDownList
 };
-comboBox.Items.AddRange(new object[] { "Item 1", "Item 2", "Item 3" });
+comboBox.Items.AddRange(new object[] { "Item 1", "Item 2", "Item 3", "Item 1", "Item 2", "Item 3", "Item 1", "Item 2", "Item 3", "Item 1", "Item 2", "Item 3", "Item 1", "Item 2", "Item 3", "Item 1", "Item 2", "Item 3", "Item 1", "Item 2", "Item 3" });
 comboBox.SelectedIndex = 0;
 nestedPanel.Controls.Add(comboBox);
 

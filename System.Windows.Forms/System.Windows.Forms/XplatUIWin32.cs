@@ -1837,10 +1837,12 @@ namespace System.Windows.Forms {
                 int width = clientRect.right - clientRect.left;
                 int height = clientRect.bottom - clientRect.top;
 
+                Console.WriteLine($"[PaintStart] handle={handle}, msg.HWnd={msg.HWnd}, client={client}, width={width}, height={height}");
+
                 if (width <= 0 || height <= 0)
                 {
                     hdc = Win32GetDC(handle);
-                    return new Win32PaintEventArgs(Graphics.FromImage(new Bitmap(1, 1)), Rectangle.Empty, new Win32PaintContext { Hdc = hdc, NativeContext = hdc });
+                    return new Win32PaintEventArgs(Graphics.FromImage(new Bitmap(1, 1)), Rectangle.Empty, new Win32PaintContext { Hdc = hdc, NativeContext = hdc, Bitmap = null });
                 }
 
                 // Get or create the persistent back buffer
@@ -1878,9 +1880,6 @@ namespace System.Windows.Forms {
                 clip_rect = rect.ToRectangle();
                 // Intersect with client area just to be safe
                 clip_rect.Intersect(new Rectangle(0, 0, width, height));
-
-                // Set the clip on the graphics object so WinForms only paints the invalidated area
-                //dc.SetClip(clip_rect);
 
                 var context = new Win32PaintContext { Bitmap = backBuffer, Hdc = hdc, ClipRect = new Rectangle(0, 0, width, height), NativeContext = (ps.hdc != IntPtr.Zero ? (object)ps : (object)hdc) };
                 paint_event = new Win32PaintEventArgs(dc, clip_rect, context);
@@ -1926,7 +1925,10 @@ namespace System.Windows.Forms {
         internal override void PaintEventEnd(ref Message m, IntPtr handle, bool client, PaintEventArgs pevent)
         {
             if (pevent.Graphics != null)
+            {
+                pevent.Graphics.Flush();
                 pevent.Graphics.Dispose();
+            }
 
             var wpea = pevent as Win32PaintEventArgs;
             if (wpea != null)
@@ -1936,16 +1938,56 @@ namespace System.Windows.Forms {
                 {
                     try
                     {
+                        int width = pc.Bitmap.Width;
+                        int height = pc.Bitmap.Height;
+                        int gdiStride = width * 4;
+
                         SKBitmapInfo bmi = new SKBitmapInfo();
                         bmi.biSize = (uint)Marshal.SizeOf(typeof(SKBitmapInfo));
-                        bmi.biWidth = pc.Bitmap.Width;
-                        bmi.biHeight = -pc.Bitmap.Height; // Top-down
+                        bmi.biWidth = width;
+                        bmi.biHeight = -height; // Top-down
                         bmi.biPlanes = 1;
                         bmi.biBitCount = 32;
                         bmi.biCompression = 0; // BI_RGB
+                        bmi.biSizeImage = (uint)(width * height * 4);
 
-                        // Blit the whole back buffer to the screen
-                        Win32SetDIBitsToDevice(pc.Hdc, 0, 0, pc.Bitmap.Width, pc.Bitmap.Height, 0, 0, 0, pc.Bitmap.Height, pc.Bitmap.GetSKBitmapPixels(), ref bmi, 0);
+                        // Create a GDI DIB section
+                        IntPtr hBitmap = Win32CreateDIBSection(IntPtr.Zero, ref bmi, 0, out IntPtr bits, IntPtr.Zero, 0);
+                        if (hBitmap != IntPtr.Zero && bits != IntPtr.Zero)
+                        {
+                            // Copy pixels from Skia to GDI DIB section
+                            unsafe
+                            {
+                                byte* src = (byte*)pc.Bitmap._skBitmap.GetPixels().ToPointer();
+                                byte* dst = (byte*)bits.ToPointer();
+                                int skiaStride = pc.Bitmap._skBitmap.RowBytes;
+
+                                if (skiaStride == gdiStride)
+                                {
+                                    Buffer.MemoryCopy(src, dst, gdiStride * height, gdiStride * height);
+                                }
+                                else
+                                {
+                                    for (int y = 0; y < height; y++)
+                                    {
+                                        Buffer.MemoryCopy(src, dst, gdiStride, gdiStride);
+                                        src += skiaStride;
+                                        dst += gdiStride;
+                                    }
+                                }
+                            }
+
+                            // Blit using BitBlt
+                            IntPtr memDC = Win32CreateCompatibleDC(pc.Hdc);
+                            IntPtr oldBmp = Win32SelectObject(memDC, hBitmap);
+
+                            uint SRCCOPY = 0x00CC0020;
+                            Win32BitBlt(pc.Hdc, 0, 0, width, height, memDC, 0, 0, SRCCOPY);
+
+                            Win32SelectObject(memDC, oldBmp);
+                            Win32DeleteDC(memDC);
+                            Win32DeleteObject(hBitmap);
+                        }
                     }
                     catch
                     {
@@ -1958,7 +2000,6 @@ namespace System.Windows.Forms {
                         {
                             pc.Bitmap.Dispose();
                         }
-                        // If it's the client back buffer, we keep it cached in _backBuffers
                     }
 
                     // Release native context
@@ -3473,10 +3514,19 @@ namespace System.Windows.Forms {
         
 
         internal override event EventHandler Idle;
-		#endregion	// Public Static Methods
+        #endregion    // Public Static Methods                          
 
-		#region Win32 Imports
-		[DllImport ("kernel32.dll", EntryPoint="GetLastError", CallingConvention=CallingConvention.StdCall)]
+        #region Win32 Imports
+
+        [DllImport("gdi32.dll", EntryPoint = "CreateDIBSection", CallingConvention = CallingConvention.StdCall)]
+        internal static extern IntPtr Win32CreateDIBSection(IntPtr hdc, ref SKBitmapInfo pbmi, uint iUsage, out IntPtr ppvBits, IntPtr hSection, uint dwOffset);
+
+        
+
+        [DllImport("gdi32.dll", EntryPoint = "BitBlt", CallingConvention = CallingConvention.StdCall)]
+        internal static extern bool Win32BitBlt(IntPtr hdc, int nXDest, int nYDest, int nWidth, int nHeight, IntPtr hdcSrc, int nXSrc, int nYSrc, uint dwRop);
+
+        [DllImport ("kernel32.dll", EntryPoint="GetLastError", CallingConvention=CallingConvention.StdCall)]
 		private extern static uint Win32GetLastError();
 
 		[DllImport ("user32.dll", EntryPoint="CreateWindowExW", CharSet=CharSet.Unicode, CallingConvention=CallingConvention.StdCall)]
@@ -3879,7 +3929,7 @@ namespace System.Windows.Forms {
 		extern static bool Win32SetForegroundWindow(IntPtr hWnd);
 
 
-        [StructLayout(LayoutKind.Sequential)]
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
         internal struct SKBitmapInfo
         {
             internal uint biSize;
@@ -3894,6 +3944,9 @@ namespace System.Windows.Forms {
             internal uint biClrUsed;
             internal uint biClrImportant;
         }
+
+        [DllImport("gdi32.dll", EntryPoint = "StretchDIBits", CallingConvention = CallingConvention.StdCall)]
+        internal static extern int Win32StretchDIBits(IntPtr hdc, int xDest, int yDest, int w, int h, int xSrc, int ySrc, int SrcWidth, int SrcHeight, IntPtr lpvBits, ref SKBitmapInfo lpbmi, uint ColorUse, uint dwRop);
 
         [DllImport("gdi32.dll", EntryPoint = "SetDIBitsToDevice")]
         internal static extern int Win32SetDIBitsToDevice(IntPtr hdc, int xDest, int yDest, int w, int h, int xSrc, int ySrc, int StartScan, int cLines, IntPtr lpvBits, ref SKBitmapInfo lpbmi, uint ColorUse);
