@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Drawing;
-using System.Drawing.Drawing2D;
+//using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 using System.Data;
 
@@ -249,7 +249,7 @@ namespace SimpleTest
             dateTimePicker1.BackColor = Color.White;
             dateTimePicker1.ForeColor = Color.Black;
             //dateTimePicker1.CalendarForeColor = Color.Black;
-            dateTimePicker1.CalendarTitleBackColor = Color.PaleGoldenrod;
+            dateTimePicker1.CalendarTitleBackColor = Color.Green;
             
             //dateTimePicker1.BorderStyle = BorderStyle.FixedSingle;
 
@@ -286,9 +286,9 @@ namespace SimpleTest
 
             btnTran3.Text = "Tran Btn 3"; btnTran3.Location = new Point(30, 270);
             btnTran3.Size = new Size(120, 40);
-            btnTran3.BackColor = Color.DarkCyan;
+            btnTran3.BackColor = Color.Cyan;
             btnTran3.FlatStyle = FlatStyle.Flat; // Requested
-            btnTran3.ForeColor = Color.DarkGreen;
+            btnTran3.ForeColor = Color.Magenta;
             btnTran3.FlatAppearance.BorderSize = 0;
 
             picStar.Controls.Add(btnTran1);
@@ -309,7 +309,7 @@ namespace SimpleTest
             // --- VISUAL STYLES ---
             dataGridViewRainbow.EnableHeadersVisualStyles = false;
             dataGridViewRainbow.BackgroundColor = Color.FromArgb(255, 60, 65);
-            dataGridViewRainbow.GridColor = Color.WhiteSmoke;
+            dataGridViewRainbow.GridColor = Color.Wheat;
 
             // DEFAULT STYLES (Fallback)
             // Set a default color so Mono doesn't render null/empty
@@ -349,19 +349,19 @@ namespace SimpleTest
 
             // --- Zone 4: Buttons (FlatStyle.Flat) ---
             btnColored1.Text = "RED ACTION"; btnColored1.Location = new Point(20, 30);
-            btnColored1.Size = new Size(150, 50); btnColored1.BackColor = Color.Tomato;
+            btnColored1.Size = new Size(150, 50); btnColored1.BackColor = Color.DarkGray;
             btnColored1.FlatStyle = FlatStyle.Flat; // Requested
             btnColored1.ForeColor = Color.White;
             btnColored1.FlatAppearance.BorderSize = 0;
 
             btnColored2.Text = "Blue Action"; btnColored2.Location = new Point(20, 100);
-            btnColored2.Size = new Size(150, 50); btnColored2.BackColor = Color.CornflowerBlue;
+            btnColored2.Size = new Size(150, 50); btnColored2.BackColor = Color.Fuchsia;
             btnColored2.FlatStyle = FlatStyle.Flat; // Requested
             btnColored2.ForeColor = Color.White;
             btnColored2.FlatAppearance.BorderSize = 0;
 
             btnColored3.Text = "Green Submit"; btnColored3.Location = new Point(20, 170);
-            btnColored3.Size = new Size(150, 50); btnColored3.BackColor = Color.MediumSeaGreen;
+            btnColored3.Size = new Size(150, 50); btnColored3.BackColor = Color.Lime;
             btnColored3.FlatStyle = FlatStyle.Flat; // Requested
             btnColored3.ForeColor = Color.White;
             btnColored3.FlatAppearance.BorderSize = 0;
@@ -483,7 +483,7 @@ namespace SimpleTest
             using (Graphics g = Graphics.FromImage(bmpCrap))
             {
                 g.Clear(Color.White);
-                g.FillEllipse(Brushes.Purple, 10, 10, 80, 80);
+                g.FillEllipse(Brushes.Magenta, 10, 10, 80, 80);
                 g.FillRectangle(Brushes.Orange, 100, 20, 180, 60);
             }
             pictureBoxCrap.Image = bmpCrap;
@@ -620,7 +620,7 @@ namespace SimpleTest
 
         // --- Helper Methods ---
 
-        private Bitmap CreateStarBitmap(int width, int height)
+        private System.Drawing.Bitmap CreateStarBitmap(int width, int height)
         {
             Bitmap bmp = new Bitmap(width, height);
             using (Graphics g = Graphics.FromImage(bmp))
@@ -648,7 +648,7 @@ namespace SimpleTest
                 }
 
                 using (LinearGradientBrush brush = new LinearGradientBrush(
-                    new RectangleF(0, 0, width, height), Color.Gold, Color.OrangeRed, LinearGradientMode.ForwardDiagonal))
+                    new RectangleF(0, 0, width, height), Color.Yellow, Color.Red, LinearGradientMode.ForwardDiagonal))
                 {
                     g.FillPolygon(brush, starPoints);
                 }

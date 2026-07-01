@@ -26,12 +26,13 @@
 
 // NOT COMPLETE
 
+using SkiaSharp;
 using System;
+using System.Collections;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
-using System.ComponentModel;
-using System.Collections;
-using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -1813,74 +1814,132 @@ namespace System.Windows.Forms {
 			public object Context { get; private set; }
 		}
 
-		internal override PaintEventArgs PaintEventStart(ref Message msg, IntPtr handle, bool client) {
-			IntPtr		hdc;
-			PAINTSTRUCT	ps;
-			PaintEventArgs	paint_event;
-			RECT		rect;
-			Rectangle	clip_rect;
+        internal override PaintEventArgs PaintEventStart(ref Message msg, IntPtr handle, bool client)
+        {
+            IntPtr hdc;
+            PAINTSTRUCT ps;
+            PaintEventArgs paint_event;
+            RECT rect;
+            Rectangle clip_rect;
 
-			clip_rect = new Rectangle();
-			rect = new RECT();
-			ps = new PAINTSTRUCT();
+            clip_rect = new Rectangle();
+            rect = new RECT();
+            ps = new PAINTSTRUCT();
 
-			if (client) {
-				if (Win32GetUpdateRect(msg.HWnd, ref rect, false)) {
-					if (handle != msg.HWnd) {
-						// We need to validate the window where the paint message
-						// was generated, otherwise we'll never stop getting paint 
-						// messages.
-						Win32GetClientRect (msg.HWnd, out rect);
-						Win32ValidateRect (msg.HWnd, ref rect);
-						hdc = Win32GetDC (handle);
-					} else {
-						hdc = Win32BeginPaint (handle, ref ps);
-						rect = ps.rcPaint;
-					}
-				} else {
-					hdc = Win32GetDC(handle);
-				}
-				clip_rect = rect.ToRectangle ();
-			} else {
-				hdc = Win32GetWindowDC (handle);
+            if (client)
+            {
+                if (Win32GetUpdateRect(msg.HWnd, ref rect, false))
+                {
+                    if (handle != msg.HWnd)
+                    {
+                        Win32GetClientRect(msg.HWnd, out rect);
+                        Win32ValidateRect(msg.HWnd, ref rect);
+                        hdc = Win32GetDC(handle);
+                    }
+                    else
+                    {
+                        hdc = Win32BeginPaint(handle, ref ps);
+                        rect = ps.rcPaint;
+                    }
+                }
+                else
+                {
+                    hdc = Win32GetDC(handle);
+                }
+                clip_rect = rect.ToRectangle();
+            }
+            else
+            {
+                hdc = Win32GetWindowDC(handle);
+                Win32GetWindowRect(handle, out rect);
+                clip_rect = new Rectangle(0, 0, rect.Width, rect.Height);
+            }
 
-				// HACK this in for now
-				Win32GetWindowRect (handle, out rect);
-				clip_rect = new Rectangle (0, 0, rect.Width, rect.Height);
-			}
+            object nativeContext;
+            if (ps.hdc != IntPtr.Zero)
+            {
+                nativeContext = ps;
+            }
+            else
+            {
+                nativeContext = hdc;
+            }
 
-			// If we called BeginPaint, store the PAINTSTRUCT,
-			// otherwise store hdc, so that PaintEventEnd can know
-			// whether to call EndPaint or ReleaseDC.
-			object context;
-			if (ps.hdc != IntPtr.Zero) {
-				context = ps;
-			} else {
-				context = hdc;
-			}
+            // Create a managed bitmap for painting
+            int bmpWidth = Math.Max(1, clip_rect.Width);
+            int bmpHeight = Math.Max(1, clip_rect.Height);
+            Bitmap paintBitmap = new Bitmap(bmpWidth, bmpHeight);
+            Graphics dc = Graphics.FromImage(paintBitmap);
+            dc.TranslateTransform(-clip_rect.X, -clip_rect.Y);
 
-			Graphics dc = Graphics.FromHdc(hdc);
-			paint_event = new Win32PaintEventArgs(dc, clip_rect, context);
+            var context = new Win32PaintContext { Bitmap = paintBitmap, Hdc = hdc, ClipRect = clip_rect, NativeContext = nativeContext };
+            paint_event = new Win32PaintEventArgs(dc, clip_rect, context);
 
-			return paint_event;
-		}
+            return paint_event;
+        }
 
-		internal override void PaintEventEnd(ref Message m, IntPtr handle, bool client, PaintEventArgs pevent) {
-			if (pevent.Graphics != null)
-				pevent.Graphics.Dispose ();
- 
-			object o = ((Win32PaintEventArgs)pevent).Context;
-			if (o is IntPtr) {
-				IntPtr hdc = (IntPtr) o;
-				Win32ReleaseDC (handle, hdc);
-			} else if (o is PAINTSTRUCT) {
-				PAINTSTRUCT ps = (PAINTSTRUCT) o;
-				Win32EndPaint (handle, ref ps);
-			}
-		}
+        internal override void PaintEventEnd(ref Message m, IntPtr handle, bool client, PaintEventArgs pevent)
+        {
+            if (pevent.Graphics != null)
+                pevent.Graphics.Dispose();
+
+            var wpea = pevent as Win32PaintEventArgs;
+            if (wpea != null)
+            {
+                var pc = wpea.Context as Win32PaintContext;
+                if (pc != null && pc.Bitmap != null && pc.Hdc != IntPtr.Zero)
+                {
+                    try
+                    {
+                        SKBitmapInfo bmi = new SKBitmapInfo();
+                        bmi.biSize = (uint)Marshal.SizeOf(typeof(SKBitmapInfo));
+                        bmi.biWidth = pc.Bitmap.Width;
+                        bmi.biHeight = -pc.Bitmap.Height;
+                        bmi.biPlanes = 1;
+                        bmi.biBitCount = 32;
+                        bmi.biCompression = 0;
+
+                        Win32SetDIBitsToDevice(pc.Hdc, pc.ClipRect.X, pc.ClipRect.Y, pc.Bitmap.Width, pc.Bitmap.Height, 0, 0, 0, pc.Bitmap.Height, pc.Bitmap.GetSKBitmapPixels(), ref bmi, 0);
+                    }
+                    catch
+                    {
+                    }
+                    finally
+                    {
+                        pc.Bitmap.Dispose();
+                    }
+
+                    object o = pc.NativeContext;
+                    if (o is IntPtr)
+                    {
+                        IntPtr hdc = (IntPtr)o;
+                        Win32ReleaseDC(handle, hdc);
+                    }
+                    else if (o is PAINTSTRUCT)
+                    {
+                        PAINTSTRUCT ps = (PAINTSTRUCT)o;
+                        Win32EndPaint(handle, ref ps);
+                    }
+                }
+                else
+                {
+                    object o = wpea.Context;
+                    if (o is IntPtr)
+                    {
+                        IntPtr hdc = (IntPtr)o;
+                        Win32ReleaseDC(handle, hdc);
+                    }
+                    else if (o is PAINTSTRUCT)
+                    {
+                        PAINTSTRUCT ps = (PAINTSTRUCT)o;
+                        Win32EndPaint(handle, ref ps);
+                    }
+                }
+            }
+        }
 
 
-		internal override void SetWindowPos(IntPtr handle, int x, int y, int width, int height) {
+        internal override void SetWindowPos(IntPtr handle, int x, int y, int width, int height) {
 			Win32MoveWindow(handle, x, y, width, height, true);
 			return;
 		}
@@ -3299,43 +3358,31 @@ namespace System.Windows.Forms {
 			}
 		}
 
-		internal override void CreateOffscreenDrawable (IntPtr handle, int width, int height, out object offscreen_drawable)
-		{
-			Graphics destG = Graphics.FromHwnd (handle);
-			IntPtr destHdc = destG.GetHdc ();
+        internal override void CreateOffscreenDrawable(IntPtr handle, int width, int height, out object offscreen_drawable)
+        {
+            offscreen_drawable = new Bitmap(width, height);
+        }
 
-			IntPtr srcHdc = Win32CreateCompatibleDC (destHdc);
-			IntPtr srcBmp = Win32CreateCompatibleBitmap (destHdc, width, height);
-			Win32SelectObject (srcHdc, srcBmp);
+        internal override Graphics GetOffscreenGraphics(object offscreen_drawable)
+        {
+            if (offscreen_drawable is Image img)
+                return Graphics.FromImage(img);
 
-			offscreen_drawable = new WinBuffer (srcHdc, srcBmp);
+            // Fallback to prevent NullReferenceException in DoubleBuffer.Start
+            return Graphics.FromImage(new Bitmap(1, 1));
+        }
 
-			destG.ReleaseHdc (destHdc);
-		}
+        internal override void BlitFromOffscreen(IntPtr dest_handle, Graphics dest_dc, object offscreen_drawable, Graphics offscreen_dc, Rectangle r)
+        {
+            dest_dc.DrawImage((Image)offscreen_drawable, r.X, r.Y, r.Width, r.Height);
+        }
 
-		internal override Graphics GetOffscreenGraphics (object offscreen_drawable)
-		{
-			return Graphics.FromHdc (((WinBuffer)offscreen_drawable).hdc);
-		}
+        internal override void DestroyOffscreenDrawable(object offscreen_drawable)
+        {
+            ((Image)offscreen_drawable).Dispose();
+        }
 
-		internal override void BlitFromOffscreen (IntPtr dest_handle, Graphics dest_dc, object offscreen_drawable, Graphics offscreen_dc, Rectangle r)
-		{
-			WinBuffer wb = (WinBuffer)offscreen_drawable;
-
-			IntPtr destHdc = dest_dc.GetHdc ();
-			Win32BitBlt (destHdc, r.Left, r.Top, r.Width, r.Height, wb.hdc, r.Left, r.Top, TernaryRasterOperations.SRCCOPY);
-			dest_dc.ReleaseHdc (destHdc);
-		}
-
-		internal override void DestroyOffscreenDrawable (object offscreen_drawable)
-		{
-			WinBuffer wb = (WinBuffer)offscreen_drawable;
-
-			Win32DeleteObject (wb.bitmap);
-			Win32DeleteDC (wb.hdc);
-		}
-
-		internal override void SetForegroundWindow (IntPtr handle)
+        internal override void SetForegroundWindow (IntPtr handle)
 		{
 			Win32SetForegroundWindow(handle);
 		}
@@ -3745,6 +3792,34 @@ namespace System.Windows.Forms {
 
 		[DllImport ("user32.dll", EntryPoint="SetForegroundWindow", CallingConvention=CallingConvention.StdCall)]
 		extern static bool Win32SetForegroundWindow(IntPtr hWnd);
-		#endregion
-	}
+
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct SKBitmapInfo
+        {
+            internal uint biSize;
+            internal int biWidth;
+            internal int biHeight;
+            internal ushort biPlanes;
+            internal ushort biBitCount;
+            internal uint biCompression;
+            internal uint biSizeImage;
+            internal int biXPelsPerMeter;
+            internal int biYPelsPerMeter;
+            internal uint biClrUsed;
+            internal uint biClrImportant;
+        }
+
+        [DllImport("gdi32.dll", EntryPoint = "SetDIBitsToDevice")]
+        internal static extern int Win32SetDIBitsToDevice(IntPtr hdc, int xDest, int yDest, int w, int h, int xSrc, int ySrc, int StartScan, int cLines, IntPtr lpvBits, ref SKBitmapInfo lpbmi, uint ColorUse);
+
+        private class Win32PaintContext
+        {
+            public Bitmap Bitmap;
+            public IntPtr Hdc;
+            public Rectangle ClipRect;
+            public object NativeContext;
+        }
+        #endregion
+    }
 }

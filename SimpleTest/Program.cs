@@ -14,7 +14,7 @@ namespace SimpleTest
         [STAThread]
         static void Main(string[] args)
         {
-            Application.EnableVisualStyles();
+            //Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(true);
             if (args.Length == 0)
                 Application.Run(new Form1());

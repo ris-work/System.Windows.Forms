@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.29318.209
+# Visual Studio Version 18
+VisualStudioVersion = 18.8.11912.234 insiders
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "System.Windows.Forms", "System.Windows.Forms\System.Windows.Forms.csproj", "{A0901720-DC8F-42EA-A80A-FA4725F11147}"
 EndProject
@@ -16,6 +16,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SimpleTest.NetFX", "SimpleTest.NetFX\SimpleTest.NetFX.csproj", "{CA0DE54B-D43B-41B4-AFDC-4E8FF15A5269}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "System.Windows.Forms.DataVisualization", "System.Windows.Forms.DataVisualization\System.Windows.Forms.DataVisualization.csproj", "{7811B778-0F63-473E-BCA9-88B82D509B40}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BootUpSD", "BootUpSD\BootUpSD.csproj", "{10BA208C-2E58-4341-9E38-6722D52332CB}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -51,6 +53,10 @@ Global
 		{7811B778-0F63-473E-BCA9-88B82D509B40}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7811B778-0F63-473E-BCA9-88B82D509B40}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7811B778-0F63-473E-BCA9-88B82D509B40}.Release|Any CPU.Build.0 = Release|Any CPU
+		{10BA208C-2E58-4341-9E38-6722D52332CB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{10BA208C-2E58-4341-9E38-6722D52332CB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{10BA208C-2E58-4341-9E38-6722D52332CB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{10BA208C-2E58-4341-9E38-6722D52332CB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

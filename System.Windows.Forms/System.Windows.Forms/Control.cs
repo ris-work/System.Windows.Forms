@@ -1345,6 +1345,8 @@ namespace System.Windows.Forms
 
 		// This method exists so controls overriding OnPaintBackground can have default background painting done
 		internal virtual void PaintControlBackground (PaintEventArgs pevent) {
+            if (pevent == null || pevent.Graphics == null)
+                return;
 
             //pevent.Graphics.SmoothingMode = SmoothingMode.HighQuality;
             //pevent.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;

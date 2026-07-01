@@ -1,11 +1,40 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net10.0;net10.0-windows</TargetFrameworks>
+    <TargetFrameworks>net11.0</TargetFrameworks>
     <ApplicationIcon />
-    <OutputType>WinExe</OutputType>
+    <OutputType>Exe</OutputType>
     <StartupObject />
+	  <DisableImplicitSystemDrawingCoreFrameworkReference>true</DisableImplicitSystemDrawingCoreFrameworkReference>
   </PropertyGroup>
+
+	<ItemGroup>
+		<!-- Alias the implicit runtime System.Drawing.Primitives so it doesn't collide with our custom one -->
+		<Reference Update="System.Drawing.Primitives">
+			<Aliases>sysdrawing</Aliases>
+		</Reference>
+	</ItemGroup>
+	<!-- ADD THIS SINGLE TARGET -->
+	<Target Name="AliasFrameworkDrawingReferences" AfterTargets="ResolveAssemblyReferences" BeforeTargets="CoreCompile">
+		<ItemGroup>
+			<!-- Alias the framework's System.Drawing.Primitives so it doesn't collide with your custom System.Drawing.dll -->
+			<ReferencePath Condition="'%(FileName)' == 'System.Drawing.Primitives'">
+				<Aliases>sysdrawing</Aliases>
+			</ReferencePath>
+			<!-- Also alias System.Drawing.Common just in case ConfigurationManager pulls it in -->
+			<ReferencePath Condition="'%(FileName)' == 'System.Drawing.Common'">
+				<Aliases>sysdrawingcommon</Aliases>
+			</ReferencePath>
+			<!-- Also alias System.Drawing.Common just in case ConfigurationManager pulls it in -->
+			<ReferencePath Condition="'%(FileName)' == 'System.Drawing'">
+				<Aliases>sysdrawingmain</Aliases>
+			</ReferencePath>
+		</ItemGroup>
+	</Target>
+	<ItemGroup>
+		<ProjectReference Include="..\System.Drawing.Design\System.Drawing.Design.csproj" />
+		<ProjectReference Include="..\..\..\..\invnew\System.Drawing\System.Drawing.csproj" />
+	</ItemGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
