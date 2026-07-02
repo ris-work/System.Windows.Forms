@@ -1845,7 +1845,8 @@ namespace System.Windows.Forms {
                     return new Win32PaintEventArgs(Graphics.FromImage(new Bitmap(1, 1)), Rectangle.Empty, new Win32PaintContext { Hdc = hdc, NativeContext = hdc, Bitmap = null });
                 }
 
-                // Get or create the persistent back buffer
+				// Get or create the persistent back buffer
+				
                 if (!_backBuffers.TryGetValue(handle, out Bitmap backBuffer) || backBuffer.Width != width || backBuffer.Height != height)
                 {
                     backBuffer?.Dispose();
@@ -1853,12 +1854,16 @@ namespace System.Windows.Forms {
                     backBuffer.SetResolution(GetScreenDpi(), GetScreenDpi());
                     _backBuffers[handle] = backBuffer;
                 }
+				//Bitmap backBuffer;
+                //backBuffer = new Bitmap(width*2, height*2);
+                
 
                 Graphics dc = Graphics.FromImage(backBuffer);
 
                 // Determine the actual invalidated region
-                if (Win32GetUpdateRect(msg.HWnd, ref rect, false))
+                if (Win32GetUpdateRect(msg.HWnd, ref rect, false) && true)
                 {
+                    Console.WriteLine($"Rect: {rect.left} {rect.top} {rect.Width}x{rect.Height}");
                     if (handle != msg.HWnd)
                     {
                         Win32GetClientRect(msg.HWnd, out rect);
@@ -1883,6 +1888,8 @@ namespace System.Windows.Forms {
 
                 var context = new Win32PaintContext { Bitmap = backBuffer, Hdc = hdc, ClipRect = new Rectangle(0, 0, width, height), NativeContext = (ps.hdc != IntPtr.Zero ? (object)ps : (object)hdc) };
                 paint_event = new Win32PaintEventArgs(dc, clip_rect, context);
+				Console.WriteLine($"clientRect: {clientRect.left} {clientRect.top} {clientRect.Width}x{clientRect.Height}");
+                
                 return paint_event;
             }
             else
@@ -2630,6 +2637,8 @@ namespace System.Windows.Forms {
 
         internal override Region GetClipRegion(IntPtr hwnd)
         {
+            // Without GDI interop in System.Drawing, we cannot read the native HRGN back into a Region.
+            // Returning an infinite region is the safest fallback to prevent clipping issues.
             Region region = new Region();
             region.MakeInfinite();
             return region;
@@ -2642,31 +2651,27 @@ namespace System.Windows.Forms {
                 if (region == null)
                 {
                     Win32SetWindowRgn(hwnd, IntPtr.Zero, true);
+                    return;
+                }
+
+                // Use GetRegionScans to avoid calling GetHrgn, keeping System.Drawing free of GDI P/Invokes.
+                // Skia's Region currently returns the bounding box as a single scan.
+                RectangleF[] scans = region.GetRegionScans(new System.Drawing.Drawing2D.Matrix());
+                if (scans.Length > 0)
+                {
+                    RectangleF bounds = scans[0];
+                    IntPtr hrgn = Win32CreateRectRgn(
+                        (int)Math.Floor(bounds.X),
+                        (int)Math.Floor(bounds.Y),
+                        (int)Math.Ceiling(bounds.Right),
+                        (int)Math.Ceiling(bounds.Bottom));
+
+                    Win32SetWindowRgn(hwnd, hrgn, true);
+                    // Note: SetWindowRgn takes ownership of the HRGN, so we do NOT delete it.
                 }
                 else
                 {
-                    IntPtr hrgn = IntPtr.Zero;
-                    using (var g = Graphics.FromHwnd(hwnd))
-                    {
-                        if (region.IsEmpty(g))
-                        {
-                            hrgn = Win32CreateRectRgn(0, 0, 0, 0);
-                        }
-                        else if (!region.IsInfinite(g))
-                        {
-                            var bounds = region.GetBounds(g);
-                            hrgn = Win32CreateRectRgn((int)bounds.Left, (int)bounds.Top, (int)bounds.Right, (int)bounds.Bottom);
-                        }
-                    }
-
-                    if (hrgn != IntPtr.Zero)
-                    {
-                        Win32SetWindowRgn(hwnd, hrgn, true);
-                    }
-                    else
-                    {
-                        Win32SetWindowRgn(hwnd, IntPtr.Zero, true);
-                    }
+                    Win32SetWindowRgn(hwnd, IntPtr.Zero, true);
                 }
             }
             catch
@@ -3496,9 +3501,86 @@ namespace System.Windows.Forms {
             return Graphics.FromImage(new Bitmap(1, 1));
         }
 
+        
+
         internal override void BlitFromOffscreen(IntPtr dest_handle, Graphics dest_dc, object offscreen_drawable, Graphics offscreen_dc, Rectangle r)
         {
-            dest_dc.DrawImage((Image)offscreen_drawable, r.X, r.Y, r.Width, r.Height);
+            Console.WriteLine("=========================================");
+            Console.WriteLine("BlitFromOffscreen START");
+            Console.WriteLine($"  r: X={r.X} Y={r.Y} Width={r.Width} Height={r.Height}");
+            Console.WriteLine($"  r bounds: L={r.Left} T={r.Top} R={r.Right} B={r.Bottom}");
+
+            if (r.Width <= 0 || r.Height <= 0)
+            {
+                Console.WriteLine("  ABORT: r has non-positive dimensions");
+                Console.WriteLine("=========================================");
+                return;
+            }
+
+            Image img = offscreen_drawable as Image;
+            if (img == null)
+            {
+                Console.WriteLine($"  ABORT: offscreen_drawable is not an Image, type: {offscreen_drawable?.GetType().FullName ?? "null"}");
+                Console.WriteLine("=========================================");
+                return;
+            }
+
+            Console.WriteLine($"  img: Width={img.Width} Height={img.Height}");
+            Console.WriteLine($"  img HorizontalRes={img.HorizontalResolution} VerticalRes={img.VerticalResolution}");
+
+            // Check if r fits within img bounds
+            if (r.X < 0 || r.Y < 0 || r.Right > img.Width || r.Bottom > img.Height)
+            {
+                Console.WriteLine($"  WARNING: r extends beyond img bounds!");
+                Console.WriteLine($"    r.Right ({r.Right}) vs img.Width ({img.Width})");
+                Console.WriteLine($"    r.Bottom ({r.Bottom}) vs img.Height ({img.Height})");
+            }
+
+            Console.WriteLine($"  Source rect from img: ({r.X}, {r.Y}, {r.Width}, {r.Height})");
+            Console.WriteLine($"  Dest rect on temp: (0, 0, {r.Width}, {r.Height})");
+            Console.WriteLine($"  Final dest on dest_dc: ({r.X}, {r.Y}, {r.Width}, {r.Height})");
+
+            using (Bitmap temp = new Bitmap(r.Width, r.Height))
+            {
+                Console.WriteLine($"  temp created: Width={temp.Width} Height={temp.Height}");
+
+                temp.SetResolution(img.HorizontalResolution, img.VerticalResolution);
+
+                using (Graphics g = Graphics.FromImage(temp))
+                {
+                    Console.WriteLine($"  Graphics from temp: DpiX={g.DpiX} DpiY={g.DpiY}");
+
+                    // Fill using temp's actual dimensions
+                    using (SolidBrush yellow = new SolidBrush(Color.Magenta))
+                    {
+                        Console.WriteLine($"  FillRectangle: 0,0,{temp.Width},{temp.Height}");
+                        g.FillRectangle(yellow, 0, 0, temp.Width, temp.Height);
+                    }
+
+                    // KEY FIX: Draw only the portion of img that corresponds to r
+                    // Source: (r.X, r.Y, r.Width, r.Height) from img
+                    // Dest: (0, 0, r.Width, r.Height) on temp
+                    // This is a 1:1 copy with NO scaling, which avoids the DrawImage scaling bug
+                    Console.WriteLine($"  DrawImage img->temp (1:1, no scaling):");
+                    Console.WriteLine($"    destRect: (0, 0, {r.Width}, {r.Height})");
+                    Console.WriteLine($"    srcRect:  ({r.X}, {r.Y}, {r.Width}, {r.Height})");
+					g.DrawImage(img,new Rectangle(0, 0, r.Width, r.Height),r.X, r.Y, r.Width, r.Height,GraphicsUnit.Pixel);
+					using (SolidBrush yellow = new SolidBrush(Color.Blue))
+					{
+						g.DrawRectangle(new Pen(yellow),
+                        new Rectangle(0, 0, r.Width, r.Height));
+					}
+                }
+
+                // Draw temp to dest_dc — also 1:1 since temp is exactly r.Width x r.Height
+                Console.WriteLine($"  DrawImage temp->dest_dc (1:1, no scaling):");
+                Console.WriteLine($"    destRect: ({r.X}, {r.Y}, {r.Width}, {r.Height})");
+                Console.WriteLine($"    srcRect:  (0, 0, {r.Width}, {r.Height})");
+                dest_dc.DrawImage(temp, r, 0, 0, temp.Width, temp.Height, GraphicsUnit.Pixel);
+            }
+
+            Console.WriteLine("BlitFromOffscreen END");
+            Console.WriteLine("=========================================");
         }
 
         internal override void DestroyOffscreenDrawable(object offscreen_drawable)

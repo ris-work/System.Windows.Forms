@@ -3,45 +3,61 @@ using System.Data;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.Runtime.CompilerServices;
 using System.Windows.Forms;
 
 // ==========================================
 // 1. System.Drawing Test: Output drawing.png
 // ==========================================
-using (var bitmap = new Bitmap(400, 200))
+using (var bitmap = new Bitmap(800, 600))
 using (var g = Graphics.FromImage(bitmap))
 {
     // Clear background
     g.Clear(Color.White);
 
-    // Draw a red rectangle border
-    using var pen = new Pen(Color.Red, 3);
-    g.DrawRectangle(pen, 10, 10, 380, 180);
+    // --- Test 1: Simple DrawImage at point ---
+    using (var src1 = new Bitmap(100, 100))
+    using (var gSrc1 = Graphics.FromImage(src1))
+    {
+        gSrc1.Clear(Color.Red);
+        gSrc1.FillRectangle(Brushes.Blue, 10, 10, 80, 80);
+        gSrc1.DrawString("SRC1", new Font("Arial", 12), Brushes.White, 10, 40);
+        g.DrawImage(src1, 10, 10); // Top-left
 
-    // Fill a semi-transparent blue ellipse (Alpha Blending)
-    using var blueBrush = new SolidBrush(Color.FromArgb(100, 0, 0, 255));
-    g.FillEllipse(blueBrush, 50, 40, 120, 120);
+        // --- Test 2: Stretched DrawImage ---
+        g.DrawImage(src1, new Rectangle(120, 10, 200, 100)); // Stretched
 
-    // Apply Transforms: Translate, Rotate, and Scale
-    g.TranslateTransform(200, 100);
-    g.RotateTransform(25);
-    g.ScaleTransform(1.2f, 1.2f);
+        // --- Test 3: DrawImage with Source/Dest Rects (Sub-rectangles) ---
+        // Draw only the 80x80 blue rect from src1 to a 150x150 area
+        g.DrawImage(src1, new Rectangle(330, 10, 150, 150), 10, 10, 80, 80, GraphicsUnit.Pixel);
 
-    // Draw a green dashed diagonal line
-    using var greenPen = new Pen(Color.Green, 2) { DashStyle = DashStyle.Dash };
-    g.DrawLine(greenPen, 0, 0, 120, 60);
+        // --- Test 4: Nested Contexts (Draw a bitmap onto another, then draw that result) ---
+        using (var nested = new Bitmap(200, 200))
+        using (var gNested = Graphics.FromImage(nested))
+        {
+            gNested.Clear(Color.Yellow);
+            gNested.DrawImage(src1, 0, 0); // Draw src1 onto nested
+            gNested.DrawImage(src1, 100, 100); // Draw src1 again offset
+            g.DrawImage(nested, 10, 120); // Draw nested result to main
 
-    // Draw some text
-    using var font = new Font("Arial", 14, FontStyle.Bold);
-    using var textBrush = new SolidBrush(Color.Purple);
-    g.DrawString("SkiaSharp Drawing!", font, textBrush, 0, 0);
+            // --- Test 5: Transforms with DrawImage ---
+            g.TranslateTransform(400, 300);
+            g.RotateTransform(15);
+            g.ScaleTransform(1.5f, 1.5f);
 
-    // Reset transform for any further drawing
-    g.ResetTransform();
+            // Draw src1 transformed
+            g.DrawImage(src1, 0, 0);
+            g.DrawRectangle(Pens.Black, 0, 0, 100, 100); // Outline to verify bounds
 
-    // Save the output as a PNG
-    bitmap.Save("drawing.png", ImageFormat.Png);
-    Console.WriteLine("Successfully wrote drawing.png");
+            g.ResetTransform();
+
+            // Save the output as a PNG
+            bitmap.Save("drawing.png", System.Drawing.Imaging.ImageFormat.Png);
+            Console.WriteLine("Successfully wrote drawing.png");
+        }
+    }
+    
+    
 }
 
 // ==========================================
@@ -235,7 +251,8 @@ var grid = new DataGridView
     ReadOnly = true,
     BorderStyle = BorderStyle.FixedSingle,
     EnableHeadersVisualStyles = false,
-    BackgroundColor = Color.White
+    BackgroundColor = Color.White,
+    AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells
 };
 
 DataTable dt = new DataTable();
@@ -255,9 +272,11 @@ var button = new Button
     Location = new Point(20, 430),
     Size = new Size(100, 30)
 };
-button.Click += (s, e) => MessageBox.Show("Hello!", "Test");
+//button.Click += (s, e) => { MessageBox.Show("Hello!", "Test"); form.Invalidate(true); };
 
 form.Controls.Add(mainPanel);
 form.Controls.Add(button);
+//form.MouseMove += (_, __) => { form.Invalidate(true); };
+//comboBox.MouseMove += (_, __) => { form.Invalidate(true); };
 
 Application.Run(form);
