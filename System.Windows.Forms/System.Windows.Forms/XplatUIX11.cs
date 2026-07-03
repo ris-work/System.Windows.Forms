@@ -82,6 +82,48 @@ namespace System.Windows.Forms {
         }
         public object Context { get; private set; }
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct XVisualInfo
+    {
+        public IntPtr visual;
+        public IntPtr visualid;
+        public int screen;
+        public int depth;
+        public int c_class;
+        public IntPtr red_mask;
+        public IntPtr green_mask;
+        public IntPtr blue_mask;
+        public int colormap_size;
+        public int bits_per_rgb;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct VisualID
+    {
+        public ulong Value;
+        public static implicit operator VisualID(ulong v) { return new VisualID { Value = v }; }
+        public static implicit operator ulong(VisualID v) { return v.Value; }
+    }
+
+    [Flags]
+    internal enum VisualInfoMask
+    {
+        No = 0x0,
+        ID = 0x1,
+        Depth = 0x8,
+        Screen = 0x20,
+        Class = 0x80
+    }
+
+    internal enum VisualClass
+    {
+        StaticGray = 0,
+        GrayScale = 1,
+        StaticColor = 2,
+        PseudoColor = 3,
+        TrueColor = 4,
+        DirectColor = 5
+    }
     internal class XplatUIX11 : XplatUIDriver {
 		#region Local Variables
 		// General
@@ -274,9 +316,26 @@ namespace System.Windows.Forms {
 			SetDisplay(XOpenDisplay(IntPtr.Zero));
 			X11DesktopColors.Initialize();
 
-			
-			// Disable keyboard autorepeat
-			try {
+            // Find a 32-bit TrueColor visual so every window we create has
+            // a 32-bit pixel format that matches the Skia back-buffer.
+            // This is what makes BlitBitmapToDrawable stop losing the alpha byte.
+            try
+            {
+                XVisualInfo vi;
+                int rc = XMatchVisualInfo(DisplayHandle, ScreenNo, 32, (int)VisualClass.TrueColor, out vi);
+                if (rc == 0)
+                {
+                    CustomVisual = vi.visual;
+                }
+            }
+            catch
+            {
+                CustomVisual = IntPtr.Zero;
+            }
+
+
+            // Disable keyboard autorepeat
+            try {
 				XkbSetDetectableAutoRepeat (DisplayHandle, true,  IntPtr.Zero);
 				detectable_key_auto_repeat = true;
 			} catch {
@@ -2807,7 +2866,8 @@ namespace System.Windows.Forms {
 
 		internal override IntPtr DefineCursor(Bitmap bitmap, Bitmap mask, Color cursor_pixel, Color mask_pixel, int xHotSpot, int yHotSpot)
 		{
-			IntPtr	cursor;
+            Console.Error.WriteLine($"[DefineCursor] called (would create 1-bit cursor pixmap on depth={XDefaultDepth(DisplayHandle, ScreenNo)} screen)");
+            IntPtr	cursor;
 			Bitmap	cursor_bitmap;
 			Bitmap	cursor_mask;
 			Byte[]	cursor_bits;
@@ -2873,9 +2933,9 @@ namespace System.Windows.Forms {
 				}
 			}
 
-			cursor_pixmap = XCreatePixmapFromBitmapData(DisplayHandle, RootWindow, cursor_bits, width, height, (IntPtr)1, (IntPtr)0, 1);
-			mask_pixmap = XCreatePixmapFromBitmapData(DisplayHandle, RootWindow, mask_bits, width, height, (IntPtr)1, (IntPtr)0, 1);
-			fg = new XColor();
+            cursor_pixmap = XCreatePixmapFromBitmapData(DisplayHandle, RootWindow, cursor_bits, width, height, (IntPtr)1, (IntPtr)0, 0);
+            mask_pixmap = XCreatePixmapFromBitmapData(DisplayHandle, RootWindow, mask_bits, width, height, (IntPtr)1, (IntPtr)0, 0);
+            fg = new XColor();
 			bg = new XColor();
 
 			fg.pixel = XWhitePixel(DisplayHandle, ScreenNo);
@@ -4847,7 +4907,7 @@ namespace System.Windows.Forms {
                 height = 1;
             }
 
-            Console.WriteLine($"[X11 PaintStart] handle={handle}, client={client}, width={width}, height={height}");
+            //Console.WriteLine($"[X11 PaintStart] handle={handle}, client={client}, width={width}, height={height}");
 
             Bitmap backBuffer;
             if (!_backBuffers.TryGetValue(handle, out backBuffer) || backBuffer.Width != width || backBuffer.Height != height)
@@ -4944,30 +5004,39 @@ namespace System.Windows.Forms {
             int skiaStride = bitmap._skBitmap.RowBytes;
             IntPtr pixels = bitmap._skBitmap.GetPixels();
 
+            Console.Error.WriteLine($"[BLIT 1] entry w={width} h={height} stride={skiaStride} pixels=0x{pixels.ToInt64():X} drawable=0x{drawable.ToInt64():X}");
+
             if (pixels == IntPtr.Zero || width <= 0 || height <= 0)
+            {
+                Console.Error.WriteLine($"[BLIT 2] early-return (pixels==null or non-positive size)");
                 return;
+            }
 
             IntPtr visual = XDefaultVisual(DisplayHandle, ScreenNo);
-            uint depth = XDefaultDepth(DisplayHandle, ScreenNo);
-
-            if (depth == 0)
-                depth = 24;
+            uint depth = 32;
+            Console.Error.WriteLine($"[BLIT 3] before XCreateImage visual=0x{visual.ToInt64():X} depth={depth} bitmap_pad=32 bytes_per_line={skiaStride}");
 
             IntPtr image = XCreateImage(DisplayHandle, visual, depth, ZPixmap, 0, pixels, (uint)width, (uint)height, 32, skiaStride);
+            Console.Error.WriteLine($"[BLIT 4] after XCreateImage image=0x{image.ToInt64():X}");
             if (image == IntPtr.Zero)
                 return;
 
             XGCValues gc_values = new XGCValues();
             IntPtr gc = XCreateGC(DisplayHandle, drawable, IntPtr.Zero, ref gc_values);
+            Console.Error.WriteLine($"[BLIT 5] after XCreateGC gc=0x{gc.ToInt64():X}");
             if (gc != IntPtr.Zero)
             {
+                Console.Error.WriteLine($"[BLIT 6] before XPutImage {width}x{height}");
                 XPutImage(DisplayHandle, drawable, gc, image, 0, 0, 0, 0, (uint)width, (uint)height);
+                Console.Error.WriteLine($"[BLIT 7] after XPutImage");
                 XFreeGC(DisplayHandle, gc);
+                Console.Error.WriteLine($"[BLIT 8] after XFreeGC");
             }
 
-            // Set data pointer to null so XDestroyImage doesn't free our bitmap data
+            Console.Error.WriteLine($"[BLIT 9] before data-pointer null + XDestroyImage");
             Marshal.WriteIntPtr(image, 16, IntPtr.Zero);
             XDestroyImage(image);
+            Console.Error.WriteLine($"[BLIT 10] after XDestroyImage (this line will NOT print if XDestroyImage segfaults)");
         }
 
         [MonoTODO("Implement filtering and PM_NOREMOVE")]
@@ -7452,7 +7521,13 @@ namespace System.Windows.Forms {
 		[DllImport ("libX11", EntryPoint="XDefaultVisual")]
 		internal extern static IntPtr XDefaultVisual(IntPtr display, int screen_number);
 
-		[DllImport ("libX11", EntryPoint="XDefaultDepth")]
+
+
+        [DllImport("libX11", EntryPoint = "XMatchVisualInfo")]
+        internal extern static int XMatchVisualInfo(IntPtr display, int screen, int depth, int c_class, out XVisualInfo visual_info);
+
+
+        [DllImport ("libX11", EntryPoint="XDefaultDepth")]
 		internal extern static uint XDefaultDepth(IntPtr display, int screen_number);
 
 		[DllImport ("libX11", EntryPoint="XDefaultScreen")]
