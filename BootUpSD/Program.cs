@@ -410,5 +410,6 @@ form.Controls.Add(comboBox2);
 
 var datePicker = new DateTimePicker { Location = new Point(310, 555), Width = 200 };
 form.Controls.Add(datePicker);
+form.MouseMove += (_, __) => { form.Invalidate(true); };
 
 Application.Run(form);

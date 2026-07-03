@@ -5033,18 +5033,20 @@ namespace System.Windows.Forms {
             if (pixels == IntPtr.Zero || width <= 0 || height <= 0)
                 return;
 
-            // Query the drawable's actual depth - using a mismatched depth
-            // causes BadMatch errors from XPutImage.
+            // Query the drawable's actual depth.
+            // If we pass 32 to a 24-bit window, XPutImage fails with BadMatch (black screen).
             IntPtr root;
             int x_out, y_out, w_out, h_out, bw_out, depth_out;
             XGetGeometry(DisplayHandle, drawable, out root, out x_out, out y_out,
                          out w_out, out h_out, out bw_out, out depth_out);
 
-            if (depth_out <= 0)
-                depth_out = 32;
+            // Fallback just in case
+            if (depth_out <= 0) depth_out = 24;
 
             IntPtr visual = XDefaultVisual(DisplayHandle, ScreenNo);
 
+            // Use bitmap_pad = 32. This tells X11 to expect 4 bytes per pixel (matching Skia's BGRA32).
+            // Even for 24-bit depth, pad=32 means the extra alpha byte is ignored, preventing slant.
             IntPtr image = XCreateImage(DisplayHandle, visual, (uint)depth_out, ZPixmap, 0, pixels, (uint)width, (uint)height, 32, skiaStride);
             if (image == IntPtr.Zero)
                 return;
@@ -5057,7 +5059,7 @@ namespace System.Windows.Forms {
                 XFreeGC(DisplayHandle, gc);
             }
 
-            // Set data pointer to null so XDestroyImage doesn't free our bitmap data
+            // Set data pointer to null so XDestroyImage doesn't free our Skia bitmap's memory
             Marshal.WriteIntPtr(image, 16, IntPtr.Zero);
             XDestroyImage(image);
         }
