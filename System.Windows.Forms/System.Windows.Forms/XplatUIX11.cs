@@ -4905,8 +4905,6 @@ namespace System.Windows.Forms {
                 height = 1;
             }
 
-            Console.WriteLine($"[X11 PaintStart] handle={handle}, client={client}, width={width}, height={height}");
-
             Bitmap backBuffer;
             bool newBuffer = false;
             if (!_backBuffers.TryGetValue(handle, out backBuffer) || backBuffer.Width != width || backBuffer.Height != height)
