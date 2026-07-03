@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("BootUpSD")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+32298e167d8e20a4bd3f9a4fca01d5dae4387eca")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+3d175682b7696c73de0b2a1abbc3a567af2c7b5c")]
 [assembly: System.Reflection.AssemblyProductAttribute("BootUpSD")]
 [assembly: System.Reflection.AssemblyTitleAttribute("BootUpSD")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

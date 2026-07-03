@@ -207,12 +207,132 @@ Application.Run(form);
 var form = new Form
 {
     Text = "Nested Controls Test",
-    ClientSize = new Size(600, 450),
+    ClientSize = new Size(960, 720),
     StartPosition = FormStartPosition.CenterScreen,
     BackColor = Color.FromArgb(240, 240, 245)
 };
 
-// Create a main container panel
+// ===== Outer toolbar strip =====
+var toolStrip = new ToolStrip { Location = new Point(0, 0), Size = new Size(960, 25) };
+toolStrip.Items.Add(new ToolStripButton("New"));
+toolStrip.Items.Add(new ToolStripButton("Open"));
+toolStrip.Items.Add(new ToolStripButton("Save"));
+toolStrip.Items.Add(new ToolStripSeparator());
+toolStrip.Items.Add(new ToolStripButton("Cut"));
+toolStrip.Items.Add(new ToolStripButton("Copy"));
+toolStrip.Items.Add(new ToolStripButton("Paste"));
+form.Controls.Add(toolStrip);
+
+// ===== TabControl with 4 pages =====
+var tabs = new TabControl { Location = new Point(20, 40), Size = new Size(920, 500) };
+form.Controls.Add(tabs);
+
+var tabBasic = new TabPage("Basic");
+var tabLists = new TabPage("Lists & Trees");
+var tabDate = new TabPage("Date & Time");
+var tabOrig = new TabPage("Original Test");
+tabs.TabPages.AddRange(new[] { tabBasic, tabLists, tabDate, tabOrig });
+
+// --- Tab: Basic controls ---
+tabBasic.Controls.Add(new Label { Text = "Name:", Location = new Point(20, 22), AutoSize = true });
+tabBasic.Controls.Add(new TextBox { Location = new Point(80, 19), Width = 220, Text = "Sample input" });
+
+tabBasic.Controls.Add(new Label { Text = "Age:", Location = new Point(20, 52), AutoSize = true });
+tabBasic.Controls.Add(new NumericUpDown { Location = new Point(80, 49), Width = 80, Minimum = 0, Maximum = 120, Value = 30 });
+
+tabBasic.Controls.Add(new Label { Text = "Password:", Location = new Point(20, 82), AutoSize = true });
+tabBasic.Controls.Add(new TextBox { Location = new Point(80, 79), Width = 220, UseSystemPasswordChar = true, Text = "secret" });
+
+tabBasic.Controls.Add(new CheckBox { Text = "Subscribe to newsletter", Location = new Point(20, 115), AutoSize = true, Checked = true });
+tabBasic.Controls.Add(new CheckBox { Text = "Enable notifications", Location = new Point(20, 140), AutoSize = true });
+tabBasic.Controls.Add(new CheckBox { Text = "Three-state option", Location = new Point(20, 165), AutoSize = true, ThreeState = true, CheckState = CheckState.Indeterminate });
+
+tabBasic.Controls.Add(new RadioButton { Text = "Option A", Location = new Point(320, 115), AutoSize = true, Checked = true });
+tabBasic.Controls.Add(new RadioButton { Text = "Option B", Location = new Point(420, 115), AutoSize = true });
+tabBasic.Controls.Add(new RadioButton { Text = "Option C", Location = new Point(320, 140), AutoSize = true });
+
+tabBasic.Controls.Add(new Button { Text = "OK", Location = new Point(20, 200), Size = new Size(90, 30) });
+tabBasic.Controls.Add(new Button { Text = "Cancel", Location = new Point(120, 200), Size = new Size(90, 30) });
+tabBasic.Controls.Add(new Button { Text = "Apply", Location = new Point(220, 200), Size = new Size(90, 30) });
+
+tabBasic.Controls.Add(new ProgressBar { Location = new Point(20, 245), Width = 400, Height = 20, Value = 50 });
+tabBasic.Controls.Add(new Label { Text = "Progress (50%)", Location = new Point(425, 248), AutoSize = true });
+
+tabBasic.Controls.Add(new TrackBar { Location = new Point(20, 280), Width = 300, Minimum = 0, Maximum = 100, Value = 30, TickFrequency = 10 });
+tabBasic.Controls.Add(new Label { Text = "Volume", Location = new Point(330, 285), AutoSize = true });
+
+tabBasic.Controls.Add(new HScrollBar { Location = new Point(20, 320), Width = 300, Minimum = 0, Maximum = 100, Value = 20 });
+tabBasic.Controls.Add(new VScrollBar { Location = new Point(340, 280), Height = 60, Minimum = 0, Maximum = 100, Value = 40 });
+
+// --- Tab: Lists & Trees ---
+var listView = new ListView
+{
+    Location = new Point(20, 20),
+    Size = new Size(300, 230),
+    View = View.Details,
+    FullRowSelect = true,
+    GridLines = true,
+    MultiSelect = false
+};
+listView.Columns.Add("Name", 150);
+listView.Columns.Add("Type", 120);
+listView.Items.Add(new ListViewItem(new[] { "Apple", "Fruit" }));
+listView.Items.Add(new ListViewItem(new[] { "Carrot", "Vegetable" }));
+listView.Items.Add(new ListViewItem(new[] { "Salmon", "Fish" }));
+listView.Items.Add(new ListViewItem(new[] { "Beef", "Meat" }));
+listView.Items[0].Selected = true;
+tabLists.Controls.Add(listView);
+
+var treeView = new TreeView
+{
+    Location = new Point(340, 20),
+    Size = new Size(240, 230)
+};
+var rootNode = treeView.Nodes.Add("Documents");
+rootNode.Nodes.Add("Reports").Nodes.Add("2024").Nodes.Add("Q1.pdf");
+rootNode.Nodes.Add("Reports").Nodes.Add("2024").Nodes.Add("Q2.pdf");
+rootNode.Nodes.Add("Photos");
+rootNode.Nodes.Add("Music");
+rootNode.Expand();
+tabLists.Controls.Add(treeView);
+
+var checkedListBox = new CheckedListBox
+{
+    Location = new Point(600, 20),
+    Size = new Size(180, 230),
+    CheckOnClick = true
+};
+checkedListBox.Items.AddRange(new object[] { "Red", "Green", "Blue", "Yellow", "Cyan", "Magenta" });
+checkedListBox.SetItemChecked(0, true);
+checkedListBox.SetItemChecked(2, true);
+tabLists.Controls.Add(checkedListBox);
+
+var listBox = new ListBox
+{
+    Location = new Point(20, 270),
+    Size = new Size(300, 150),
+    SelectionMode = SelectionMode.MultiExtended
+};
+listBox.Items.AddRange(new object[] { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" });
+listBox.SetSelected(0, true);
+listBox.SetSelected(2, true);
+tabLists.Controls.Add(listBox);
+
+// --- Tab: Date & Time ---
+tabDate.Controls.Add(new Label { Text = "Date of birth:", Location = new Point(20, 22), AutoSize = true });
+tabDate.Controls.Add(new DateTimePicker { Location = new Point(130, 19), Width = 220 });
+
+tabDate.Controls.Add(new Label { Text = "Time:", Location = new Point(20, 52), AutoSize = true });
+tabDate.Controls.Add(new DateTimePicker { Location = new Point(130, 49), Width = 220, Format = DateTimePickerFormat.Time, ShowUpDown = true });
+
+tabDate.Controls.Add(new Label { Text = "Custom fmt:", Location = new Point(20, 82), AutoSize = true });
+tabDate.Controls.Add(new DateTimePicker { Location = new Point(130, 79), Width = 220, Format = DateTimePickerFormat.Custom, CustomFormat = "yyyy-MM-dd HH:mm:ss" });
+
+tabDate.Controls.Add(new MonthCalendar { Location = new Point(20, 120) });
+
+tabDate.Controls.Add(new DateTimePicker { Location = new Point(280, 120), Width = 220, ShowCheckBox = true, Checked = false });
+
+// --- Tab: Original test (your exact setup, kept verbatim) ---
 var mainPanel = new Panel
 {
     Location = new Point(20, 20),
@@ -220,8 +340,8 @@ var mainPanel = new Panel
     BackColor = Color.White,
     BorderStyle = BorderStyle.FixedSingle
 };
+tabOrig.Controls.Add(mainPanel);
 
-// Add a nested panel inside the main panel
 var nestedPanel = new Panel
 {
     Location = new Point(20, 20),
@@ -231,18 +351,21 @@ var nestedPanel = new Panel
 };
 mainPanel.Controls.Add(nestedPanel);
 
-// Add a ComboBox to the nested panel
 var comboBox = new ComboBox
 {
     Location = new Point(20, 20),
     Size = new Size(150, 25),
     DropDownStyle = ComboBoxStyle.DropDownList
 };
-comboBox.Items.AddRange(new object[] { "Item 1", "Item 2", "Item 3", "Item 1", "Item 2", "Item 3", "Item 1", "Item 2", "Item 3", "Item 1", "Item 2", "Item 3", "Item 1", "Item 2", "Item 3", "Item 1", "Item 2", "Item 3", "Item 1", "Item 2", "Item 3" });
+comboBox.Items.AddRange(new object[] {
+    "Item 1", "Item 2", "Item 3", "Item 1", "Item 2", "Item 3",
+    "Item 1", "Item 2", "Item 3", "Item 1", "Item 2", "Item 3",
+    "Item 1", "Item 2", "Item 3", "Item 1", "Item 2", "Item 3",
+    "Item 1", "Item 2", "Item 3"
+});
 comboBox.SelectedIndex = 0;
 nestedPanel.Controls.Add(comboBox);
 
-// Add a DataGridView to the main panel
 var grid = new DataGridView
 {
     Location = new Point(250, 20),
@@ -262,21 +385,30 @@ dt.Rows.Add(1, "Alice");
 dt.Rows.Add(2, "Bob");
 dt.Rows.Add(3, "Charlie");
 grid.DataSource = dt;
-
 mainPanel.Controls.Add(grid);
 
-// Add a button to the form (outside the panel)
-var button = new Button
-{
-    Text = "Click Me",
-    Location = new Point(20, 430),
-    Size = new Size(100, 30)
-};
-//button.Click += (s, e) => { MessageBox.Show("Hello!", "Test"); form.Invalidate(true); };
+// ===== Status bar (bottom) =====
+var statusBar = new StatusStrip { Location = new Point(0, 698), Size = new Size(960, 22) };
+statusBar.Items.Add(new ToolStripStatusLabel("Ready"));
+statusBar.Items.Add(new ToolStripStatusLabel("   |   ") { Spring = true });
+statusBar.Items.Add(new ToolStripStatusLabel("Items: 0"));
+form.Controls.Add(statusBar);
 
-form.Controls.Add(mainPanel);
+// ===== Click Me button outside the tab (matches your original) =====
+var button = new Button { Text = "Click Me", Location = new Point(20, 555), Size = new Size(100, 30) };
 form.Controls.Add(button);
-//form.MouseMove += (_, __) => { form.Invalidate(true); };
-//comboBox.MouseMove += (_, __) => { form.Invalidate(true); };
+
+var comboBox2 = new ComboBox
+{
+    Location = new Point(140, 555),
+    Size = new Size(150, 25),
+    DropDownStyle = ComboBoxStyle.DropDownList
+};
+comboBox2.Items.AddRange(new object[] { "Apple", "Banana", "Cherry", "Date", "Elderberry" });
+comboBox2.SelectedIndex = 0;
+form.Controls.Add(comboBox2);
+
+var datePicker = new DateTimePicker { Location = new Point(310, 555), Width = 200 };
+form.Controls.Add(datePicker);
 
 Application.Run(form);
