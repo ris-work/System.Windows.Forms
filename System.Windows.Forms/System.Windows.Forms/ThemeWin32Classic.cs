@@ -259,8 +259,7 @@ namespace System.Windows.Forms
 		{
 			if (!button.Pressed) {
 				Color focus_color = ControlPaint.Dark (button.BackColor);
-                g.DrawRoundedRectangle(ResPool.GetDashPen(focus_color, DashStyle.Dot), new Rectangle(button.ClientRectangle.Left + 4, button.ClientRectangle.Top + 4, button.ClientRectangle.Width - 9, button.ClientRectangle.Height - 9));
-                //g.DrawRectangle (ResPool.GetPen (focus_color), new Rectangle (button.ClientRectangle.Left + 4, button.ClientRectangle.Top + 4, button.ClientRectangle.Width - 9, button.ClientRectangle.Height - 9));
+				g.DrawRectangle (ResPool.GetPen (focus_color), new Rectangle (button.ClientRectangle.Left + 4, button.ClientRectangle.Top + 4, button.ClientRectangle.Width - 9, button.ClientRectangle.Height - 9));
 			}
 		}
 
@@ -863,7 +862,7 @@ namespace System.Windows.Forms
 				if (button.FlatStyle == FlatStyle.Popup && !button.is_pressed)
 					focus_color = ControlPaint.Dark(button.BackColor);
 				
-				dc.DrawRoundedRectangle (ResPool.GetPen (focus_color), button.ClientRectangle.X, button.ClientRectangle.Y, 
+				dc.DrawRectangle (ResPool.GetPen (focus_color), button.ClientRectangle.X, button.ClientRectangle.Y, 
 						  button.ClientRectangle.Width - 1, button.ClientRectangle.Height - 1);
 			}
 			
@@ -1562,15 +1561,7 @@ namespace System.Windows.Forms
 		#region ComboBox		
 		public override void DrawComboBoxItem (ComboBox ctrl, DrawItemEventArgs e)
 		{
-
-            System.Console.WriteLine($"[Theme.DrawComboBoxItem] START bounds={e.Bounds} index={e.Index} state={e.State} fore={e.ForeColor}(A={e.ForeColor.A}) back={e.BackColor} dc_null={e.Graphics == null}");
-            // === INJECTED: sanity paint #1 ===
-            using (var sanity = new SolidBrush(Color.Magenta))
-            {
-                e.Graphics.FillRectangle(sanity, e.Bounds);
-            }
-            System.Console.WriteLine($"[Theme.DrawComboBoxItem] after sanity-fill #1");
-            Color back_color, fore_color;
+			Color back_color, fore_color;
 			Rectangle text_draw = e.Bounds;
 			StringFormat string_format = new StringFormat ();
 			string_format.FormatFlags = StringFormatFlags.LineLimit | StringFormatFlags.NoWrap;
@@ -1594,20 +1585,12 @@ namespace System.Windows.Forms
 					ResPool.GetSolidBrush (fore_color),
 					text_draw, string_format);
 			}
-            // === INJECTED: sanity paint #2 ===
-            using (var sanity = new SolidBrush(Color.Lime))
-            {
-                e.Graphics.FillRectangle(sanity, new Rectangle(e.Bounds.X, e.Bounds.Y, e.Bounds.Width, 1));
-            }
-            System.Console.WriteLine($"[Theme.DrawComboBoxItem] after sanity-fill #2, about to draw text='{ctrl.Items[e.Index]}'");
-
-            if ((e.State & DrawItemState.Focus) == DrawItemState.Focus) {
+			
+			if ((e.State & DrawItemState.Focus) == DrawItemState.Focus) {
 				CPDrawFocusRectangle (e.Graphics, e.Bounds, fore_color, back_color);
 			}
-            System.Console.WriteLine($"[Theme.DrawComboBoxItem] before END, last-write-was-at");
-            System.Console.WriteLine($"[Theme.DrawComboBoxItem] END text='{ctrl.Items[e.Index]}'");
 
-            string_format.Dispose ();
+			string_format.Dispose ();
 		}
 		
 		public override void DrawFlatStyleComboButton (Graphics graphics, Rectangle rectangle, ButtonState state)
@@ -5108,15 +5091,10 @@ namespace System.Windows.Forms
 		public override void TextBoxBaseFillBackground (TextBoxBase textBoxBase, Graphics g, Rectangle clippingArea)
 		{
 			if (textBoxBase.backcolor_set || (textBoxBase.Enabled && !textBoxBase.read_only)) {
-				Color x = Color.FromArgb(RVUtils.UniversalAlpha, textBoxBase.BackColor);
-
-                //g.FillRectangle(ResPool.GetSolidBrush(textBoxBase.BackColor), clippingArea);
-                g.FillRectangle(new SolidBrush(x), clippingArea);
-            } else {
-                Color x = Color.FromArgb(RVUtils.UniversalAlpha, ColorControl);
-                //g.FillRectangle(ResPool.GetSolidBrush(ColorControl), clippingArea);
-                g.FillRectangle(new SolidBrush(x), clippingArea);
-            }
+				g.FillRectangle(ResPool.GetSolidBrush(textBoxBase.BackColor), clippingArea);
+			} else {
+				g.FillRectangle(ResPool.GetSolidBrush(ColorControl), clippingArea);
+			}
 		}
 
 		public override bool TextBoxBaseHandleWmNcPaint (TextBoxBase textBoxBase, ref Message m)
@@ -6600,18 +6578,8 @@ namespace System.Windows.Forms
 
 		private void CPDrawButtonInternal (Graphics dc, Rectangle rectangle, ButtonState state, Pen DarkPen, Pen NormalPen, Pen LightPen)
 		{
-            // sadly enough, the rectangle gets always filled with a hatchbrush
-            Region originalClipO = dc.Clip.Clone();
-            if (RVUtils.UseClipping)
-            {
-                using (var expectedPath = RVUtils.CreateRoundedRectanglePath(rectangle, RVUtils.cornerRadius))
-                {
-                    expectedPath.CloseFigure();
-                    dc.SetClip(expectedPath);
-                    //pevent.Graphics.FillPath(BackColorBrush, expectedPath);
-                }
-            }
-            dc.FillRectangle (ResPool.GetHatchBrush (HatchStyle.Percent50,
+			// sadly enough, the rectangle gets always filled with a hatchbrush
+			dc.FillRectangle (ResPool.GetHatchBrush (HatchStyle.Percent50,
 								 Color.FromArgb (Clamp (ColorControl.R + 3, 0, 255),
 										 ColorControl.G, ColorControl.B),
 								 ColorControl),
@@ -6666,7 +6634,6 @@ namespace System.Windows.Forms
 				dc.DrawLine (pen, rectangle.X, rectangle.Bottom - 1, rectangle.Right - 1, rectangle.Bottom - 1);
 				dc.DrawLine (pen, rectangle.Right - 1, rectangle.Y, rectangle.Right - 1, rectangle.Bottom - 2);
 			}
-			dc.Clip = originalClipO;
 		}
 
 
@@ -6991,7 +6958,7 @@ namespace System.Windows.Forms
 			rect.Width--;
 			rect.Height--;			
 			
-			graphics.DrawRoundedRectangle (pen, rect);
+			graphics.DrawRectangle (pen, rect);
 			pen.Dispose ();
 		}
 		

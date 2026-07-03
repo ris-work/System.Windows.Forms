@@ -1380,7 +1380,7 @@ namespace System.Windows.Forms {
 		internal virtual void PaintPartBackground (Graphics graphics, Rectangle cellBounds, DataGridViewCellStyle style)
 		{
 			Color color = style.BackColor;
-			graphics.FillRoundedRect (ThemeEngine.Current.ResPool.GetSolidBrush (color), cellBounds);
+			graphics.FillRectangle (ThemeEngine.Current.ResPool.GetSolidBrush (color), cellBounds);
 		}
 
 		internal Pen GetBorderPen ()
@@ -1388,24 +1388,24 @@ namespace System.Windows.Forms {
 			return ThemeEngine.Current.ResPool.GetPen (DataGridView.GridColor);
 		}
 
-        internal virtual void PaintPartContent(Graphics graphics, Rectangle cellBounds, int rowIndex, DataGridViewElementStates cellState, DataGridViewCellStyle cellStyle, object formattedValue)
-        {
-            if (IsInEditMode)
-                return;
+		internal virtual void PaintPartContent (Graphics graphics, Rectangle cellBounds, int rowIndex, DataGridViewElementStates cellState, DataGridViewCellStyle cellStyle, object formattedValue)
+		{
+			if (IsInEditMode)
+				return;
+				
+			Color color = Selected ? cellStyle.SelectionForeColor : cellStyle.ForeColor;
 
-            Color color = Selected ? cellStyle.SelectionForeColor : cellStyle.ForeColor;
+			TextFormatFlags flags = TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter | TextFormatFlags.TextBoxControl;
+			flags |= AlignmentToFlags (style.Alignment);
+			
+			cellBounds.Height -= 2;
+			cellBounds.Width -= 2;
 
-            TextFormatFlags flags = TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter | TextFormatFlags.TextBoxControl;
-            flags |= AlignmentToFlags(cellStyle.Alignment); // <--- FIXED HERE
-
-            cellBounds.Height -= 2;
-            cellBounds.Width -= 2;
-
-            if (formattedValue != null)
-                TextRenderer.DrawText(graphics, formattedValue.ToString(), cellStyle.Font, cellBounds, color, flags);
-        }
-
-        private void PaintPartFocus (Graphics graphics, Rectangle cellBounds)
+			if (formattedValue != null)
+				TextRenderer.DrawText (graphics, formattedValue.ToString (), cellStyle.Font, cellBounds, color, flags);
+		}
+		
+		private void PaintPartFocus (Graphics graphics, Rectangle cellBounds)
 		{
 			cellBounds.Width--;
 			cellBounds.Height--;
@@ -1423,9 +1423,7 @@ namespace System.Windows.Forms {
 				return;
 				
 			Color color = cellStyle.SelectionBackColor;
-			//Color color = Color.Transparent;
-			Rectangle cb2 = new Rectangle(cellBounds.Left, cellBounds.Top, cellBounds.Width-2, cellBounds.Height-2);
-            graphics.FillRoundedRect (ThemeEngine.Current.ResPool.GetSolidBrush (color), cb2);
+			graphics.FillRectangle (ThemeEngine.Current.ResPool.GetSolidBrush (color), cellBounds);
 		}
 
 		internal void PaintWork (Graphics graphics, Rectangle clipBounds, Rectangle cellBounds, int rowIndex, DataGridViewElementStates cellState, DataGridViewCellStyle cellStyle, DataGridViewAdvancedBorderStyle advancedBorderStyle, DataGridViewPaintParts paintParts)
