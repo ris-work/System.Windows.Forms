@@ -1907,7 +1907,6 @@ namespace System.Windows.Forms {
 						}
 
 						if (current_backcolor != Color.Empty && current_backcolor != owner.BackColor) {
-							current_backcolor = Color.FromArgb(200,current_backcolor);
 							g.FillRectangle (ThemeEngine.Current.ResPool.GetSolidBrush (current_backcolor),
 							    offset_x + line.widths [old_tag_pos - 1] + line.X - viewport_x,
 							    line_y - line.SpacingBefore,
