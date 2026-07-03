@@ -252,6 +252,41 @@ namespace System.Windows.Forms {
 		static Hashtable	messageHold;
         private Dictionary<IntPtr, Bitmap> _backBuffers = new Dictionary<IntPtr, Bitmap>();
 
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct XVisualInfo
+        {
+            public IntPtr visual;
+            public IntPtr visualid;
+            public int screen;
+            public int depth;
+            public int c_class;
+            public IntPtr red_mask;
+            public IntPtr green_mask;
+            public IntPtr blue_mask;
+            public int colormap_size;
+            public int bits_per_rgb;
+        }
+
+        [Flags]
+        internal enum VisualInfoMask
+        {
+            No = 0x0,
+            ID = 0x1,
+            Depth = 0x8,
+            Screen = 0x20,
+            Class = 0x80
+        }
+
+        internal enum VisualClass
+        {
+            StaticGray = 0,
+            GrayScale = 1,
+            StaticColor = 2,
+            PseudoColor = 3,
+            TrueColor = 4,
+            DirectColor = 5
+        }
+
         #endregion   // Local Variables                    
         #region Constructors
         XplatUIX11()
@@ -273,10 +308,30 @@ namespace System.Windows.Forms {
 			// X11 Initialization
 			SetDisplay(XOpenDisplay(IntPtr.Zero));
 			X11DesktopColors.Initialize();
+            // Find a 32-bit TrueColor visual so every window we create has
+            // a 32-bit pixel format that matches the Skia back-buffer.
+			/*
+            try
+            {
+                XVisualInfo vi;
+                int rc = XMatchVisualInfo(DisplayHandle, ScreenNo, 32, (int)VisualClass.TrueColor, out vi);
+                if (rc != 0) // XMatchVisualInfo returns non-zero on success
+                {
+                    CustomVisual = vi.visual;
+                    // Must create a colormap matching the custom visual
+                    CustomColormap = XCreateColormap(DisplayHandle, RootWindow, CustomVisual, 0 */
+						/*AllocNone *//*);
+                }
+            }
+            catch
+            {
+                CustomVisual = IntPtr.Zero;
+                CustomColormap = IntPtr.Zero;
+            }*/
 
-			
-			// Disable keyboard autorepeat
-			try {
+
+            // Disable keyboard autorepeat
+            try {
 				XkbSetDetectableAutoRepeat (DisplayHandle, true,  IntPtr.Zero);
 				detectable_key_auto_repeat = true;
 			} catch {
@@ -2697,21 +2752,24 @@ namespace System.Windows.Forms {
 
 			Size XWindowSize = TranslateWindowSizeToXWindowSize (cp);
 			Rectangle XClientRect = TranslateClientRectangleToXClientRectangle (hwnd, cp.control);
-				
-			lock (XlibLock) {
-				WholeWindow = XCreateWindow(DisplayHandle, ParentHandle, X, Y, XWindowSize.Width, XWindowSize.Height, 0, (int)CreateWindowArgs.CopyFromParent, (int)CreateWindowArgs.InputOutput, IntPtr.Zero, new UIntPtr ((uint)ValueMask), ref Attributes);
-				if (WholeWindow != IntPtr.Zero) {
-					ValueMask &= ~(SetWindowValuemask.OverrideRedirect | SetWindowValuemask.SaveUnder);
 
-					if (CustomVisual != IntPtr.Zero && CustomColormap != IntPtr.Zero) {
-						ValueMask = SetWindowValuemask.ColorMap;
-						Attributes.colormap = CustomColormap;
-					}
-					ClientWindow = XCreateWindow(DisplayHandle, WholeWindow, XClientRect.X, XClientRect.Y, XClientRect.Width, XClientRect.Height, 0, (int)CreateWindowArgs.CopyFromParent, (int)CreateWindowArgs.InputOutput, CustomVisual, new UIntPtr ((uint)ValueMask), ref Attributes);
-				}
-			}
+            lock (XlibLock)
+            {
+                WholeWindow = XCreateWindow(DisplayHandle, ParentHandle, X, Y, XWindowSize.Width, XWindowSize.Height, 0, (int)CreateWindowArgs.CopyFromParent, (int)CreateWindowArgs.InputOutput, IntPtr.Zero, new UIntPtr((uint)ValueMask), ref Attributes);
+                if (WholeWindow != IntPtr.Zero)
+                {
+                    ValueMask &= ~(SetWindowValuemask.OverrideRedirect | SetWindowValuemask.SaveUnder);
 
-			if ((WholeWindow == IntPtr.Zero) || (ClientWindow == IntPtr.Zero)) {
+                    if (CustomVisual != IntPtr.Zero && CustomColormap != IntPtr.Zero)
+                    {
+                        ValueMask = SetWindowValuemask.ColorMap;
+                        Attributes.colormap = CustomColormap;
+                    }
+                    ClientWindow = XCreateWindow(DisplayHandle, WholeWindow, XClientRect.X, XClientRect.Y, XClientRect.Width, XClientRect.Height, 0, (int)CreateWindowArgs.CopyFromParent, (int)CreateWindowArgs.InputOutput, CustomVisual, new UIntPtr((uint)ValueMask), ref Attributes);
+                }
+            }
+
+            if ((WholeWindow == IntPtr.Zero) || (ClientWindow == IntPtr.Zero)) {
 				throw new Exception("Could not create X11 windows");
 			}
 
@@ -4850,11 +4908,26 @@ namespace System.Windows.Forms {
             Console.WriteLine($"[X11 PaintStart] handle={handle}, client={client}, width={width}, height={height}");
 
             Bitmap backBuffer;
+            bool newBuffer = false;
             if (!_backBuffers.TryGetValue(handle, out backBuffer) || backBuffer.Width != width || backBuffer.Height != height)
             {
                 backBuffer?.Dispose();
                 backBuffer = new Bitmap(width, height);
                 _backBuffers[handle] = backBuffer;
+                newBuffer = true;
+            }
+
+            // For a newly created back buffer, fill it with the control's
+            // background color so that areas not yet reached by a paint
+            // event are not left transparent (which would render as black).
+            if (newBuffer)
+            {
+                using (Graphics bg = Graphics.FromImage(backBuffer))
+                {
+                    Control ctl = Control.FromHandle(handle);
+                    Color bgColor = ctl != null ? ctl.BackColor : SystemColors.Control;
+                    bg.Clear(bgColor);
+                }
             }
 
             Graphics dc = Graphics.FromImage(backBuffer);
@@ -4863,22 +4936,37 @@ namespace System.Windows.Forms {
 
             if (client)
             {
-                Region clip_region = new Region();
-                clip_region.MakeEmpty();
+                Region clip_region;
+                Rectangle paint_rect;
 
-                foreach (Rectangle r in hwnd.ClipRectangles)
+                if (newBuffer)
                 {
-                    Rectangle r2 = Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom + 1);
-                    clip_region.Union(r2);
+                    // New back buffer: paint the entire client area so
+                    // we don't end up with only a partial update showing.
+                    clip_region = new Region(new Rectangle(0, 0, width, height));
+                    paint_rect = new Rectangle(0, 0, width, height);
                 }
-
-                if (hwnd.UserClip != null)
+                else
                 {
-                    clip_region.Intersect(hwnd.UserClip);
+                    clip_region = new Region();
+                    clip_region.MakeEmpty();
+
+                    foreach (Rectangle r in hwnd.ClipRectangles)
+                    {
+                        Rectangle r2 = Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom + 1);
+                        clip_region.Union(r2);
+                    }
+
+                    if (hwnd.UserClip != null)
+                    {
+                        clip_region.Intersect(hwnd.UserClip);
+                    }
+
+                    paint_rect = hwnd.Invalid;
                 }
 
                 dc.Clip = clip_region;
-                paint_event = new PaintEventArgs(dc, hwnd.Invalid);
+                paint_event = new PaintEventArgs(dc, paint_rect);
                 hwnd.expose_pending = false;
                 hwnd.ClearInvalidArea();
             }
@@ -4947,13 +5035,19 @@ namespace System.Windows.Forms {
             if (pixels == IntPtr.Zero || width <= 0 || height <= 0)
                 return;
 
+            // Query the drawable's actual depth - using a mismatched depth
+            // causes BadMatch errors from XPutImage.
+            IntPtr root;
+            int x_out, y_out, w_out, h_out, bw_out, depth_out;
+            XGetGeometry(DisplayHandle, drawable, out root, out x_out, out y_out,
+                         out w_out, out h_out, out bw_out, out depth_out);
+
+            if (depth_out <= 0)
+                depth_out = 32;
+
             IntPtr visual = XDefaultVisual(DisplayHandle, ScreenNo);
-            uint depth = XDefaultDepth(DisplayHandle, ScreenNo);
 
-            if (depth == 0)
-                depth = 24;
-
-            IntPtr image = XCreateImage(DisplayHandle, visual, depth, ZPixmap, 0, pixels, (uint)width, (uint)height, 32, skiaStride);
+            IntPtr image = XCreateImage(DisplayHandle, visual, (uint)depth_out, ZPixmap, 0, pixels, (uint)width, (uint)height, 32, skiaStride);
             if (image == IntPtr.Zero)
                 return;
 
@@ -7551,8 +7645,13 @@ namespace System.Windows.Forms {
 
 		[DllImport ("libX11", EntryPoint="XCreatePixmapFromBitmapData")]
 		internal extern static IntPtr XCreatePixmapFromBitmapData(IntPtr display, IntPtr drawable, byte[] data, int width, int height, IntPtr fg, IntPtr bg, int depth);
+        [DllImport("libX11", EntryPoint = "XMatchVisualInfo")]
+        internal extern static int XMatchVisualInfo(IntPtr display, int screen, int depth, int c_class, out XVisualInfo visual_info);
 
-		[DllImport ("libX11", EntryPoint="XCreatePixmap")]
+        [DllImport("libX11", EntryPoint = "XCreateColormap")]
+        internal extern static IntPtr XCreateColormap(IntPtr display, IntPtr window, IntPtr visual, int alloc);
+
+        [DllImport ("libX11", EntryPoint="XCreatePixmap")]
 		internal extern static IntPtr XCreatePixmap(IntPtr display, IntPtr d, int width, int height, int depth);
 
 		[DllImport ("libX11", EntryPoint="XFreePixmap")]
