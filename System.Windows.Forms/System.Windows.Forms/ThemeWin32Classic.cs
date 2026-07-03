@@ -1562,7 +1562,15 @@ namespace System.Windows.Forms
 		#region ComboBox		
 		public override void DrawComboBoxItem (ComboBox ctrl, DrawItemEventArgs e)
 		{
-			Color back_color, fore_color;
+
+            System.Console.WriteLine($"[Theme.DrawComboBoxItem] START bounds={e.Bounds} index={e.Index} state={e.State} fore={e.ForeColor}(A={e.ForeColor.A}) back={e.BackColor} dc_null={e.Graphics == null}");
+            // === INJECTED: sanity paint #1 ===
+            using (var sanity = new SolidBrush(Color.Magenta))
+            {
+                e.Graphics.FillRectangle(sanity, e.Bounds);
+            }
+            System.Console.WriteLine($"[Theme.DrawComboBoxItem] after sanity-fill #1");
+            Color back_color, fore_color;
 			Rectangle text_draw = e.Bounds;
 			StringFormat string_format = new StringFormat ();
 			string_format.FormatFlags = StringFormatFlags.LineLimit | StringFormatFlags.NoWrap;
@@ -1586,12 +1594,20 @@ namespace System.Windows.Forms
 					ResPool.GetSolidBrush (fore_color),
 					text_draw, string_format);
 			}
-			
-			if ((e.State & DrawItemState.Focus) == DrawItemState.Focus) {
+            // === INJECTED: sanity paint #2 ===
+            using (var sanity = new SolidBrush(Color.Lime))
+            {
+                e.Graphics.FillRectangle(sanity, new Rectangle(e.Bounds.X, e.Bounds.Y, e.Bounds.Width, 1));
+            }
+            System.Console.WriteLine($"[Theme.DrawComboBoxItem] after sanity-fill #2, about to draw text='{ctrl.Items[e.Index]}'");
+
+            if ((e.State & DrawItemState.Focus) == DrawItemState.Focus) {
 				CPDrawFocusRectangle (e.Graphics, e.Bounds, fore_color, back_color);
 			}
+            System.Console.WriteLine($"[Theme.DrawComboBoxItem] before END, last-write-was-at");
+            System.Console.WriteLine($"[Theme.DrawComboBoxItem] END text='{ctrl.Items[e.Index]}'");
 
-			string_format.Dispose ();
+            string_format.Dispose ();
 		}
 		
 		public override void DrawFlatStyleComboButton (Graphics graphics, Rectangle rectangle, ButtonState state)

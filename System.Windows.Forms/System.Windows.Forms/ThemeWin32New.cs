@@ -1785,7 +1785,8 @@ namespace System.Windows.Forms
 
         public override void DrawComboBoxItem (ComboBox ctrl, DrawItemEventArgs e)
 		{
-			Color back_color, fore_color;
+            System.Console.WriteLine($"[Theme.DrawComboBoxItem] START bounds={e.Bounds} index={e.Index} state={e.State} fore={e.ForeColor}(A={e.ForeColor.A}) back={e.BackColor} dc_null={e.Graphics == null}");
+            Color back_color, fore_color;
 			Rectangle text_draw = e.Bounds;
 			StringFormat string_format = new StringFormat ();
 			string_format.FormatFlags = StringFormatFlags.LineLimit | StringFormatFlags.NoWrap;
@@ -1813,8 +1814,9 @@ namespace System.Windows.Forms
 			if ((e.State & DrawItemState.Focus) == DrawItemState.Focus) {
 				CPDrawFocusRectangle (e.Graphics, e.Bounds, fore_color, back_color);
 			}
+            System.Console.WriteLine($"[Theme.DrawComboBoxItem] END text='{ctrl.Items[e.Index]}'");
 
-			string_format.Dispose ();
+            string_format.Dispose ();
 		}
 		
 		public override void DrawFlatStyleComboButton (Graphics graphics, Rectangle rectangle, ButtonState state)

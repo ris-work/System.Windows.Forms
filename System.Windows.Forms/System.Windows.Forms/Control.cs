@@ -377,28 +377,57 @@ namespace System.Windows.Forms
 				real_graphics.Push(pe.SetGraphics (XplatUI.GetOffscreenGraphics (back_buffer)));
 			}
 
-			public void End (PaintEventArgs pe) {
-				Graphics buffered_graphics;
-				buffered_graphics = pe.SetGraphics ((Graphics) real_graphics.Pop ());
-				buffered_graphics.Flush();
+            public void End(PaintEventArgs pe)
+            {
+                Graphics buffered_graphics;
+                buffered_graphics = pe.SetGraphics((Graphics)real_graphics.Pop());
+                buffered_graphics.Flush();
 
-				if (pending_disposal) 
-					Dispose ();
-				else {
-					XplatUI.BlitFromOffscreen (parent.Handle, pe.Graphics, back_buffer, buffered_graphics, pe.ClipRectangle);
-					InvalidRegion.Exclude (pe.ClipRectangle);
-				}
-				buffered_graphics.Dispose ();
-			}
-			
-			public void Invalidate ()
-			{
-				if (InvalidRegion != null)
-					InvalidRegion.Dispose ();
-				InvalidRegion = new Region (parent.ClientRectangle);
-			}
-			
-			public void Dispose () {
+                if (pending_disposal)
+                    Dispose();
+                else
+                {
+                    string logDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SDLogs");
+                    System.IO.Directory.CreateDirectory(logDir);
+                    string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+                    string path = System.IO.Path.Combine(logDir, timestamp + "_Control_BackBufferBeforeBlit.png");
+                    try
+                    {
+                        ((Bitmap)back_buffer).Save(path, System.Drawing.Imaging.ImageFormat.Png);
+                        Console.WriteLine("[DIAG] Saved back_buffer to " + path);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("[DIAG] Failed to save back_buffer: " + ex.Message);
+                    }
+
+                    XplatUI.BlitFromOffscreen(parent.Handle, pe.Graphics, back_buffer, buffered_graphics, pe.ClipRectangle);
+                    InvalidRegion.Exclude(pe.ClipRectangle);
+                }
+                buffered_graphics.Dispose();
+            }
+
+            public void Invalidate()
+            {
+                if (InvalidRegion != null)
+                    InvalidRegion.Dispose();
+                InvalidRegion = new Region(parent.ClientRectangle);
+            }
+
+            public void SaveBuffer(string path)
+            {
+                try
+                {
+                    ((Bitmap)back_buffer).Save(path, System.Drawing.Imaging.ImageFormat.Png);
+                    Console.WriteLine("[DIAG] Saved buffer to " + path);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("[DIAG] Failed to save buffer: " + ex.Message);
+                }
+            }
+
+            public void Dispose () {
 				if (real_graphics.Count > 0) {
 					pending_disposal = true;
 					return;
@@ -1454,28 +1483,20 @@ namespace System.Windows.Forms
 							rv_region_set = true;
                         }
                         Region originalClipO = pevent.Graphics.Clip.Clone();
-						if (RVUtils.UseClipping)
-						{
-							using (var expectedPath = RVUtils.CreateRoundedRectanglePath(fullRect, RVUtils.cornerRadius))
-							{
-								expectedPath.CloseFigure();
-								pevent.Graphics.SetClip(expectedPath);
-								//pevent.Graphics.FillPath(BackColorBrush, expectedPath);
-							}
-						}
-						//pevent.Graphics.Clip = originalClipO;
-
-
-                        // 3. SAVE STATE and APPLY CLIP FIRST
-                        // This is critical. We must restrict drawing to the rounded region BEFORE 
-                        // we paint the background or the gradient.
-                        Region originalClip = pevent.Graphics.Clip.Clone();
-                        //pevent.Graphics.IntersectClip(this.Region);
+                        GraphicsState clipState = pevent.Graphics.Save();
+                        if (RVUtils.UseClipping)
+                        {
+                            using (var expectedPath = RVUtils.CreateRoundedRectanglePath(fullRect, RVUtils.cornerRadius))
+                            {
+                                expectedPath.CloseFigure();
+                                pevent.Graphics.SetClip(expectedPath);
+                            }
+                        }
 
                         try
                         {
-							if (RVUtils.cornerRadius > 0 && this.BackColor.A == 255 && RVUtils.FakeAA) { this.BackColor = Color.FromArgb(250, this.BackColor); }
-                                // 4. Paint Background
+                            if (RVUtils.cornerRadius > 0 && this.BackColor.A == 255 && RVUtils.FakeAA) { this.BackColor = Color.FromArgb(250, this.BackColor); }
+                            // 4. Paint Background
                             pevent.Graphics.FillRectangle(BackColorBrush, fullRect);
 
                             // 5. Paint Overlay using Extension Methods
@@ -1527,11 +1548,9 @@ namespace System.Windows.Forms
                         }
                         finally
                         {
-                            // 6. Restore Clip
-                            pevent.Graphics.Clip = originalClip;
+                            pevent.Graphics.Restore(clipState);
                         }
                         if (this is ButtonBase) { if (RVUtils.IsFrutigerAeroEnableBorder == true) pevent.Graphics.DrawRoundedRectangleBorder(new Rectangle(0, 0, this.Width, this.Height) { }, RVUtils.cornerRadius, 1); }
-						pevent.Graphics.Clip = originalClipO;
                     }
                     else
                     {
@@ -5403,60 +5422,70 @@ namespace System.Windows.Forms
 		}
 
 
-		// Nice description of what should happen when handling WM_PAINT
-		// can be found here: http://pluralsight.com/wiki/default.aspx/Craig/FlickerFreeControlDrawing.html
-		// and here http://msdn.microsoft.com/msdnmag/issues/06/03/WindowsFormsPerformance/
-		private void WmPaint (ref Message m) {
-			IntPtr handle = Handle;
+        // Nice description of what should happen when handling WM_PAINT
+        // can be found here: http://pluralsight.com/wiki/default.aspx/Craig/FlickerFreeControlDrawing.html
+        // and here http://msdn.microsoft.com/msdnmag/issues/06/03/WindowsFormsPerformance/
+        private void WmPaint(ref Message m)
+        {
+            IntPtr handle = Handle;
 
-			PaintEventArgs paint_event = XplatUI.PaintEventStart (ref m, handle, true);
+            PaintEventArgs paint_event = XplatUI.PaintEventStart(ref m, handle, true);
 
-			if (paint_event == null)
-				return;
+            if (paint_event == null)
+                return;
 
-			try {
-				DoubleBuffer current_buffer = null;
-				if (UseDoubleBuffering) {
-					current_buffer = GetBackBuffer ();
-					// This optimization doesn't work when the area is invalidated
-					// during a paint operation because finishing the paint operation
-					// clears the invalidated region and then this thing keeps the new
-					// invalidate from working.  To re-enable this, we would need a
-					// mechanism to allow for nested invalidates (see bug #328681)
-					//if (!current_buffer.InvalidRegion.IsVisible (paint_event.ClipRectangle)) {
-					//        // Just blit the previous image
-					//        current_buffer.Blit (paint_event);
-					//        XplatUI.PaintEventEnd (ref m, handle, true);
-					//        return;
-					//}
-					current_buffer.Start (paint_event);
-				}
-				// If using OptimizedDoubleBuffer, ensure the clip region gets set
-				if (GetStyle (ControlStyles.OptimizedDoubleBuffer))
-					paint_event.Graphics.SetClip (Rectangle.Intersect (paint_event.ClipRectangle, this.ClientRectangle));
+            try
+            {
+                DoubleBuffer current_buffer = null;
+                if (UseDoubleBuffering)
+                {
+                    current_buffer = GetBackBuffer();
+                    current_buffer.Start(paint_event);
 
-				if (!GetStyle(ControlStyles.Opaque)) {
-					OnPaintBackground (paint_event);
-				}
+                    // --- DIAGNOSTIC: SAVE BEFORE PAINT ---
+                    string logDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SDLogs");
+                    System.IO.Directory.CreateDirectory(logDir);
+                    string ts1 = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+                    current_buffer.SaveBuffer(System.IO.Path.Combine(logDir, ts1 + "_WmPaint_AfterStart_BeforePaint.png"));
+                    // --------------------------------------
+                }
+                // If using OptimizedDoubleBuffer, ensure the clip region gets set
+                if (GetStyle(ControlStyles.OptimizedDoubleBuffer))
+                    paint_event.Graphics.SetClip(Rectangle.Intersect(paint_event.ClipRectangle, this.ClientRectangle));
 
-				// Button-derived controls choose to ignore their Opaque style, give them a chance to draw their background anyways
-				OnPaintBackgroundInternal (paint_event);
+                if (!GetStyle(ControlStyles.Opaque))
+                {
+                    OnPaintBackground(paint_event);
+                }
 
-				OnPaintInternal(paint_event);
-				if (!paint_event.Handled) {
-					OnPaint (paint_event);
-				}
+                // Button-derived controls choose to ignore their Opaque style, give them a chance to draw their background anyways
+                OnPaintBackgroundInternal(paint_event);
 
-				if (current_buffer != null) {
-					current_buffer.End (paint_event);
-				}
-			}
-			finally {
-				XplatUI.PaintEventEnd (ref m, handle, true, paint_event);
-			}
-		}
+                OnPaintInternal(paint_event);
+                if (!paint_event.Handled)
+                {
+                    OnPaint(paint_event);
+                }
 
-		private void WmEraseBackground (ref Message m) {
+                if (current_buffer != null)
+                {
+                    // --- DIAGNOSTIC: SAVE AFTER PAINT ---
+                    string logDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SDLogs");
+                    System.IO.Directory.CreateDirectory(logDir);
+                    string ts2 = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+                    current_buffer.SaveBuffer(System.IO.Path.Combine(logDir, ts2 + "_WmPaint_AfterPaint_BeforeEnd.png"));
+                    // -------------------------------------
+
+                    current_buffer.End(paint_event);
+                }
+            }
+            finally
+            {
+                XplatUI.PaintEventEnd(ref m, handle, true, paint_event);
+            }
+        }
+
+        private void WmEraseBackground (ref Message m) {
 			// The DefWndProc will never have to handle this, we always paint the background in managed code
 			// In theory this code would look at ControlStyles.AllPaintingInWmPaint and and call OnPaintBackground
 			// here but it just makes things more complicated...

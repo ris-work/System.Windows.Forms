@@ -1835,8 +1835,10 @@ namespace System.Windows.Forms
 
 		internal override void OnPaintInternal (PaintEventArgs pevent)
 		{
-			if (suspend_ctrlupdate)
+            System.Console.WriteLine($"OnPaint called from ComboBox");
+            if (suspend_ctrlupdate)
 				return;
+
 
 			Draw (ClientRectangle, pevent.Graphics);
 		}
@@ -2556,39 +2558,50 @@ namespace System.Windows.Forms
 				last_item = LastVisibleItem ();
 			}
 
-			private void Draw (Rectangle clip, Graphics dc)
-			{
-				dc.FillRoundedRect (ThemeEngine.Current.ResPool.GetSolidBrush (owner.BackColor), clip);
+            private void Draw(Rectangle clip, Graphics dc)
+            {
+                System.Console.WriteLine($"[CLB.Draw] START clip={clip} items={owner.Items.Count} top={top_item} last={last_item} textarea_drawable={textarea_drawable}");
 
-				if (owner.Items.Count > 0) {
-					
-					for (int i = top_item; i <= last_item; i++) {
-						Rectangle item_rect = GetItemDisplayRectangle (i, top_item);
+                dc.FillRoundedRect(ThemeEngine.Current.ResPool.GetSolidBrush(owner.BackColor), clip);
 
-						if (!clip.IntersectsWith (item_rect))
-							continue;
+                if (owner.Items.Count > 0)
+                {
 
-						DrawItemState state = DrawItemState.None;
-						Color back_color = owner.BackColor;
-						Color fore_color = owner.ForeColor;
+                    for (int i = top_item; i <= last_item; i++)
+                    {
+                        Rectangle item_rect = GetItemDisplayRectangle(i, top_item);
+                        bool intersects = clip.IntersectsWith(item_rect);
+                        System.Console.WriteLine($"[CLB.Draw] item={i} rect={item_rect} clip_intersects={intersects}");
 
-						if (i == HighlightedIndex) {
-							state |= DrawItemState.Selected;
-							back_color = SystemColors.Highlight;
-							fore_color = SystemColors.HighlightText;
-							
-							if (owner.DropDownStyle == ComboBoxStyle.DropDownList) {
-								state |= DrawItemState.Focus;
-							}
-						}
+                        if (!intersects)
+                            continue;
 
-						owner.HandleDrawItem (new DrawItemEventArgs (dc, owner.Font, item_rect,
-							i, state, fore_color, back_color));
-					}
-				}
-			}
+                        DrawItemState state = DrawItemState.None;
+                        Color back_color = owner.BackColor;
+                        Color fore_color = owner.ForeColor;
 
-			int highlighted_index = -1;
+                        if (i == HighlightedIndex)
+                        {
+                            state |= DrawItemState.Selected;
+                            back_color = SystemColors.Highlight;
+                            fore_color = SystemColors.HighlightText;
+
+                            if (owner.DropDownStyle == ComboBoxStyle.DropDownList)
+                            {
+                                state |= DrawItemState.Focus;
+                            }
+                        }
+
+                        System.Console.WriteLine($"[CLB.Draw] calling HandleDrawItem for item={i} item_text='{owner.Items[i]}' fore={fore_color} back={back_color} rect={item_rect}");
+                        owner.HandleDrawItem(new DrawItemEventArgs(dc, owner.Font, item_rect,
+                            i, state, fore_color, back_color));
+                        System.Console.WriteLine($"[CLB.Draw] HandleDrawItem returned for item={i}");
+                    }
+                }
+                System.Console.WriteLine($"[CLB.Draw] END");
+            }
+
+            int highlighted_index = -1;
 
 			public int HighlightedIndex {
 				get { return highlighted_index; }
@@ -2763,6 +2776,7 @@ namespace System.Windows.Forms
 
 			internal override void OnPaintInternal (PaintEventArgs pevent)
 			{
+				System.Console.WriteLine($"OnPaint called from ComboListBox");
 				Draw (pevent.ClipRectangle,pevent.Graphics);
 			}
 

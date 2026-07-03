@@ -3501,9 +3501,9 @@ namespace System.Windows.Forms {
             return Graphics.FromImage(new Bitmap(1, 1));
         }
 
-        
 
-        internal override void BlitFromOffscreen(IntPtr dest_handle, Graphics dest_dc, object offscreen_drawable, Graphics offscreen_dc, Rectangle r)
+
+        /*internal override void BlitFromOffscreen(IntPtr dest_handle, Graphics dest_dc, object offscreen_drawable, Graphics offscreen_dc, Rectangle r)
         {
             Console.WriteLine("=========================================");
             Console.WriteLine("BlitFromOffscreen START");
@@ -3581,6 +3581,147 @@ namespace System.Windows.Forms {
 
             Console.WriteLine("BlitFromOffscreen END");
             Console.WriteLine("=========================================");
+        }*/
+        /*internal override void BlitFromOffscreen(IntPtr dest_handle, Graphics dest_dc, object offscreen_drawable, Graphics offscreen_dc, Rectangle r)
+        {
+            if (r.Width <= 0 || r.Height <= 0) return;
+			Console.WriteLine($"INCOMING TYPE: {offscreen_drawable.GetType()}");
+
+            using (Bitmap temp = new Bitmap(r.Width, r.Height))
+            {
+                temp.SetResolution(96, 96);
+                using (Graphics g = Graphics.FromImage(temp))
+                {
+                    // 1. Fill temp with Magenta to make it visible
+                    using (SolidBrush magenta = new SolidBrush(Color.Magenta))
+                        g.FillRectangle(magenta, 0, 0, temp.Width, temp.Height);
+
+                    // 2. Create a generated bitmap (temp2) large enough to have a sub-rectangle
+                    int temp2Width = Math.Max(200, r.Width + r.X + 10);
+                    int temp2Height = Math.Max(200, r.Height + r.Y + 10);
+                    using (Bitmap temp2 = new Bitmap(temp2Width, temp2Height))
+                    {
+                        using (Graphics g2 = Graphics.FromImage(temp2))
+                        {
+                            g2.Clear(Color.White);
+                            // Draw vertical blue lines
+                            using (Pen bluePen = new Pen(Color.Blue, 2))
+                            {
+                                for (int i = 0; i < temp2.Width; i += 10)
+                                    g2.DrawLine(bluePen, i, 0, i, temp2.Height);
+                            }
+                            g2.DrawRectangle(Pens.Red, 0, 0, temp2.Width - 1, temp2.Height - 1);
+                        }
+
+                        // --- REPRODUCE THE BUG ---
+                        // This draws a sub-rectangle from temp2. If DrawImage is broken, the blue lines will be slanted.
+                        Console.WriteLine("Reproducing bug: DrawImage sub-rectangle from temp2...");
+                        g.DrawImage(temp2, new Rectangle(0, 0, r.Width, r.Height), r.X, r.Y, r.Width, r.Height, GraphicsUnit.Pixel);
+						
+
+                        // --- APPLY THE FIX ---
+                        // This overwrites the slanted lines with straight ones using LockBits
+                        Console.WriteLine("Applying fix: LockBits copy...");
+                        if (temp2.PixelFormat == System.Drawing.Imaging.PixelFormat.Format32bppArgb)
+                        {
+                            System.Drawing.Imaging.BitmapData srcData = temp2.LockBits(
+                                new Rectangle(r.X, r.Y, r.Width, r.Height),
+                                System.Drawing.Imaging.ImageLockMode.ReadOnly,
+                                System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+
+                            System.Drawing.Imaging.BitmapData dstData = temp.LockBits(
+                                new Rectangle(0, 0, r.Width, r.Height),
+                                System.Drawing.Imaging.ImageLockMode.WriteOnly,
+                                System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+
+                            unsafe
+                            {
+                                byte* srcPtr = (byte*)srcData.Scan0;
+                                byte* dstPtr = (byte*)dstData.Scan0;
+                                int srcStride = srcData.Stride;
+                                int dstStride = dstData.Stride;
+                                int bytesPerRow = r.Width * 4;
+
+                                for (int y = 0; y < r.Height; y++)
+                                {
+                                    Buffer.MemoryCopy(srcPtr, dstPtr, bytesPerRow, bytesPerRow);
+                                    srcPtr += srcStride;
+                                    dstPtr += dstStride;
+                                }
+                            }
+
+                            temp2.UnlockBits(srcData);
+                            temp.UnlockBits(dstData);
+                        }
+                    }
+                    g.DrawImage((Bitmap)offscreen_drawable, new Rectangle(0, 0, r.Width, r.Height), r.X, r.Y, r.Width, r.Height, GraphicsUnit.Pixel);
+
+                    // 3. Draw blue border on temp
+                    using (Pen bluePen = new Pen(Color.Blue, 1))
+                        g.DrawRectangle(bluePen, 0, 0, r.Width - 1, r.Height - 1);
+                }
+
+                // 4. Draw temp to dest_dc
+                dest_dc.DrawImage(temp, r, 0, 0, temp.Width, temp.Height, GraphicsUnit.Pixel);
+            }
+        }*/
+
+        internal override void BlitFromOffscreen(IntPtr dest_handle, Graphics dest_dc, object offscreen_drawable, Graphics offscreen_dc, Rectangle r)
+        {
+            if (r.Width <= 0 || r.Height <= 0)
+                return;
+
+            Image img = offscreen_drawable as Image;
+            if (img == null)
+                return;
+
+            string logDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SDLogs");
+            System.IO.Directory.CreateDirectory(logDir);
+            string ts = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+
+            string imgPath = System.IO.Path.Combine(logDir, ts + "_Blit_IncomingImg.png");
+            try
+            {
+                img.Save(imgPath, System.Drawing.Imaging.ImageFormat.Png);
+                Console.WriteLine("[DIAG] Saved incoming img to " + imgPath);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[DIAG] Failed to save img: " + ex.Message);
+            }
+
+            using (Bitmap temp = new Bitmap(r.Width, r.Height))
+            {
+                temp.SetResolution(img.HorizontalResolution, img.VerticalResolution);
+
+                using (Graphics g = Graphics.FromImage(temp))
+                {
+                    using (SolidBrush yellow = new SolidBrush(Color.Magenta))
+                    {
+                        g.FillRectangle(yellow, 0, 0, temp.Width, temp.Height);
+                    }
+
+                    g.DrawImage(img, new Rectangle(0, 0, r.Width, r.Height), r.X, r.Y, r.Width, r.Height, GraphicsUnit.Pixel);
+
+                    using (SolidBrush blue = new SolidBrush(Color.Blue))
+                    {
+                        g.DrawRectangle(new Pen(blue), new Rectangle(0, 0, r.Width - 1, r.Height - 1));
+                    }
+                }
+
+                string tempPath = System.IO.Path.Combine(logDir, ts + "_Blit_TempAfterDraw.png");
+                try
+                {
+                    temp.Save(tempPath, System.Drawing.Imaging.ImageFormat.Png);
+                    Console.WriteLine("[DIAG] Saved temp after DrawImage to " + tempPath);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("[DIAG] Failed to save temp: " + ex.Message);
+                }
+
+                dest_dc.DrawImage(temp, r, 0, 0, temp.Width, temp.Height, GraphicsUnit.Pixel);
+            }
         }
 
         internal override void DestroyOffscreenDrawable(object offscreen_drawable)
