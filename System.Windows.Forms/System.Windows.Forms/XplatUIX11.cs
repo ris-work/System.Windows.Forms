@@ -4890,12 +4890,12 @@ namespace System.Windows.Forms {
 
             Bitmap backBuffer;
             bool isNewBuffer = false;
-            //if (!_backBuffers.TryGetValue(handle, out backBuffer) || backBuffer.Width != width || backBuffer.Height != height)
-			if(true)
+            if (!_backBuffers.TryGetValue(handle, out backBuffer) || backBuffer.Width != width || backBuffer.Height != height)
+			//if(true)
             {
-                //backBuffer?.Dispose();
+                backBuffer?.Dispose();
                 backBuffer = new Bitmap(width, height);
-                //_backBuffers[handle] = backBuffer;
+                _backBuffers[handle] = backBuffer;
                 isNewBuffer = true;
             }
 
