@@ -1,4 +1,4 @@
-// Permission is hereby granted, free of charge, to any person obtaining
+﻿// Permission is hereby granted, free of charge, to any person obtaining
 // a copy of this software and associated documentation files (the
 // "Software"), to deal in the Software without restriction, including
 // without limitation the rights to use, copy, modify, merge, publish,
@@ -81,6 +81,13 @@ namespace System.Windows.Forms {
             this.Context = context;
         }
         public object Context { get; private set; }
+    }
+
+    class X11Offscreen
+    {
+        public Bitmap SkiaBitmap;     // Skia draws here
+        public IntPtr Pixmap;         // X11 keeps this between paints
+        public int Depth;             // depth of the underlying window (so XCreatePixmap matches it)
     }
     internal class XplatUIX11 : XplatUIDriver {
 		#region Local Variables
@@ -232,9 +239,11 @@ namespace System.Windows.Forms {
 		internal static MouseButtons	MouseState;		// Last state of mouse buttons
 		internal static bool in_doevents;
 		// 'Constants'
-		static int		DoubleClickInterval;	// msec; max interval between clicks to count as double click
+		static int		DoubleClickInterval;    // msec; max interval between clicks to count as double click
 
-		const EventMask SelectInputMask = (EventMask.ButtonPressMask | 
+        private Dictionary<IntPtr, IntPtr> _backingPixmaps = new Dictionary<IntPtr, IntPtr>();
+
+        const EventMask SelectInputMask = (EventMask.ButtonPressMask | 
 						   EventMask.ButtonReleaseMask | 
 						   EventMask.KeyPressMask | 
 						   EventMask.KeyReleaseMask | 
@@ -251,6 +260,9 @@ namespace System.Windows.Forms {
 		// messages WaitForHwndMwssage is waiting on
 		static Hashtable	messageHold;
         private Dictionary<IntPtr, Bitmap> _backBuffers = new Dictionary<IntPtr, Bitmap>();
+
+        private IntPtr _x11ImageBuffer = IntPtr.Zero;
+        private int _x11BufferSize = 0;
 
         #endregion   // Local Variables                    
         #region Constructors
@@ -292,7 +304,12 @@ namespace System.Windows.Forms {
 		~XplatUIX11() {
 			// Remove our display handle from S.D
 			Graphics.FromHdcInternal (IntPtr.Zero);
-		}
+            if (_blitCopyBuffer != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(_blitCopyBuffer);
+                _blitCopyBuffer = IntPtr.Zero;
+            }
+        }
 
 		#endregion	// Constructors
 
@@ -3342,8 +3359,16 @@ namespace System.Windows.Forms {
 
                 h.expose_pending = h.nc_expose_pending = false;
 				h.Queue.Paint.Remove (h);
-			}
-		}
+                if (_backingPixmaps.TryGetValue(h.Handle, out var pix))
+                {
+                    if (pix != IntPtr.Zero) XFreePixmap(DisplayHandle, pix);
+                    _backingPixmaps.Remove(h.Handle);
+                }
+            }
+            
+
+
+        }
 
 		internal override IntPtr DispatchMessage(ref MSG msg)
 		{
@@ -4805,6 +4830,7 @@ namespace System.Windows.Forms {
 
         internal override PaintEventArgs PaintEventStart(ref Message msg, IntPtr handle, bool client)
         {
+
             Hwnd hwnd;
             Hwnd paint_hwnd;
 
@@ -4847,15 +4873,46 @@ namespace System.Windows.Forms {
                 height = 1;
             }
 
-            Console.WriteLine($"[X11 PaintStart] handle={handle}, client={client}, width={width}, height={height}");
+            //Console.WriteLine($"[X11 PaintStart] handle={handle}, client={client}, width={width}, height={height}");
+
+            // At the very top of PaintEventStart, after computing hwnd/paint_hwnd/handle:
+            if (Environment.GetEnvironmentVariable("SD_X11_DUMP") == "1")
+            {
+                bool exists = _backBuffers.TryGetValue(handle, out var existing);
+                /*Console.Error.WriteLine(
+                    $"[PAINT_START] handle=0x{handle.ToInt64():X} msg=0x{msg.HWnd.ToInt64():X} " +
+                    $"w={width} h={height} dictHit={exists}" +
+                    (exists ? $" existingSize={existing.Width}x{existing.Height} willRecreate={existing.Width != width || existing.Height != height}"
+                            : " willCreate=true"));*/
+            }
+
+            
 
             Bitmap backBuffer;
-            if (!_backBuffers.TryGetValue(handle, out backBuffer) || backBuffer.Width != width || backBuffer.Height != height)
+            bool isNewBuffer = false;
+            //if (!_backBuffers.TryGetValue(handle, out backBuffer) || backBuffer.Width != width || backBuffer.Height != height)
+			if(true)
             {
-                backBuffer?.Dispose();
+                //backBuffer?.Dispose();
                 backBuffer = new Bitmap(width, height);
-                _backBuffers[handle] = backBuffer;
+                //_backBuffers[handle] = backBuffer;
+                isNewBuffer = true;
             }
+
+            // When a buffer is reused at the same RAM address by a different control,
+            // it contains stale/zero pixels. Fill with the control's background so
+            // areas outside the clip rectangle aren't black.
+            if (isNewBuffer)
+            {
+                Control ctrl = Control.FromHandle(handle);
+                Color bg = ctrl != null ? ctrl.BackColor : SystemColors.Control;
+                using (Graphics initG = Graphics.FromImage(backBuffer))
+                {
+                    initG.Clear(bg);
+                }
+            }
+
+
 
             Graphics dc = Graphics.FromImage(backBuffer);
 
@@ -4937,36 +4994,101 @@ namespace System.Windows.Forms {
             }
         }
 
+        private IntPtr _blitCopyBuffer = IntPtr.Zero;
+        private int _blitCopyBufferSize = 0;
+
         private void BlitBitmapToDrawable(Bitmap bitmap, IntPtr drawable)
         {
             int width = bitmap.Width;
             int height = bitmap.Height;
             int skiaStride = bitmap._skBitmap.RowBytes;
-            IntPtr pixels = bitmap._skBitmap.GetPixels();
+            IntPtr skiaPixels = bitmap._skBitmap.GetPixels();
 
-            if (pixels == IntPtr.Zero || width <= 0 || height <= 0)
+            if (skiaPixels == IntPtr.Zero || width <= 0 || height <= 0)
                 return;
 
-            IntPtr visual = XDefaultVisual(DisplayHandle, ScreenNo);
-            uint depth = XDefaultDepth(DisplayHandle, ScreenNo);
-
-            if (depth == 0)
-                depth = 24;
-
-            IntPtr image = XCreateImage(DisplayHandle, visual, depth, ZPixmap, 0, pixels, (uint)width, (uint)height, 32, skiaStride);
-            if (image == IntPtr.Zero)
-                return;
-
-            XGCValues gc_values = new XGCValues();
-            IntPtr gc = XCreateGC(DisplayHandle, drawable, IntPtr.Zero, ref gc_values);
-            if (gc != IntPtr.Zero)
+            // ─── Optional: solid-fill test mode ────────────────────────────────
+            string testFill = Environment.GetEnvironmentVariable("SD_X11_TEST_FILL");
+            if (!string.IsNullOrEmpty(testFill) && testFill.Length == 6)
             {
-                XPutImage(DisplayHandle, drawable, gc, image, 0, 0, 0, 0, (uint)width, (uint)height);
-                XFreeGC(DisplayHandle, gc);
+                int c = int.Parse(testFill, System.Globalization.NumberStyles.HexNumber);
+                byte tr = (byte)((c >> 16) & 0xFF);
+                byte tg = (byte)((c >> 8) & 0xFF);
+                byte tb = (byte)(c & 0xFF);
+                unsafe
+                {
+                    byte* p = (byte*)skiaPixels.ToPointer();
+                    for (int y = 0; y < height; y++)
+                    {
+                        byte* row = p + y * skiaStride;
+                        for (int x = 0; x < width; x++)
+                        {
+                            row[x * 4 + 0] = tb;
+                            row[x * 4 + 1] = tg;
+                            row[x * 4 + 2] = tr;
+                            row[x * 4 + 3] = 255;
+                        }
+                    }
+                }
             }
 
-            // Set data pointer to null so XDestroyImage doesn't free our bitmap data
-            Marshal.WriteIntPtr(image, 16, IntPtr.Zero);
+            if (Environment.GetEnvironmentVariable("SD_X11_NO_BLIT") == "1")
+                return;
+
+            // ─── Get the drawable's geometry (returns bool) ────────────────────
+            IntPtr geoRoot;
+            int geoX, geoY, geoW, geoH, geoBw, geoDepth;
+            int actualDepth = 24;
+            if (XGetGeometry(DisplayHandle, drawable, out geoRoot, out geoX, out geoY,
+                             out geoW, out geoH, out geoBw, out geoDepth) && geoDepth > 0)
+                actualDepth = geoDepth;
+
+            // ─── Get / create the backing pixmap ──────────────────────────────
+            IntPtr pix;
+            if (!_backingPixmaps.TryGetValue(drawable, out pix) || pix == IntPtr.Zero)
+            {
+                pix = XCreatePixmap(DisplayHandle, geoRoot, width, height, actualDepth);
+                if (pix == IntPtr.Zero) return;
+                _backingPixmaps[drawable] = pix;
+            }
+
+            // ─── Copy Skia pixels into an X11-owned buffer ─────────────────────
+            int bufferSize = skiaStride * height;
+            IntPtr copyBuffer = Marshal.AllocHGlobal((IntPtr)bufferSize);
+            unsafe
+            {
+                Buffer.MemoryCopy(skiaPixels.ToPointer(), copyBuffer.ToPointer(),
+                                  bufferSize, bufferSize);
+            }
+
+            IntPtr visual = XDefaultVisual(DisplayHandle, ScreenNo);
+            IntPtr image = XCreateImage(DisplayHandle, visual, (uint)actualDepth, ZPixmap, 0,
+                                         copyBuffer, (uint)width, (uint)height, 32, skiaStride);
+            if (image == IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(copyBuffer);
+                return;
+            }
+
+            // ─── (1) Render into the backing pixmap, not the window ────────────
+            XGCValues gc_values = new XGCValues();
+            IntPtr pixGC = XCreateGC(DisplayHandle, pix, IntPtr.Zero, ref gc_values);
+            if (pixGC != IntPtr.Zero)
+            {
+                XPutImage(DisplayHandle, pix, pixGC, image, 0, 0, 0, 0, (uint)width, (uint)height);
+                XFreeGC(DisplayHandle, pixGC);
+            }
+
+            // ─── (2) Copy the entire pixmap onto the window ───────────────────
+            IntPtr winGC = XCreateGC(DisplayHandle, drawable, IntPtr.Zero, ref gc_values);
+            if (winGC != IntPtr.Zero)
+            {
+                XCopyArea(DisplayHandle, pix, drawable, winGC, 0, 0, width, height, 0, 0);
+                XFreeGC(DisplayHandle, winGC);
+            }
+
+            // XDestroyImage frees both the XImage struct and the data pointer.
+            // AllocHGlobal is free()-compatible, so we do NOT zero the data pointer.
             XDestroyImage(image);
         }
 
@@ -6267,32 +6389,153 @@ namespace System.Windows.Forms {
 
         internal override void CreateOffscreenDrawable(IntPtr handle, int width, int height, out object offscreen_drawable)
         {
-            offscreen_drawable = new Bitmap(width, height);
+            bool dump = Environment.GetEnvironmentVariable("SD_X11_OFF_DUMP") == "1";
+            if (dump) Console.Error.WriteLine($"[OFF CREATE] handle=0x{handle.ToInt64():X} w={width} h={height}");
+
+            var data = new X11Offscreen();
+            data.SkiaBitmap = new Bitmap(width, height);
+
+            IntPtr root;
+            int x, y, w, h, bw, depth;
+            if (XGetGeometry(DisplayHandle, handle, out root, out x, out y,
+                             out w, out h, out bw, out depth) && depth > 0)
+                data.Depth = depth;
+            else
+                data.Depth = 24;
+
+            data.Pixmap = XCreatePixmap(DisplayHandle, root, width, height, data.Depth);
+            if (data.Pixmap == IntPtr.Zero)
+            {
+                if (dump) Console.Error.WriteLine("[OFF CREATE]   XCreatePixmap FAILED");
+                data.SkiaBitmap.Dispose();
+                offscreen_drawable = null;
+                return;
+            }
+
+            if (dump) Console.Error.WriteLine($"[OFF CREATE]   pix=0x{data.Pixmap.ToInt64():X} depth={data.Depth}");
+
+            offscreen_drawable = data;
         }
 
         internal override Graphics GetOffscreenGraphics(object offscreen_drawable)
         {
-            if (offscreen_drawable is Image img)
-                return Graphics.FromImage(img);
-            return Graphics.FromImage(new Bitmap(1, 1));
+            var data = offscreen_drawable as X11Offscreen;
+            if (data == null) return Graphics.FromImage(new Bitmap(1, 1));
+            return Graphics.FromImage(data.SkiaBitmap);
         }
 
-        internal override void BlitFromOffscreen(IntPtr dest_handle, Graphics dest_dc, object offscreen_drawable, Graphics offscreen_dc, Rectangle r)
+
+        internal override void BlitFromOffscreen(IntPtr dest_handle, Graphics dest_dc,
+                                       object offscreen_drawable, Graphics offscreen_dc,
+                                       Rectangle r)
         {
-            dest_dc.DrawImage((Image)offscreen_drawable, r.X, r.Y, r.Width, r.Height);
+            bool dump = Environment.GetEnvironmentVariable("SD_X11_OFF_DUMP") == "1";
+            var data = offscreen_drawable as X11Offscreen;
+
+            if (data == null)
+            {
+                if (dump) Console.Error.WriteLine("[OFF BLIT] data is NULL — CreateOffscreenDrawable didn't run or returned null");
+                return;
+            }
+
+            if (dump)
+            {
+                Console.Error.WriteLine($"[OFF BLIT] dest=0x{dest_handle.ToInt64():X} pix=0x{data.Pixmap.ToInt64():X} r={r.X},{r.Y},{r.Width},{r.Height}");
+
+                int w = data.SkiaBitmap.Width, h = data.SkiaBitmap.Height;
+                unsafe
+                {
+                    byte* p = (byte*)data.SkiaBitmap._skBitmap.GetPixels().ToPointer();
+                    int stride = data.SkiaBitmap._skBitmap.RowBytes;
+                    int nonBlack = 0;
+                    for (int y = 0; y < h; y++)
+                    {
+                        byte* row = p + y * stride;
+                        for (int x = 0; x < w; x++)
+                            if (row[x * 4] != 0 || row[x * 4 + 1] != 0 || row[x * 4 + 2] != 0 || row[x * 4 + 3] != 0)
+                                nonBlack++;
+                    }
+                    Console.Error.WriteLine($"[OFF BLIT]   Skia {w}x{h} nonBlack={nonBlack}/{w * h}");
+                }
+            }
+
+            int width = data.SkiaBitmap.Width;
+            int height = data.SkiaBitmap.Height;
+            if (width <= 0 || height <= 0) return;
+
+            int skiaStride = data.SkiaBitmap._skBitmap.RowBytes;
+            IntPtr skiaPixels = data.SkiaBitmap._skBitmap.GetPixels();
+            if (skiaPixels == IntPtr.Zero) return;
+
+            int depth = data.Depth > 0 ? data.Depth : 24;
+
+            int bufferSize = skiaStride * height;
+            IntPtr copyBuffer = Marshal.AllocHGlobal((IntPtr)bufferSize);
+            unsafe
+            {
+                Buffer.MemoryCopy(skiaPixels.ToPointer(), copyBuffer.ToPointer(),
+                                  bufferSize, bufferSize);
+            }
+
+            IntPtr visual = XDefaultVisual(DisplayHandle, ScreenNo);
+            IntPtr image = XCreateImage(DisplayHandle, visual, (uint)depth, ZPixmap, 0,
+                                         copyBuffer, (uint)width, (uint)height, 32, skiaStride);
+            if (image == IntPtr.Zero)
+            {
+                if (dump) Console.Error.WriteLine("[OFF BLIT]   XCreateImage returned NULL");
+                Marshal.FreeHGlobal(copyBuffer);
+                return;
+            }
+
+            XGCValues gc_values = new XGCValues();
+
+            IntPtr pixGC = XCreateGC(DisplayHandle, data.Pixmap, IntPtr.Zero, ref gc_values);
+            if (pixGC != IntPtr.Zero)
+            {
+                XPutImage(DisplayHandle, data.Pixmap, pixGC, image,
+                  r.X, r.Y, r.X, r.Y, (uint)r.Width, (uint)r.Height);
+                if (dump) Console.Error.WriteLine("[OFF BLIT]   XPutImage→pixmap done");
+                XFreeGC(DisplayHandle, pixGC);
+            }
+            else if (dump) Console.Error.WriteLine("[OFF BLIT]   XCreateGC(pixmap) returned NULL");
+
+            XDestroyImage(image);
+
+            IntPtr winGC = XCreateGC(DisplayHandle, dest_handle, IntPtr.Zero, ref gc_values);
+            if (winGC != IntPtr.Zero)
+            {
+                XCopyArea(DisplayHandle, data.Pixmap, dest_handle, winGC,
+                          r.X, r.Y, r.Width, r.Height, r.X, r.Y);
+                if (dump) Console.Error.WriteLine("[OFF BLIT]   XCopyArea pixmap→window done");
+                XFreeGC(DisplayHandle, winGC);
+            }
+            else if (dump) Console.Error.WriteLine("[OFF BLIT]   XCreateGC(window) returned NULL");
         }
+
 
         internal override void DestroyOffscreenDrawable(object offscreen_drawable)
         {
-            ((Image)offscreen_drawable).Dispose();
+            bool dump = Environment.GetEnvironmentVariable("SD_X11_OFF_DUMP") == "1";
+            var data = offscreen_drawable as X11Offscreen;
+            if (data == null) return;
+
+            if (dump) Console.Error.WriteLine($"[OFF DESTROY] pix=0x{data.Pixmap.ToInt64():X}");
+
+            if (data.Pixmap != IntPtr.Zero)
+            {
+                XFreePixmap(DisplayHandle, data.Pixmap);
+                data.Pixmap = IntPtr.Zero;
+            }
+            data.SkiaBitmap?.Dispose();
+            data.SkiaBitmap = null;
         }
 
-        
 
-		#endregion	// Public Static Methods
 
-		#region Events
-		internal override event EventHandler Idle;
+        #endregion // Public Static Methods                          
+
+        #region Events
+        internal override event EventHandler Idle;
         #endregion    // Events           
 
 
@@ -7647,6 +7890,8 @@ namespace System.Windows.Forms {
 
         [DllImport("libX11", EntryPoint = "XDestroyImage")]
         internal extern static IntPtr XDestroyImage(IntPtr image);
+
+        
 
         [StructLayout(LayoutKind.Sequential)]
         internal struct X11PaintContext
