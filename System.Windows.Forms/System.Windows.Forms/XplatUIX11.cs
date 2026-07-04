@@ -6389,52 +6389,12 @@ namespace System.Windows.Forms {
 
         internal override void CreateOffscreenDrawable(IntPtr handle, int width, int height, out object offscreen_drawable)
         {
-            bool usePixmapBacking = !string.Equals(
-                Environment.GetEnvironmentVariable("SD_X11_BLIT_MODE"),
-                "old",
-                StringComparison.OrdinalIgnoreCase);
-
-            if (!usePixmapBacking)
-            {
-                // ── OLD path: Mimo-v2.5 style. Just a Skia Bitmap. ──────────────
-                // Pairs with the default Graphics.FromImage (which Clear()s).
-                // Partial repaints go black because the rest of the bitmap is
-                // transparent after the Clear, but text renders fine.
-                offscreen_drawable = new Bitmap(width, height);
-                return;
-            }
-
-            // ── NEW path: backing pixmap. ────────────────────────────────────
-            // Pairs with Graphics.FromImage NOT clearing (MWF_SD_NO_CLEAR=1).
-            // The Skia bitmap is the persistent backing; the X11 pixmap is the
-            // per-window X-server-side persistent backing; the sub-rect XPutImage
-            // + XCopyArea preserves the rest of the form on partial repaints.
-            var data = new X11Offscreen();
-            data.SkiaBitmap = new Bitmap(width, height);
-
-            IntPtr root;
-            int x, y, w, h, bw, depth;
-            if (XGetGeometry(DisplayHandle, handle, out root, out x, out y,
-                             out w, out h, out bw, out depth) && depth > 0)
-                data.Depth = depth;
-            else
-                data.Depth = 24;
-
-            data.Pixmap = XCreatePixmap(DisplayHandle, root, width, height, data.Depth);
-            if (data.Pixmap == IntPtr.Zero)
-            {
-                data.SkiaBitmap.Dispose();
-                offscreen_drawable = null;
-                return;
-            }
-
-            offscreen_drawable = data;
+            offscreen_drawable = new Bitmap(width, height);
         }
+
 
         internal override Graphics GetOffscreenGraphics(object offscreen_drawable)
         {
-            if (offscreen_drawable is X11Offscreen data)
-                return Graphics.FromImage(data.SkiaBitmap);
             if (offscreen_drawable is Image img)
                 return Graphics.FromImage(img);
             return Graphics.FromImage(new Bitmap(1, 1));
@@ -6443,67 +6403,9 @@ namespace System.Windows.Forms {
 
 
         internal override void BlitFromOffscreen(IntPtr dest_handle, Graphics dest_dc,
-                                       object offscreen_drawable, Graphics offscreen_dc,
-                                       Rectangle r)
+                                      object offscreen_drawable, Graphics offscreen_dc,
+                                      Rectangle r)
         {
-            // ── NEW path: backing pixmap, sub-rect XPutImage + XCopyArea ──────
-            if (offscreen_drawable is X11Offscreen data)
-            {
-                if (data == null || data.SkiaBitmap == null || data.Pixmap == IntPtr.Zero)
-                    return;
-
-                int width = data.SkiaBitmap.Width;
-                int height = data.SkiaBitmap.Height;
-                if (width <= 0 || height <= 0) return;
-
-                int skiaStride = data.SkiaBitmap._skBitmap.RowBytes;
-                IntPtr skiaPixels = data.SkiaBitmap._skBitmap.GetPixels();
-                if (skiaPixels == IntPtr.Zero) return;
-
-                int depth = data.Depth > 0 ? data.Depth : 24;
-
-                int bufferSize = skiaStride * height;
-                IntPtr copyBuffer = Marshal.AllocHGlobal((IntPtr)bufferSize);
-                unsafe
-                {
-                    Buffer.MemoryCopy(skiaPixels.ToPointer(), copyBuffer.ToPointer(),
-                                      bufferSize, bufferSize);
-                }
-
-                IntPtr visual = XDefaultVisual(DisplayHandle, ScreenNo);
-                IntPtr image = XCreateImage(DisplayHandle, visual, (uint)depth, ZPixmap, 0,
-                                             copyBuffer, (uint)width, (uint)height, 32, skiaStride);
-                if (image == IntPtr.Zero)
-                {
-                    Marshal.FreeHGlobal(copyBuffer);
-                    return;
-                }
-
-                XGCValues gc_values = new XGCValues();
-
-                IntPtr pixGC = XCreateGC(DisplayHandle, data.Pixmap, IntPtr.Zero, ref gc_values);
-                if (pixGC != IntPtr.Zero)
-                {
-                    XPutImage(DisplayHandle, data.Pixmap, pixGC, image,
-                              r.X, r.Y, r.X, r.Y, (uint)r.Width, (uint)r.Height);
-                    XFreeGC(DisplayHandle, pixGC);
-                }
-
-                XDestroyImage(image);
-
-                IntPtr winGC = XCreateGC(DisplayHandle, dest_handle, IntPtr.Zero, ref gc_values);
-                if (winGC != IntPtr.Zero)
-                {
-                    XCopyArea(DisplayHandle, data.Pixmap, dest_handle, winGC,
-                              r.X, r.Y, r.Width, r.Height, r.X, r.Y);
-                    XFreeGC(DisplayHandle, winGC);
-                }
-
-                Marshal.FreeHGlobal(copyBuffer);
-                return;
-            }
-
-            // ── OLD path: direct Skia → window Graphics DrawImage ─────────────
             if (offscreen_drawable is Image img)
             {
                 dest_dc.DrawImage(img, r.X, r.Y, r.Width, r.Height);
@@ -6513,22 +6415,8 @@ namespace System.Windows.Forms {
 
         internal override void DestroyOffscreenDrawable(object offscreen_drawable)
         {
-            if (offscreen_drawable is X11Offscreen data)
-            {
-                if (data.Pixmap != IntPtr.Zero)
-                {
-                    XFreePixmap(DisplayHandle, data.Pixmap);
-                    data.Pixmap = IntPtr.Zero;
-                }
-                data.SkiaBitmap?.Dispose();
-                data.SkiaBitmap = null;
-                return;
-            }
-
             if (offscreen_drawable is Image img)
-            {
                 img.Dispose();
-            }
         }
 
 

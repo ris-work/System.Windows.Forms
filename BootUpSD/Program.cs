@@ -263,6 +263,15 @@ tabBasic.Controls.Add(new Label { Text = "Volume", Location = new Point(330, 285
 
 tabBasic.Controls.Add(new HScrollBar { Location = new Point(20, 320), Width = 300, Minimum = 0, Maximum = 100, Value = 20 });
 tabBasic.Controls.Add(new VScrollBar { Location = new Point(340, 280), Height = 60, Minimum = 0, Maximum = 100, Value = 40 });
+tabBasic.Controls.Add(new TextBox
+{
+    Location = new Point(20, 360),
+    Size = new Size(700, 80),
+    Font = new Font(SystemFonts.MessageBoxFont.Name, 12),
+    Text = "Big textbox — if cursor is full-height here, the bug is size-related",
+    AutoSize = false,
+    Multiline = true
+});
 
 // --- Tab: Lists & Trees ---
 var listView = new ListView
