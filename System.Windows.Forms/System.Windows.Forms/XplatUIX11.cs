@@ -6389,9 +6389,26 @@ namespace System.Windows.Forms {
 
         internal override void CreateOffscreenDrawable(IntPtr handle, int width, int height, out object offscreen_drawable)
         {
-            bool dump = Environment.GetEnvironmentVariable("SD_X11_OFF_DUMP") == "1";
-            if (dump) Console.Error.WriteLine($"[OFF CREATE] handle=0x{handle.ToInt64():X} w={width} h={height}");
+            bool usePixmapBacking = !string.Equals(
+                Environment.GetEnvironmentVariable("SD_X11_BLIT_MODE"),
+                "old",
+                StringComparison.OrdinalIgnoreCase);
 
+            if (!usePixmapBacking)
+            {
+                // ── OLD path: Mimo-v2.5 style. Just a Skia Bitmap. ──────────────
+                // Pairs with the default Graphics.FromImage (which Clear()s).
+                // Partial repaints go black because the rest of the bitmap is
+                // transparent after the Clear, but text renders fine.
+                offscreen_drawable = new Bitmap(width, height);
+                return;
+            }
+
+            // ── NEW path: backing pixmap. ────────────────────────────────────
+            // Pairs with Graphics.FromImage NOT clearing (MWF_SD_NO_CLEAR=1).
+            // The Skia bitmap is the persistent backing; the X11 pixmap is the
+            // per-window X-server-side persistent backing; the sub-rect XPutImage
+            // + XCopyArea preserves the rest of the form on partial repaints.
             var data = new X11Offscreen();
             data.SkiaBitmap = new Bitmap(width, height);
 
@@ -6406,128 +6423,112 @@ namespace System.Windows.Forms {
             data.Pixmap = XCreatePixmap(DisplayHandle, root, width, height, data.Depth);
             if (data.Pixmap == IntPtr.Zero)
             {
-                if (dump) Console.Error.WriteLine("[OFF CREATE]   XCreatePixmap FAILED");
                 data.SkiaBitmap.Dispose();
                 offscreen_drawable = null;
                 return;
             }
-
-            if (dump) Console.Error.WriteLine($"[OFF CREATE]   pix=0x{data.Pixmap.ToInt64():X} depth={data.Depth}");
 
             offscreen_drawable = data;
         }
 
         internal override Graphics GetOffscreenGraphics(object offscreen_drawable)
         {
-            var data = offscreen_drawable as X11Offscreen;
-            if (data == null) return Graphics.FromImage(new Bitmap(1, 1));
-            return Graphics.FromImage(data.SkiaBitmap);
+            if (offscreen_drawable is X11Offscreen data)
+                return Graphics.FromImage(data.SkiaBitmap);
+            if (offscreen_drawable is Image img)
+                return Graphics.FromImage(img);
+            return Graphics.FromImage(new Bitmap(1, 1));
         }
+
 
 
         internal override void BlitFromOffscreen(IntPtr dest_handle, Graphics dest_dc,
                                        object offscreen_drawable, Graphics offscreen_dc,
                                        Rectangle r)
         {
-            bool dump = Environment.GetEnvironmentVariable("SD_X11_OFF_DUMP") == "1";
-            var data = offscreen_drawable as X11Offscreen;
-
-            if (data == null)
+            // ── NEW path: backing pixmap, sub-rect XPutImage + XCopyArea ──────
+            if (offscreen_drawable is X11Offscreen data)
             {
-                if (dump) Console.Error.WriteLine("[OFF BLIT] data is NULL — CreateOffscreenDrawable didn't run or returned null");
-                return;
-            }
+                if (data == null || data.SkiaBitmap == null || data.Pixmap == IntPtr.Zero)
+                    return;
 
-            if (dump)
-            {
-                Console.Error.WriteLine($"[OFF BLIT] dest=0x{dest_handle.ToInt64():X} pix=0x{data.Pixmap.ToInt64():X} r={r.X},{r.Y},{r.Width},{r.Height}");
+                int width = data.SkiaBitmap.Width;
+                int height = data.SkiaBitmap.Height;
+                if (width <= 0 || height <= 0) return;
 
-                int w = data.SkiaBitmap.Width, h = data.SkiaBitmap.Height;
+                int skiaStride = data.SkiaBitmap._skBitmap.RowBytes;
+                IntPtr skiaPixels = data.SkiaBitmap._skBitmap.GetPixels();
+                if (skiaPixels == IntPtr.Zero) return;
+
+                int depth = data.Depth > 0 ? data.Depth : 24;
+
+                int bufferSize = skiaStride * height;
+                IntPtr copyBuffer = Marshal.AllocHGlobal((IntPtr)bufferSize);
                 unsafe
                 {
-                    byte* p = (byte*)data.SkiaBitmap._skBitmap.GetPixels().ToPointer();
-                    int stride = data.SkiaBitmap._skBitmap.RowBytes;
-                    int nonBlack = 0;
-                    for (int y = 0; y < h; y++)
-                    {
-                        byte* row = p + y * stride;
-                        for (int x = 0; x < w; x++)
-                            if (row[x * 4] != 0 || row[x * 4 + 1] != 0 || row[x * 4 + 2] != 0 || row[x * 4 + 3] != 0)
-                                nonBlack++;
-                    }
-                    Console.Error.WriteLine($"[OFF BLIT]   Skia {w}x{h} nonBlack={nonBlack}/{w * h}");
+                    Buffer.MemoryCopy(skiaPixels.ToPointer(), copyBuffer.ToPointer(),
+                                      bufferSize, bufferSize);
                 }
-            }
 
-            int width = data.SkiaBitmap.Width;
-            int height = data.SkiaBitmap.Height;
-            if (width <= 0 || height <= 0) return;
+                IntPtr visual = XDefaultVisual(DisplayHandle, ScreenNo);
+                IntPtr image = XCreateImage(DisplayHandle, visual, (uint)depth, ZPixmap, 0,
+                                             copyBuffer, (uint)width, (uint)height, 32, skiaStride);
+                if (image == IntPtr.Zero)
+                {
+                    Marshal.FreeHGlobal(copyBuffer);
+                    return;
+                }
 
-            int skiaStride = data.SkiaBitmap._skBitmap.RowBytes;
-            IntPtr skiaPixels = data.SkiaBitmap._skBitmap.GetPixels();
-            if (skiaPixels == IntPtr.Zero) return;
+                XGCValues gc_values = new XGCValues();
 
-            int depth = data.Depth > 0 ? data.Depth : 24;
+                IntPtr pixGC = XCreateGC(DisplayHandle, data.Pixmap, IntPtr.Zero, ref gc_values);
+                if (pixGC != IntPtr.Zero)
+                {
+                    XPutImage(DisplayHandle, data.Pixmap, pixGC, image,
+                              r.X, r.Y, r.X, r.Y, (uint)r.Width, (uint)r.Height);
+                    XFreeGC(DisplayHandle, pixGC);
+                }
 
-            int bufferSize = skiaStride * height;
-            IntPtr copyBuffer = Marshal.AllocHGlobal((IntPtr)bufferSize);
-            unsafe
-            {
-                Buffer.MemoryCopy(skiaPixels.ToPointer(), copyBuffer.ToPointer(),
-                                  bufferSize, bufferSize);
-            }
+                XDestroyImage(image);
 
-            IntPtr visual = XDefaultVisual(DisplayHandle, ScreenNo);
-            IntPtr image = XCreateImage(DisplayHandle, visual, (uint)depth, ZPixmap, 0,
-                                         copyBuffer, (uint)width, (uint)height, 32, skiaStride);
-            if (image == IntPtr.Zero)
-            {
-                if (dump) Console.Error.WriteLine("[OFF BLIT]   XCreateImage returned NULL");
+                IntPtr winGC = XCreateGC(DisplayHandle, dest_handle, IntPtr.Zero, ref gc_values);
+                if (winGC != IntPtr.Zero)
+                {
+                    XCopyArea(DisplayHandle, data.Pixmap, dest_handle, winGC,
+                              r.X, r.Y, r.Width, r.Height, r.X, r.Y);
+                    XFreeGC(DisplayHandle, winGC);
+                }
+
                 Marshal.FreeHGlobal(copyBuffer);
                 return;
             }
 
-            XGCValues gc_values = new XGCValues();
-
-            IntPtr pixGC = XCreateGC(DisplayHandle, data.Pixmap, IntPtr.Zero, ref gc_values);
-            if (pixGC != IntPtr.Zero)
+            // ── OLD path: direct Skia → window Graphics DrawImage ─────────────
+            if (offscreen_drawable is Image img)
             {
-                XPutImage(DisplayHandle, data.Pixmap, pixGC, image,
-                  r.X, r.Y, r.X, r.Y, (uint)r.Width, (uint)r.Height);
-                if (dump) Console.Error.WriteLine("[OFF BLIT]   XPutImage→pixmap done");
-                XFreeGC(DisplayHandle, pixGC);
+                dest_dc.DrawImage(img, r.X, r.Y, r.Width, r.Height);
             }
-            else if (dump) Console.Error.WriteLine("[OFF BLIT]   XCreateGC(pixmap) returned NULL");
-
-            XDestroyImage(image);
-
-            IntPtr winGC = XCreateGC(DisplayHandle, dest_handle, IntPtr.Zero, ref gc_values);
-            if (winGC != IntPtr.Zero)
-            {
-                XCopyArea(DisplayHandle, data.Pixmap, dest_handle, winGC,
-                          r.X, r.Y, r.Width, r.Height, r.X, r.Y);
-                if (dump) Console.Error.WriteLine("[OFF BLIT]   XCopyArea pixmap→window done");
-                XFreeGC(DisplayHandle, winGC);
-            }
-            else if (dump) Console.Error.WriteLine("[OFF BLIT]   XCreateGC(window) returned NULL");
         }
 
 
         internal override void DestroyOffscreenDrawable(object offscreen_drawable)
         {
-            bool dump = Environment.GetEnvironmentVariable("SD_X11_OFF_DUMP") == "1";
-            var data = offscreen_drawable as X11Offscreen;
-            if (data == null) return;
-
-            if (dump) Console.Error.WriteLine($"[OFF DESTROY] pix=0x{data.Pixmap.ToInt64():X}");
-
-            if (data.Pixmap != IntPtr.Zero)
+            if (offscreen_drawable is X11Offscreen data)
             {
-                XFreePixmap(DisplayHandle, data.Pixmap);
-                data.Pixmap = IntPtr.Zero;
+                if (data.Pixmap != IntPtr.Zero)
+                {
+                    XFreePixmap(DisplayHandle, data.Pixmap);
+                    data.Pixmap = IntPtr.Zero;
+                }
+                data.SkiaBitmap?.Dispose();
+                data.SkiaBitmap = null;
+                return;
             }
-            data.SkiaBitmap?.Dispose();
-            data.SkiaBitmap = null;
+
+            if (offscreen_drawable is Image img)
+            {
+                img.Dispose();
+            }
         }
 
 
