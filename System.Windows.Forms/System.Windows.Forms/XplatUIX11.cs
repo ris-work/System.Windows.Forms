@@ -4914,6 +4914,7 @@ namespace System.Windows.Forms {
 
 
 
+
             Graphics dc = Graphics.FromImage(backBuffer);
 
             PaintEventArgs paint_event;
@@ -6395,8 +6396,8 @@ namespace System.Windows.Forms {
 
         internal override Graphics GetOffscreenGraphics(object offscreen_drawable)
         {
-            if (offscreen_drawable is Image img)
-                return Graphics.FromImage(img);
+            if (offscreen_drawable is Bitmap bmp)
+                return Graphics.FromBitmapNoClear(bmp);
             return Graphics.FromImage(new Bitmap(1, 1));
         }
 
