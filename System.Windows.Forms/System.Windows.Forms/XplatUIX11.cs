@@ -241,7 +241,7 @@ namespace System.Windows.Forms {
 		// 'Constants'
 		static int		DoubleClickInterval;    // msec; max interval between clicks to count as double click
 
-        private Dictionary<IntPtr, IntPtr> _backingPixmaps = new Dictionary<IntPtr, IntPtr>();
+        private Dictionary<IntPtr, Tuple<IntPtr, Size>> _backingPixmaps = new Dictionary<IntPtr, Tuple<IntPtr, Size>>();
 
         const EventMask SelectInputMask = (EventMask.ButtonPressMask | 
 						   EventMask.ButtonReleaseMask | 
@@ -3359,9 +3359,9 @@ namespace System.Windows.Forms {
 
                 h.expose_pending = h.nc_expose_pending = false;
 				h.Queue.Paint.Remove (h);
-                if (_backingPixmaps.TryGetValue(h.Handle, out var pix))
+                if (_backingPixmaps.TryGetValue(h.Handle, out var pixEntry))
                 {
-                    if (pix != IntPtr.Zero) XFreePixmap(DisplayHandle, pix);
+                    if (pixEntry.Item1 != IntPtr.Zero) XFreePixmap(DisplayHandle, pixEntry.Item1);
                     _backingPixmaps.Remove(h.Handle);
                 }
             }
@@ -5042,13 +5042,11 @@ namespace System.Windows.Forms {
             int skiaStride = bitmap._skBitmap.RowBytes;
             IntPtr skiaPixels = bitmap._skBitmap.GetPixels();
 
-            Console.WriteLine($"[Blit] Bitmap: {width}x{height}, SkiaStride: {skiaStride}");
-            Console.WriteLine($"[Blit] ClipRect: {clipRect.X},{clipRect.Y} {clipRect.Width}x{clipRect.Height}");
+            Console.WriteLine($"[BlitOnscreen] Bitmap: {width}x{height}, ClipRect: {clipRect.X},{clipRect.Y} {clipRect.Width}x{clipRect.Height}");
 
             if (skiaPixels == IntPtr.Zero || width <= 0 || height <= 0)
                 return;
 
-            // ─── Get the drawable's geometry ────────────────────────────────
             IntPtr geoRoot;
             int geoX, geoY, geoW, geoH, geoBw, geoDepth;
             int actualDepth = 24;
@@ -5056,18 +5054,24 @@ namespace System.Windows.Forms {
                              out geoW, out geoH, out geoBw, out geoDepth) && geoDepth > 0)
                 actualDepth = geoDepth;
 
-            // ─── Get / create the backing pixmap ────────────────────────────
-            IntPtr pix;
-            if (!_backingPixmaps.TryGetValue(drawable, out pix) || pix == IntPtr.Zero)
+            IntPtr pix = IntPtr.Zero;
+            Size pixSize = Size.Empty;
+            if (_backingPixmaps.TryGetValue(drawable, out var entry))
             {
-                pix = XCreatePixmap(DisplayHandle, geoRoot, width, height, actualDepth);
-                if (pix == IntPtr.Zero) return;
-                _backingPixmaps[drawable] = pix;
+                pix = entry.Item1;
+                pixSize = entry.Item2;
             }
 
-            // ─── Copy Skia pixels into a tightly packed buffer ──────────────
-            // KEY FIX: Use a tightly packed buffer (width * 4) to avoid X11 stride issues.
-            // Skia's stride may be padded, which X11 misinterprets, causing slanted images.
+            if (pix == IntPtr.Zero || pixSize.Width != width || pixSize.Height != height)
+            {
+                if (pix != IntPtr.Zero)
+                    XFreePixmap(DisplayHandle, pix);
+
+                pix = XCreatePixmap(DisplayHandle, geoRoot, width, height, actualDepth);
+                if (pix == IntPtr.Zero) return;
+                _backingPixmaps[drawable] = Tuple.Create(pix, new Size(width, height));
+            }
+
             int gdiStride = width * 4;
             IntPtr copyBuffer = Marshal.AllocHGlobal((IntPtr)(gdiStride * height));
             unsafe
@@ -5098,7 +5102,6 @@ namespace System.Windows.Forms {
                 return;
             }
 
-            // ─── (1) Render into the backing pixmap ─────────────────────────
             XGCValues gc_values = new XGCValues();
             IntPtr pixGC = XCreateGC(DisplayHandle, pix, IntPtr.Zero, ref gc_values);
             if (pixGC != IntPtr.Zero)
@@ -5107,9 +5110,7 @@ namespace System.Windows.Forms {
                 XFreeGC(DisplayHandle, pixGC);
             }
 
-            // ─── (2) Copy the updated rectangle onto the window ─────────────
-            // KEY FIX: Clamp the copy area to the bitmap bounds to prevent overpainting
-            // and reading garbage pixels from outside the pixmap.
+            // KEY FIX: Clamp the copy area to the bitmap/pixmap bounds
             int clampedX = Math.Max(0, clipRect.X);
             int clampedY = Math.Max(0, clipRect.Y);
             int clampedWidth = Math.Min(clipRect.Width, width - clampedX);
@@ -6449,18 +6450,35 @@ namespace System.Windows.Forms {
             if (img == null)
                 return;
 
-            // Use a temp bitmap to bypass SkiaSharp DrawImage sub-rectangle stride bug
-            // and to prevent scaling the entire source image into the destination rectangle.
-            using (Bitmap temp = new Bitmap(r.Width, r.Height))
+            // Clamp to image bounds just in case
+            int clampedX = Math.Max(0, r.X);
+            int clampedY = Math.Max(0, r.Y);
+            int clampedWidth = Math.Min(r.Width, img.Width - clampedX);
+            int clampedHeight = Math.Min(r.Height, img.Height - clampedY);
+
+            if (clampedWidth <= 0 || clampedHeight <= 0)
+                return;
+
+            Console.WriteLine($"[BlitOffscreen] img: {img.Width}x{img.Height}, r: {r.X},{r.Y} {r.Width}x{r.Height}, clamped: {clampedX},{clampedY} {clampedWidth}x{clampedHeight}");
+
+            using (Bitmap temp = new Bitmap(clampedWidth, clampedHeight))
             {
                 temp.SetResolution(img.HorizontalResolution, img.VerticalResolution);
                 using (Graphics g = Graphics.FromImage(temp))
                 {
-                    // Draw the specific sub-rectangle from the offscreen image to the temp bitmap (1:1 copy)
-                    g.DrawImage(img, new Rectangle(0, 0, r.Width, r.Height), r.X, r.Y, r.Width, r.Height, GraphicsUnit.Pixel);
+                    g.DrawImage(img, new Rectangle(0, 0, clampedWidth, clampedHeight), clampedX, clampedY, clampedWidth, clampedHeight, GraphicsUnit.Pixel);
                 }
-                // Draw the temp bitmap to the destination graphics at the correct location (1:1 copy)
-                dest_dc.DrawImage(temp, r, 0, 0, temp.Width, temp.Height, GraphicsUnit.Pixel);
+
+                // KEY FIX: Temporarily reset the clip on dest_dc to bypass the SkiaSharp 
+                // DrawImage slanting bug that occurs when a clip is active.
+                // This is safe because BlitBitmapToDrawable will later ensure only the 
+                // correct clipRect is copied to the screen.
+                var savedClip = dest_dc.Clip;
+                dest_dc.ResetClip();
+
+                dest_dc.DrawImage(temp, new Rectangle(clampedX, clampedY, clampedWidth, clampedHeight), 0, 0, temp.Width, temp.Height, GraphicsUnit.Pixel);
+
+                dest_dc.Clip = savedClip;
             }
         }
 
