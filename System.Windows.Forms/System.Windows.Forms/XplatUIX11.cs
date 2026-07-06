@@ -4886,12 +4886,12 @@ namespace System.Windows.Forms {
                             : " willCreate=true"));*/
             }
 
-            
+
 
             Bitmap backBuffer;
             bool isNewBuffer = false;
             if (!_backBuffers.TryGetValue(handle, out backBuffer) || backBuffer.Width != width || backBuffer.Height != height)
-			//if(true)
+            //if(true)
             {
                 backBuffer?.Dispose();
                 backBuffer = new Bitmap(width, height);
@@ -4911,6 +4911,34 @@ namespace System.Windows.Forms {
                     initG.Clear(bg);
                 }
             }
+            else
+            {
+                // If the buffer is reused, we need to clear the invalid area to mimic WM_ERASEBKGND.
+                // This prevents overdrawing (stale text) when canvas clipping is disabled (SD_X11_DISABLE_CLIP=1).
+                // Win32 automatically does this via Win32BeginPaint/WM_ERASEBKGND.
+                Control ctrl = Control.FromHandle(handle);
+                Color bg = ctrl != null ? ctrl.BackColor : SystemColors.Control;
+                using (Graphics initG = Graphics.FromImage(backBuffer))
+                {
+                    Region eraseRegion = new Region();
+                    eraseRegion.MakeEmpty();
+                    foreach (Rectangle r in hwnd.ClipRectangles)
+                    {
+                        Rectangle r2 = Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom + 1);
+                        eraseRegion.Union(r2);
+                    }
+
+                    // Fallback: if clip_region is empty but hwnd.Invalid is not, use hwnd.Invalid
+                    if (eraseRegion.IsEmpty(initG) && !hwnd.Invalid.IsEmpty)
+                        eraseRegion.Union(hwnd.Invalid);
+
+                    if (!eraseRegion.IsEmpty(initG))
+                    {
+                        initG.Clip = eraseRegion;
+                        initG.Clear(bg);
+                    }
+                }
+            }
 
 
 
@@ -4928,6 +4956,15 @@ namespace System.Windows.Forms {
                 {
                     Rectangle r2 = Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom + 1);
                     clip_region.Union(r2);
+                }
+
+                // FALLBACK: If clip_region is empty but hwnd.Invalid is not,
+                // it means ClipRectangles was empty but we still have an invalid area to paint.
+                // Use hwnd.Invalid to prevent applying an empty clip to the canvas,
+                // which would cause all drawing to be clipped away.
+                if (clip_region.IsEmpty(dc) && !hwnd.Invalid.IsEmpty)
+                {
+                    clip_region.Union(hwnd.Invalid);
                 }
 
                 if (hwnd.UserClip != null)
@@ -6404,12 +6441,28 @@ namespace System.Windows.Forms {
 
 
         internal override void BlitFromOffscreen(IntPtr dest_handle, Graphics dest_dc,
-                                      object offscreen_drawable, Graphics offscreen_dc,
-                                      Rectangle r)
+                              object offscreen_drawable, Graphics offscreen_dc,
+                              Rectangle r)
         {
-            if (offscreen_drawable is Image img)
+            if (r.Width <= 0 || r.Height <= 0)
+                return;
+
+            Image img = offscreen_drawable as Image;
+            if (img == null)
+                return;
+
+            // Use a temp bitmap to bypass SkiaSharp DrawImage sub-rectangle stride bug
+            // and to prevent scaling the entire source image into the destination rectangle.
+            using (Bitmap temp = new Bitmap(r.Width, r.Height))
             {
-                dest_dc.DrawImage(img, r.X, r.Y, r.Width, r.Height);
+                temp.SetResolution(img.HorizontalResolution, img.VerticalResolution);
+                using (Graphics g = Graphics.FromImage(temp))
+                {
+                    // Draw the specific sub-rectangle from the offscreen image to the temp bitmap (1:1 copy)
+                    g.DrawImage(img, new Rectangle(0, 0, r.Width, r.Height), r.X, r.Y, r.Width, r.Height, GraphicsUnit.Pixel);
+                }
+                // Draw the temp bitmap to the destination graphics at the correct location (1:1 copy)
+                dest_dc.DrawImage(temp, r, 0, 0, temp.Width, temp.Height, GraphicsUnit.Pixel);
             }
         }
 

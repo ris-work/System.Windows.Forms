@@ -9,7 +9,7 @@ using System.Windows.Forms;
 // ==========================================
 // 1. System.Drawing Test: Output drawing.png
 // ==========================================
-using (var bitmap = new Bitmap(800, 600))
+/*using (var bitmap = new Bitmap(800, 600))
 using (var g = Graphics.FromImage(bitmap))
 {
     // Clear background
@@ -58,7 +58,149 @@ using (var g = Graphics.FromImage(bitmap))
     }
     
     
+}*/
+
+using var bmp = new Bitmap(1400, 900);
+using var g = Graphics.FromImage(bmp);
+g.Clear(Color.White);
+
+void DrawHeader(string text, int x, int y)
+{
+    using var f = new Font(FontFamily.GenericSansSerif, 10, FontStyle.Bold);
+    g.DrawString(text, f, Brushes.Blue, x, y);
 }
+
+int y = 20;
+
+// TEST 1: Basic SetClip + DrawString
+DrawHeader("Test 1: Basic SetClip(rect) + DrawString", 20, y);
+y += 25;
+var clip1 = new Rectangle(30, y, 200, 50);
+g.DrawRectangle(Pens.Black, clip1);
+g.SetClip(clip1);
+g.FillRectangle(Brushes.Blue, clip1);
+g.DrawString("INSIDE clip", new Font(FontFamily.GenericSansSerif, 12), Brushes.Black, clip1);
+g.FillRectangle(Brushes.Red, new Rectangle(300, y, 100, 30));
+g.DrawString("OUTSIDE — should NOT appear", new Font(FontFamily.GenericSansSerif, 12), Brushes.Red, 300, y);
+g.ResetClip();
+y += 70;
+
+// TEST 2: g.Clip = region (set style)
+DrawHeader("Test 2: g.Clip = region (set-style)", 20, y);
+y += 25;
+var clip2 = new Rectangle(30, y, 200, 50);
+g.DrawRectangle(Pens.Black, clip2);
+g.Clip = new Region(clip2);
+g.FillRectangle(Brushes.Green, clip2);
+g.DrawString("INSIDE clip (set)", new Font(FontFamily.GenericSansSerif, 12), Brushes.Black, clip2);
+g.FillRectangle(Brushes.Red, new Rectangle(300, y, 100, 30));
+g.DrawString("OUTSIDE — should NOT appear", new Font(FontFamily.GenericSansSerif, 12), Brushes.Red, 300, y);
+g.ResetClip();
+y += 70;
+
+// TEST 3: Nested SetClip (intersective test)
+DrawHeader("Test 3: Nested SetClip (intersective test)", 20, y);
+y += 25;
+var A = new Rectangle(30, y, 250, 50);
+var B = new Rectangle(150, y + 20, 250, 50);
+g.DrawRectangle(Pens.Blue, A);
+g.DrawRectangle(Pens.Red, B);
+g.SetClip(A);
+g.SetClip(B);
+g.FillRectangle(Brushes.Yellow, new Rectangle(150, y + 20, 200, 30));
+g.DrawString("in A∩B (visible)", new Font(FontFamily.GenericSansSerif, 12), Brushes.Black, 155, y + 25);
+g.ResetClip();
+y += 90;
+
+// TEST 4: After ResetClip, clip should be back to original
+DrawHeader("Test 4: ResetClip → original state", 20, y);
+y += 25;
+var originalTest = new Rectangle(30, y, 600, 60);
+g.SetClip(originalTest);
+g.FillRectangle(Brushes.Pink, originalTest);
+g.ResetClip();
+g.FillRectangle(Brushes.Green, new Rectangle(20, y + 30, 1300, 25));
+g.DrawString("if this whole line is GREEN, ResetClip worked", new Font(FontFamily.GenericSansSerif, 12), Brushes.Black, 30, y + 33);
+y += 90;
+
+// TEST 5: Multiline DrawString
+DrawHeader("Test 5: Multiline DrawString (mirrors Document.Draw per-line)", 20, y);
+y += 25;
+var text = "Line 1 of text\nLine 2 of text\nLine 3 of text\nLine 4";
+var multiRect = new Rectangle(30, y, 300, 100);
+g.DrawRectangle(Pens.Black, multiRect);
+g.SetClip(multiRect);
+g.FillRectangle(Brushes.Yellow, multiRect);
+var fmt = new StringFormat();
+fmt.LineAlignment = StringAlignment.Near;
+fmt.Alignment = StringAlignment.Near;
+var font = new Font(FontFamily.GenericSansSerif, 11);
+var lines = text.Split('\n');
+for (int i = 0; i < lines.Length; i++)
+{
+    int lineY = multiRect.Y + i * 14;
+    g.DrawString(lines[i], font, Brushes.Black, multiRect.X + 2, lineY);
+}
+g.ResetClip();
+y += 120;
+
+// TEST 6: Line bg + line text (Document.Draw pattern)
+DrawHeader("Test 6: Line bg + line text (Document.Draw pattern)", 20, y);
+y += 25;
+for (int i = 0; i < 3; i++)
+{
+    int lineY = y + i * 28;
+    var lineRect = new Rectangle(30, lineY, 350, 24);
+    g.DrawRectangle(Pens.Gray, lineRect);
+    g.FillRectangle(i == 1 ? Brushes.Blue : i == 2 ? Brushes.Green : Brushes.Yellow, lineRect);
+    var lineText = $"Line {i}: The quick brown fox jumps over the lazy dog The quick brown fox jumps over the lazy dog";
+    g.DrawString(lineText, font, Brushes.Black, lineRect, fmt);
+}
+y += 100;
+
+// TEST 7: Password text rendering
+DrawHeader("Test 7: Password text rendering (*****)", 20, y);
+y += 25;
+string passwordChar = "*";
+string passwordText = new string(passwordChar[0], "SecretPassword123".Length);
+var pwdRect = new Rectangle(30, y, 300, 30);
+g.DrawRectangle(Pens.Black, pwdRect);
+g.FillRectangle(Brushes.White, pwdRect);
+g.DrawString(passwordText, font, Brushes.Black, pwdRect, fmt);
+y += 50;
+
+// TEST 8: Non-multiline selection highlight
+DrawHeader("Test 8: Non-multiline selection highlight + selected text", 20, y);
+y += 25;
+var lineRect2 = new Rectangle(30, y, 400, 25);
+g.DrawRectangle(Pens.Gray, lineRect2);
+var selRect = new Rectangle(120, y, 150, 25);
+g.SetClip(selRect);
+g.FillRectangle(SystemBrushes.Highlight, selRect);
+g.DrawString("highlighted", new Font(FontFamily.GenericSansSerif, 12), SystemBrushes.HighlightText, selRect, fmt);
+g.ResetClip();
+g.DrawString("before ", font, Brushes.Black, 30, y);
+g.DrawString("after", font, Brushes.Black, 280, y);
+y += 50;
+
+// TEST 9: Transform + SetClip + DrawString
+DrawHeader("Test 9: Transform + SetClip + DrawString", 20, y);
+y += 25;
+g.TranslateTransform(200, y + 30);
+g.RotateTransform(20);
+var tRect = new Rectangle(-100, -30, 200, 30);
+g.DrawRectangle(Pens.Black, tRect);
+g.SetClip(tRect);
+g.FillRectangle(Brushes.Magenta, tRect);
+g.DrawString("rotated & clipped", font, Brushes.Black, tRect, fmt);
+g.ResetClip();
+g.ResetTransform();
+
+bmp.Save("clipping_test.png", System.Drawing.Imaging.ImageFormat.Png);
+Console.WriteLine("Wrote clipping_test.png");
+Console.WriteLine("Open it. Where the test rectangles have a green strip but no 'should NOT appear' red, the Graphics class is correct.");
+Console.WriteLine("Where the test rectangles are missing the yellow highlight on Test 8, the text is fine and selection works.");
+Console.WriteLine("Where the test rectangles on Test 5/6/7 show NO text, Document.Draw's per-line DrawString is the issue.");
 
 // ==========================================
 // 2. WinForms Application with Multiple Controls
