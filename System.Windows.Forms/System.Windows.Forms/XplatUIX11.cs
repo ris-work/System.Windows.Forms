@@ -5014,7 +5014,8 @@ namespace System.Windows.Forms {
                 {
                     try
                     {
-                        BlitBitmapToDrawable(pc.Bitmap, pc.Drawable);
+                        // Pass the clip rectangle so we only blit the updated region
+                        BlitBitmapToDrawable(pc.Bitmap, pc.Drawable, pc.ClipRect);
                     }
                     catch
                     {
@@ -5035,43 +5036,20 @@ namespace System.Windows.Forms {
         private IntPtr _blitCopyBuffer = IntPtr.Zero;
         private int _blitCopyBufferSize = 0;
 
-        private void BlitBitmapToDrawable(Bitmap bitmap, IntPtr drawable)
+        private void BlitBitmapToDrawable(Bitmap bitmap, IntPtr drawable, Rectangle r)
         {
-            int width = bitmap.Width;
-            int height = bitmap.Height;
+            // Clamp rectangle to bitmap bounds
+            if (r.X < 0) r.X = 0;
+            if (r.Y < 0) r.Y = 0;
+            if (r.Right > bitmap.Width) r.Width = bitmap.Width - r.X;
+            if (r.Bottom > bitmap.Height) r.Height = bitmap.Height - r.Y;
+
+            if (r.Width <= 0 || r.Height <= 0) return;
+
             int skiaStride = bitmap._skBitmap.RowBytes;
             IntPtr skiaPixels = bitmap._skBitmap.GetPixels();
 
-            if (skiaPixels == IntPtr.Zero || width <= 0 || height <= 0)
-                return;
-
-            // ─── Optional: solid-fill test mode ────────────────────────────────
-            string testFill = Environment.GetEnvironmentVariable("SD_X11_TEST_FILL");
-            if (!string.IsNullOrEmpty(testFill) && testFill.Length == 6)
-            {
-                int c = int.Parse(testFill, System.Globalization.NumberStyles.HexNumber);
-                byte tr = (byte)((c >> 16) & 0xFF);
-                byte tg = (byte)((c >> 8) & 0xFF);
-                byte tb = (byte)(c & 0xFF);
-                unsafe
-                {
-                    byte* p = (byte*)skiaPixels.ToPointer();
-                    for (int y = 0; y < height; y++)
-                    {
-                        byte* row = p + y * skiaStride;
-                        for (int x = 0; x < width; x++)
-                        {
-                            row[x * 4 + 0] = tb;
-                            row[x * 4 + 1] = tg;
-                            row[x * 4 + 2] = tr;
-                            row[x * 4 + 3] = 255;
-                        }
-                    }
-                }
-            }
-
-            if (Environment.GetEnvironmentVariable("SD_X11_NO_BLIT") == "1")
-                return;
+            if (skiaPixels == IntPtr.Zero) return;
 
             // ─── Get the drawable's geometry (returns bool) ────────────────────
             IntPtr geoRoot;
@@ -5085,13 +5063,13 @@ namespace System.Windows.Forms {
             IntPtr pix;
             if (!_backingPixmaps.TryGetValue(drawable, out pix) || pix == IntPtr.Zero)
             {
-                pix = XCreatePixmap(DisplayHandle, geoRoot, width, height, actualDepth);
+                pix = XCreatePixmap(DisplayHandle, geoRoot, bitmap.Width, bitmap.Height, actualDepth);
                 if (pix == IntPtr.Zero) return;
                 _backingPixmaps[drawable] = pix;
             }
 
             // ─── Copy Skia pixels into an X11-owned buffer ─────────────────────
-            int bufferSize = skiaStride * height;
+            int bufferSize = skiaStride * bitmap.Height;
             IntPtr copyBuffer = Marshal.AllocHGlobal((IntPtr)bufferSize);
             unsafe
             {
@@ -5100,33 +5078,37 @@ namespace System.Windows.Forms {
             }
 
             IntPtr visual = XDefaultVisual(DisplayHandle, ScreenNo);
+            // Create XImage for the FULL bitmap, so strides match correctly
             IntPtr image = XCreateImage(DisplayHandle, visual, (uint)actualDepth, ZPixmap, 0,
-                                         copyBuffer, (uint)width, (uint)height, 32, skiaStride);
+                                         copyBuffer, (uint)bitmap.Width, (uint)bitmap.Height, 32, skiaStride);
             if (image == IntPtr.Zero)
             {
                 Marshal.FreeHGlobal(copyBuffer);
                 return;
             }
 
-            // ─── (1) Render into the backing pixmap, not the window ────────────
+            // ─── (1) Render ONLY the r sub-rectangle into the backing pixmap ────
             XGCValues gc_values = new XGCValues();
             IntPtr pixGC = XCreateGC(DisplayHandle, pix, IntPtr.Zero, ref gc_values);
             if (pixGC != IntPtr.Zero)
             {
-                XPutImage(DisplayHandle, pix, pixGC, image, 0, 0, 0, 0, (uint)width, (uint)height);
+                // src_x, src_y specify the offset in the XImage (r.X, r.Y)
+                // dest_x, dest_y specify where to put it on the pixmap (0, 0)
+                // width, height specify the size to copy (r.Width, r.Height)
+                XPutImage(DisplayHandle, pix, pixGC, image, r.X, r.Y, 0, 0, (uint)r.Width, (uint)r.Height);
                 XFreeGC(DisplayHandle, pixGC);
             }
 
-            // ─── (2) Copy the entire pixmap onto the window ───────────────────
+            // ─── (2) Copy the r sub-rectangle from the pixmap onto the window ───
             IntPtr winGC = XCreateGC(DisplayHandle, drawable, IntPtr.Zero, ref gc_values);
             if (winGC != IntPtr.Zero)
             {
-                XCopyArea(DisplayHandle, pix, drawable, winGC, 0, 0, width, height, 0, 0);
+                // Copy from 0,0 on pixmap to r.X, r.Y on the window
+                XCopyArea(DisplayHandle, pix, drawable, winGC, 0, 0, r.Width, r.Height, r.X, r.Y);
                 XFreeGC(DisplayHandle, winGC);
             }
 
             // XDestroyImage frees both the XImage struct and the data pointer.
-            // AllocHGlobal is free()-compatible, so we do NOT zero the data pointer.
             XDestroyImage(image);
         }
 
@@ -6451,17 +6433,18 @@ namespace System.Windows.Forms {
             if (img == null)
                 return;
 
-            // Use a temp bitmap to bypass SkiaSharp DrawImage sub-rectangle stride bug
-            // and to prevent scaling the entire source image into the destination rectangle.
+            // Use a temp bitmap to extract ONLY the update rectangle (r) from the offscreen image.
+            // This prevents overpainting areas outside 'r' (like the dropdown arrow in DateTimePicker)
+            // and avoids SkiaSharp's DrawImage sub-rectangle stride bug.
             using (Bitmap temp = new Bitmap(r.Width, r.Height))
             {
                 temp.SetResolution(img.HorizontalResolution, img.VerticalResolution);
                 using (Graphics g = Graphics.FromImage(temp))
                 {
-                    // Draw the specific sub-rectangle from the offscreen image to the temp bitmap (1:1 copy)
+                    // 1:1 copy of the sub-rectangle from img to temp
                     g.DrawImage(img, new Rectangle(0, 0, r.Width, r.Height), r.X, r.Y, r.Width, r.Height, GraphicsUnit.Pixel);
                 }
-                // Draw the temp bitmap to the destination graphics at the correct location (1:1 copy)
+                // Draw the temp bitmap to the destination at the exact location of 'r'
                 dest_dc.DrawImage(temp, r, 0, 0, temp.Width, temp.Height, GraphicsUnit.Pixel);
             }
         }
