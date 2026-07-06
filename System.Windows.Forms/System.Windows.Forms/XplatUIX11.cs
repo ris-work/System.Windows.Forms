@@ -5014,7 +5014,7 @@ namespace System.Windows.Forms {
                 {
                     try
                     {
-                        BlitBitmapToDrawable(pc.Bitmap, pc.Drawable);
+                        BlitBitmapToDrawable(pc.Bitmap, pc.Drawable, pc.ClipRect);
                     }
                     catch
                     {
@@ -5035,45 +5035,20 @@ namespace System.Windows.Forms {
         private IntPtr _blitCopyBuffer = IntPtr.Zero;
         private int _blitCopyBufferSize = 0;
 
-        private void BlitBitmapToDrawable(Bitmap bitmap, IntPtr drawable)
+        private void BlitBitmapToDrawable(Bitmap bitmap, IntPtr drawable, Rectangle clipRect)
         {
             int width = bitmap.Width;
             int height = bitmap.Height;
             int skiaStride = bitmap._skBitmap.RowBytes;
             IntPtr skiaPixels = bitmap._skBitmap.GetPixels();
 
+            Console.WriteLine($"[Blit] Bitmap: {width}x{height}, SkiaStride: {skiaStride}");
+            Console.WriteLine($"[Blit] ClipRect: {clipRect.X},{clipRect.Y} {clipRect.Width}x{clipRect.Height}");
+
             if (skiaPixels == IntPtr.Zero || width <= 0 || height <= 0)
                 return;
 
-            // ─── Optional: solid-fill test mode ────────────────────────────────
-            string testFill = Environment.GetEnvironmentVariable("SD_X11_TEST_FILL");
-            if (!string.IsNullOrEmpty(testFill) && testFill.Length == 6)
-            {
-                int c = int.Parse(testFill, System.Globalization.NumberStyles.HexNumber);
-                byte tr = (byte)((c >> 16) & 0xFF);
-                byte tg = (byte)((c >> 8) & 0xFF);
-                byte tb = (byte)(c & 0xFF);
-                unsafe
-                {
-                    byte* p = (byte*)skiaPixels.ToPointer();
-                    for (int y = 0; y < height; y++)
-                    {
-                        byte* row = p + y * skiaStride;
-                        for (int x = 0; x < width; x++)
-                        {
-                            row[x * 4 + 0] = tb;
-                            row[x * 4 + 1] = tg;
-                            row[x * 4 + 2] = tr;
-                            row[x * 4 + 3] = 255;
-                        }
-                    }
-                }
-            }
-
-            if (Environment.GetEnvironmentVariable("SD_X11_NO_BLIT") == "1")
-                return;
-
-            // ─── Get the drawable's geometry (returns bool) ────────────────────
+            // ─── Get the drawable's geometry ────────────────────────────────
             IntPtr geoRoot;
             int geoX, geoY, geoW, geoH, geoBw, geoDepth;
             int actualDepth = 24;
@@ -5081,7 +5056,7 @@ namespace System.Windows.Forms {
                              out geoW, out geoH, out geoBw, out geoDepth) && geoDepth > 0)
                 actualDepth = geoDepth;
 
-            // ─── Get / create the backing pixmap ──────────────────────────────
+            // ─── Get / create the backing pixmap ────────────────────────────
             IntPtr pix;
             if (!_backingPixmaps.TryGetValue(drawable, out pix) || pix == IntPtr.Zero)
             {
@@ -5090,25 +5065,40 @@ namespace System.Windows.Forms {
                 _backingPixmaps[drawable] = pix;
             }
 
-            // ─── Copy Skia pixels into an X11-owned buffer ─────────────────────
-            int bufferSize = skiaStride * height;
-            IntPtr copyBuffer = Marshal.AllocHGlobal((IntPtr)bufferSize);
+            // ─── Copy Skia pixels into a tightly packed buffer ──────────────
+            // KEY FIX: Use a tightly packed buffer (width * 4) to avoid X11 stride issues.
+            // Skia's stride may be padded, which X11 misinterprets, causing slanted images.
+            int gdiStride = width * 4;
+            IntPtr copyBuffer = Marshal.AllocHGlobal((IntPtr)(gdiStride * height));
             unsafe
             {
-                Buffer.MemoryCopy(skiaPixels.ToPointer(), copyBuffer.ToPointer(),
-                                  bufferSize, bufferSize);
+                byte* src = (byte*)skiaPixels.ToPointer();
+                byte* dst = (byte*)copyBuffer.ToPointer();
+                if (skiaStride == gdiStride)
+                {
+                    Buffer.MemoryCopy(src, dst, gdiStride * height, gdiStride * height);
+                }
+                else
+                {
+                    for (int y = 0; y < height; y++)
+                    {
+                        Buffer.MemoryCopy(src, dst, gdiStride, gdiStride);
+                        src += skiaStride;
+                        dst += gdiStride;
+                    }
+                }
             }
 
             IntPtr visual = XDefaultVisual(DisplayHandle, ScreenNo);
             IntPtr image = XCreateImage(DisplayHandle, visual, (uint)actualDepth, ZPixmap, 0,
-                                         copyBuffer, (uint)width, (uint)height, 32, skiaStride);
+                                         copyBuffer, (uint)width, (uint)height, 32, gdiStride);
             if (image == IntPtr.Zero)
             {
                 Marshal.FreeHGlobal(copyBuffer);
                 return;
             }
 
-            // ─── (1) Render into the backing pixmap, not the window ────────────
+            // ─── (1) Render into the backing pixmap ─────────────────────────
             XGCValues gc_values = new XGCValues();
             IntPtr pixGC = XCreateGC(DisplayHandle, pix, IntPtr.Zero, ref gc_values);
             if (pixGC != IntPtr.Zero)
@@ -5117,16 +5107,24 @@ namespace System.Windows.Forms {
                 XFreeGC(DisplayHandle, pixGC);
             }
 
-            // ─── (2) Copy the entire pixmap onto the window ───────────────────
-            IntPtr winGC = XCreateGC(DisplayHandle, drawable, IntPtr.Zero, ref gc_values);
-            if (winGC != IntPtr.Zero)
+            // ─── (2) Copy the updated rectangle onto the window ─────────────
+            // KEY FIX: Clamp the copy area to the bitmap bounds to prevent overpainting
+            // and reading garbage pixels from outside the pixmap.
+            int clampedX = Math.Max(0, clipRect.X);
+            int clampedY = Math.Max(0, clipRect.Y);
+            int clampedWidth = Math.Min(clipRect.Width, width - clampedX);
+            int clampedHeight = Math.Min(clipRect.Height, height - clampedY);
+
+            if (clampedWidth > 0 && clampedHeight > 0)
             {
-                XCopyArea(DisplayHandle, pix, drawable, winGC, 0, 0, width, height, 0, 0);
-                XFreeGC(DisplayHandle, winGC);
+                IntPtr winGC = XCreateGC(DisplayHandle, drawable, IntPtr.Zero, ref gc_values);
+                if (winGC != IntPtr.Zero)
+                {
+                    XCopyArea(DisplayHandle, pix, drawable, winGC, clampedX, clampedY, (int)clampedWidth, (int)clampedHeight, clampedX, clampedY);
+                    XFreeGC(DisplayHandle, winGC);
+                }
             }
 
-            // XDestroyImage frees both the XImage struct and the data pointer.
-            // AllocHGlobal is free()-compatible, so we do NOT zero the data pointer.
             XDestroyImage(image);
         }
 
