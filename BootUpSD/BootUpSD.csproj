@@ -30,5 +30,10 @@
 	<ItemGroup>
 		<ProjectReference Include="..\System.Windows.Forms\System.Windows.Forms.csproj" />
 	</ItemGroup>
+	<ItemGroup>
+	  <None Update="328551_openclipart_transparent_cube_jarda.png">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </None>
+	</ItemGroup>
 
 </Project>

@@ -94,9 +94,6 @@ namespace System.Windows.Forms {
 			select_all.Click += new EventHandler(select_all_Click);
 
 			document.multiline = false;
-
-			this.EnableOptimizedCustomPainting();
-			this.BorderStyle = BorderStyle.FixedSingle;
 		}
 
 		#endregion	// Public Constructors
