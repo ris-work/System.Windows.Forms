@@ -158,12 +158,13 @@ namespace System.Windows.Forms
 		private bool suppressing_key_press;
 
 		public bool rv_region_set = false;
+        
 
-		#endregion	// Local Variables
+        #endregion  // Local Variables                    
 
-		#region Private Classes
-		// This helper class allows us to dispatch messages to Control.WndProc
-		internal class ControlNativeWindow : NativeWindow {
+        #region Private Classes
+        // This helper class allows us to dispatch messages to Control.WndProc
+        internal class ControlNativeWindow : NativeWindow {
 			private Control owner;
 
 			public ControlNativeWindow(Control control) : base() {
@@ -947,7 +948,9 @@ namespace System.Windows.Forms
 			explicit_bounds = bounds;
 			explicit_bounds_valid = false;
 			cached_preferred_size = Size.Empty;
-		}
+
+            SetStyle(ControlStyles.SupportsTransparentBackColor, true);
+        }
 
 		public Control (Control parent, string text) : this()
 		{
@@ -1339,85 +1342,114 @@ namespace System.Windows.Forms
 			return ((int)(short)(param >> 16));
 		}
 
-		// This method exists so controls overriding OnPaintBackground can have default background painting done
-		internal virtual void PaintControlBackground (PaintEventArgs pevent) {
+        // This method exists so controls overriding OnPaintBackground can have default background painting done
+        // This method exists so controls overriding OnPaintBackground can have default background painting done
+        internal virtual void PaintControlBackground(PaintEventArgs pevent)
+        {
 
-			bool tbstyle_flat = ((CreateParams.Style & (int) ToolBarStyles.TBSTYLE_FLAT) != 0);
+            // Tinted transparency: tell GDI/Skia to use a clear-type hint while
+            // composing this control's pixels over the parent's pixels. The hint
+            // is local; it does not need a Save/Restore for the backbuffer path
+            // because the backbuffer is owned by us and disposed in DoubleBuffer.End.
+            pevent.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
-			// If we have transparent background
-			if (((BackColor.A != 0xff) && GetStyle(ControlStyles.SupportsTransparentBackColor)) || tbstyle_flat) {
-				if (parent != null) {
-					PaintEventArgs	parent_pe;
-					GraphicsState	state;
+            bool tbstyle_flat = ((CreateParams.Style & (int)ToolBarStyles.TBSTYLE_FLAT) != 0);
 
-					parent_pe = new PaintEventArgs(pevent.Graphics, new Rectangle(pevent.ClipRectangle.X + Left, pevent.ClipRectangle.Y + Top, pevent.ClipRectangle.Width, pevent.ClipRectangle.Height));
+            // If we have transparent background
+            if (((BackColor.A != 0xff) && GetStyle(ControlStyles.SupportsTransparentBackColor)) || tbstyle_flat)
+            {
+                if (parent != null)
+                {
+                    PaintEventArgs parent_pe;
+                    GraphicsState state;
 
-					state = parent_pe.Graphics.Save();
-					parent_pe.Graphics.TranslateTransform(-Left, -Top);
-					parent.OnPaintBackground(parent_pe);
-					parent_pe.Graphics.Restore(state);
+                    parent_pe = new PaintEventArgs(pevent.Graphics, new Rectangle(pevent.ClipRectangle.X + Left, pevent.ClipRectangle.Y + Top, pevent.ClipRectangle.Width, pevent.ClipRectangle.Height));
 
-					state = parent_pe.Graphics.Save();
-					parent_pe.Graphics.TranslateTransform(-Left, -Top);
-					parent.OnPaint(parent_pe);
-					parent_pe.Graphics.Restore(state);
-					parent_pe.SetGraphics(null);
-				}
-			}
+                    state = parent_pe.Graphics.Save();
+                    parent_pe.Graphics.TranslateTransform(-Left, -Top);
+                    parent.OnPaintBackground(parent_pe);
+                    parent_pe.Graphics.Restore(state);
 
-			if ((clip_region != null) && (XplatUI.UserClipWontExposeParent)) {
-				if (parent != null) {
-					PaintEventArgs	parent_pe;
-					Region		region;
-					GraphicsState	state;
-					Hwnd		hwnd;
+                    state = parent_pe.Graphics.Save();
+                    parent_pe.Graphics.TranslateTransform(-Left, -Top);
+                    parent.OnPaint(parent_pe);
+                    parent_pe.Graphics.Restore(state);
+                    parent_pe.SetGraphics(null);
+                }
+            }
 
-					hwnd = Hwnd.ObjectFromHandle(Handle);
+            if ((clip_region != null) && (XplatUI.UserClipWontExposeParent))
+            {
+                if (parent != null)
+                {
+                    PaintEventArgs parent_pe;
+                    Region region;
+                    GraphicsState state;
+                    Hwnd hwnd;
 
-					if (hwnd != null) {
-						parent_pe = new PaintEventArgs(pevent.Graphics, new Rectangle(pevent.ClipRectangle.X + Left, pevent.ClipRectangle.Y + Top, pevent.ClipRectangle.Width, pevent.ClipRectangle.Height));
+                    hwnd = Hwnd.ObjectFromHandle(Handle);
 
-						region = new Region ();
-						region.MakeEmpty();
-						region.Union(ClientRectangle);
+                    if (hwnd != null)
+                    {
+                        parent_pe = new PaintEventArgs(pevent.Graphics, new Rectangle(pevent.ClipRectangle.X + Left, pevent.ClipRectangle.Y + Top, pevent.ClipRectangle.Width, pevent.ClipRectangle.Height));
 
-						foreach (Rectangle r in hwnd.ClipRectangles) {
-							region.Union (r);
-						}
+                        region = new Region();
+                        region.MakeEmpty();
+                        region.Union(ClientRectangle);
 
-						state = parent_pe.Graphics.Save();
-						parent_pe.Graphics.Clip = region;
+                        foreach (Rectangle r in hwnd.ClipRectangles)
+                        {
+                            region.Union(r);
+                        }
 
-						parent_pe.Graphics.TranslateTransform(-Left, -Top);
-						parent.OnPaintBackground(parent_pe);
-						parent_pe.Graphics.Restore(state);
+                        state = parent_pe.Graphics.Save();
+                        parent_pe.Graphics.Clip = region;
 
-						state = parent_pe.Graphics.Save();
-						parent_pe.Graphics.Clip = region;
+                        parent_pe.Graphics.TranslateTransform(-Left, -Top);
+                        parent.OnPaintBackground(parent_pe);
+                        parent_pe.Graphics.Restore(state);
 
-						parent_pe.Graphics.TranslateTransform(-Left, -Top);
-						parent.OnPaint(parent_pe);
-						parent_pe.Graphics.Restore(state);
-						parent_pe.SetGraphics(null);
+                        state = parent_pe.Graphics.Save();
+                        parent_pe.Graphics.Clip = region;
 
-						region.Intersect(clip_region);
-						pevent.Graphics.Clip = region;
-					}
-				}
-			}
+                        parent_pe.Graphics.TranslateTransform(-Left, -Top);
+                        parent.OnPaint(parent_pe);
+                        parent_pe.Graphics.Restore(state);
+                        parent_pe.SetGraphics(null);
 
-			if (background_image == null) {
-				if (!tbstyle_flat) {
-					Rectangle paintRect = pevent.ClipRectangle;
-					pevent.Graphics.FillRectangle(BackColorBrush, paintRect);
-				}
-				return;
-			}
+                        region.Intersect(clip_region);
+                        pevent.Graphics.Clip = region;
+                    }
+                }
+            }
 
-			DrawBackgroundImage (pevent.Graphics);
-		}
+            if (background_image == null)
+            {
+                if (!tbstyle_flat)
+                {
+                    Rectangle paintRect = pevent.ClipRectangle;
 
-		void DrawBackgroundImage (Graphics g) {
+                    // Tinted fill: if the user-set BackColor is fully opaque,
+                    // compose it with a slight alpha so the parent's pixels
+                    // (already painted under us by the recursion above) blend
+                    // through. The user's BackColor is NOT mutated — we only
+                    // read it. If it's already translucent, we use it as-is.
+                    Color fillColor = BackColor.A == 255
+                            ? Color.FromArgb(RVUtils.UniversalAlpha, BackColor)
+                            : BackColor;
+
+                    using (var brush = new SolidBrush(fillColor))
+                    {
+                        pevent.Graphics.FillRectangle(brush, paintRect);
+                    }
+                }
+                return;
+            }
+
+            DrawBackgroundImage(pevent.Graphics);
+        }
+
+        void DrawBackgroundImage (Graphics g) {
 			Rectangle drawing_rectangle = new Rectangle ();
 			g.FillRectangle (BackColorBrush, ClientRectangle);
 			
@@ -3340,7 +3372,8 @@ namespace System.Windows.Forms
 				create_params.ClassName = XplatUI.GetDefaultClassName (GetType ());
 				create_params.ClassStyle = (int)(XplatUIWin32.ClassStyle.CS_OWNDC | XplatUIWin32.ClassStyle.CS_DBLCLKS);
 				create_params.ExStyle = 0;
-				create_params.Param = 0;
+                create_params.ExStyle = (this is Form) ? 0x20 : 0;
+                create_params.Param = 0;
 
 				if (allow_drop) {
 					create_params.ExStyle |= (int)WindowExStyles.WS_EX_ACCEPTFILES;
