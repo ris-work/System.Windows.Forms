@@ -26,7 +26,11 @@
 //	Jonathan Pobst (monkey@jpobst.com)
 //
 
+using Mono.Unix.Native;
+using System;
 using System.Drawing;
+
+using System.Windows.Forms;
 using System.Windows.Forms.VisualStyles;
 
 namespace System.Windows.Forms
@@ -58,48 +62,50 @@ namespace System.Windows.Forms
 			DrawTextBox (g, bounds, textBoxText, font, Rectangle.Empty, flags, state);
 		}
 
-		public static void DrawTextBox (Graphics g, Rectangle bounds, string textBoxText, Font font, Rectangle textBounds, TextFormatFlags flags, TextBoxState state)
-		{
-			if (!IsSupported)
-				throw new InvalidOperationException ();
+        public static void DrawTextBox(Graphics g, Rectangle bounds, string textBoxText, Font font, Rectangle textBounds, TextFormatFlags flags, TextBoxState state)
+        {
+            if (!IsSupported)
+                throw new InvalidOperationException();
 
-			VisualStyleRenderer vsr;
+            VisualStyleRenderer vsr;
 
-			switch (state) {
-				case TextBoxState.Assist:
-					vsr = new VisualStyleRenderer (VisualStyleElement.TextBox.TextEdit.Assist);
-					break;
-				case TextBoxState.Disabled:
-					vsr = new VisualStyleRenderer (VisualStyleElement.TextBox.TextEdit.Disabled);
-					break;
-				case TextBoxState.Hot:
-					vsr = new VisualStyleRenderer (VisualStyleElement.TextBox.TextEdit.Hot);
-					break;
-				case TextBoxState.Normal:
-				case TextBoxState.Readonly:
-				default:
-					vsr = new VisualStyleRenderer (VisualStyleElement.TextBox.TextEdit.Normal);
-					break;
-				case TextBoxState.Selected:
-					vsr = new VisualStyleRenderer (VisualStyleElement.TextBox.TextEdit.Selected);
-					break;
-			}
+            switch (state)
+            {
+                case TextBoxState.Assist:
+                    vsr = new VisualStyleRenderer(VisualStyleElement.TextBox.TextEdit.Assist);
+                    break;
+                case TextBoxState.Disabled:
+                    vsr = new VisualStyleRenderer(VisualStyleElement.TextBox.TextEdit.Disabled);
+                    break;
+                case TextBoxState.Hot:
+                    vsr = new VisualStyleRenderer(VisualStyleElement.TextBox.TextEdit.Hot);
+                    break;
+                case TextBoxState.Normal:
+                case TextBoxState.Readonly:
+                default:
+                    vsr = new VisualStyleRenderer(VisualStyleElement.TextBox.TextEdit.Normal);
+                    break;
+                case TextBoxState.Selected:
+                    vsr = new VisualStyleRenderer(VisualStyleElement.TextBox.TextEdit.Selected);
+                    break;
+            }
 
-			vsr.DrawBackground (g, bounds);
+            vsr.DrawBackground(g, bounds);
+            Logger.AddLog("Drawn TB Background");
 
-			if (textBounds == Rectangle.Empty)
-				textBounds = new Rectangle (bounds.Left + 3, bounds.Top + 3, bounds.Width - 6, bounds.Height - 6);
+            if (textBounds == Rectangle.Empty)
+                textBounds = new Rectangle(bounds.Left + 3, bounds.Top + 3, bounds.Width - 6, bounds.Height - 6);
 
-			if (textBoxText != String.Empty)
-				if (state == TextBoxState.Disabled)
-					TextRenderer.DrawText (g, textBoxText, font, textBounds, SystemColors.GrayText, flags);
-				else
-					TextRenderer.DrawText (g, textBoxText, font, textBounds, SystemColors.ControlText, flags);
-		}
-		#endregion
+            if (textBoxText != String.Empty)
+                if (state == TextBoxState.Disabled)
+                    TextRenderer.DrawText(g, textBoxText, font, textBounds, SystemColors.GrayText, flags);
+                else
+                    TextRenderer.DrawText(g, textBoxText, font, textBounds, SystemColors.ControlText, flags);
+        }
+        #endregion
 
-		#region Public Static Properties
-		public static bool IsSupported {
+        #region Public Static Properties
+        public static bool IsSupported {
 			get { return VisualStyleInformation.IsEnabledByUser && (Application.VisualStyleState == VisualStyleState.ClientAndNonClientAreasEnabled || Application.VisualStyleState == VisualStyleState.ClientAreaEnabled); }
 		}
 		#endregion

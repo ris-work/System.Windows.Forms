@@ -1799,29 +1799,26 @@ namespace System.Windows.Forms {
 
 			line_no = start;
 
-#if Debug
+			#if Debug
 				DateTime	n = DateTime.Now;
 				Console.WriteLine ("Started drawing: {0}s {1}ms", n.Second, n.Millisecond);
 				Console.WriteLine ("CLIP:  {0}", clip);
 				Console.WriteLine ("S: {0}", GetLine (start).text);
 				Console.WriteLine ("E: {0}", GetLine (end).text);
-#endif
+			#endif
 
-            // Non multiline selection can be handled outside of the loop
-            if (!multiline && selection_visible && owner.ShowSelection)
-            {
-                Rectangle selRect = new Rectangle(
-					offset_x + (int)selection_start.line.widths[selection_start.pos] + selection_start.line.X - viewport_x,
-					offset_y + selection_start.line.Y,
-					((int)selection_end.line.X + (int)selection_end.line.widths[selection_end.pos]) -
-					((int)selection_start.line.X + (int)selection_start.line.widths[selection_start.pos]),
-					selection_start.line.height);
-                Rectangle eff = g.Intersect(selRect);
-                if (eff.Width > 0 && eff.Height > 0)
-                    g.FillRectangle(ThemeEngine.Current.ResPool.GetSolidBrush(ThemeEngine.Current.ColorHighlight), eff);
-            }
+			// Non multiline selection can be handled outside of the loop
+			if (!multiline && selection_visible && owner.ShowSelection) {
+				g.FillRectangle (ThemeEngine.Current.ResPool.GetSolidBrush (ThemeEngine.Current.ColorHighlight),
+						offset_x + selection_start.line.widths [selection_start.pos] +
+						selection_start.line.X - viewport_x, 
+				        offset_y + selection_start.line.Y,
+						(selection_end.line.X + selection_end.line.widths [selection_end.pos]) -
+						(selection_start.line.X + selection_start.line.widths [selection_start.pos]), 
+				        selection_start.line.height);
+			}
 
-            while (line_no <= end) {
+			while (line_no <= end) {
 				line = GetLine (line_no);
 				float line_y = line.Y - viewport_y + offset_y + line.SpacingBefore;
 				
@@ -1856,18 +1853,13 @@ namespace System.Windows.Forms {
 						// There isn't really selection
 						line_selection_start = text.Length + 1;
 						line_selection_end = line_selection_start;
-					} else if (multiline)
-                    {
-                        Rectangle selRect = new Rectangle(
-                            offset_x + (int)line.widths[line_selection_start - 1] + line.X - viewport_x,
-                            (int)(line_y - line.SpacingBefore),
-                            (int)line.widths[line_selection_end - 1] - (int)line.widths[line_selection_start - 1],
-                            line.height);
-                        Rectangle eff = g.Intersect(selRect);
-                        if (eff.Width > 0 && eff.Height > 0)
-                            g.FillRectangle(ThemeEngine.Current.ResPool.GetSolidBrush(ThemeEngine.Current.ColorHighlight), eff);
-                    }
-                }
+					} else if (multiline) {
+						// lets draw some selection baby!!  (non multiline selection is drawn outside the loop)
+						g.FillRectangle (ThemeEngine.Current.ResPool.GetSolidBrush (ThemeEngine.Current.ColorHighlight),
+							offset_x + line.widths [line_selection_start - 1] + line.X - viewport_x, line_y - line.SpacingBefore,
+							line.widths [line_selection_end - 1] - line.widths [line_selection_start - 1], line.height);
+					}
+				}
 
 				while (tag != null) {
 
@@ -1914,43 +1906,24 @@ namespace System.Windows.Forms {
 							current_backcolor = tag_backcolor;
 						}
 
-                        if (current_backcolor != Color.Empty && current_backcolor != owner.BackColor)
-                        {
-                            Rectangle tagBackRect = new Rectangle(
-                                offset_x + (int)line.widths[old_tag_pos - 1] + line.X - viewport_x,
-                                (int)(line_y - line.SpacingBefore),
-                                (int)line.widths[Math.Min(tag.Start + tag.Length, tag_pos) - 1] - (int)line.widths[old_tag_pos - 1],
-                                line.height);
-                            Rectangle eff = g.Intersect(tagBackRect);
-                            if (eff.Width > 0 && eff.Height > 0)
-                                g.FillRectangle(ThemeEngine.Current.ResPool.GetSolidBrush(current_backcolor), eff);
-                        }
+						if (current_backcolor != Color.Empty && current_backcolor != owner.BackColor) {
+							current_backcolor = Color.FromArgb(200,current_backcolor);
+							g.FillRectangle (ThemeEngine.Current.ResPool.GetSolidBrush (current_backcolor),
+							    offset_x + line.widths [old_tag_pos - 1] + line.X - viewport_x,
+							    line_y - line.SpacingBefore,
+							    line.widths [Math.Min (tag.Start + tag.Length, tag_pos) - 1] - line.widths [old_tag_pos - 1],
+							    line.height);
+						}
 
-                        Rectangle text_size;
+						Rectangle text_size;
 
-                        // 1. Build the rect that tag.Draw was going to use.
-                        RectangleF textRectF = new RectangleF(
-                            offset_x + line.X - viewport_x,
-                            line_y + tag.Shift - tag.CharOffset,
-                            line.widths[Math.Min(tag.Start + tag.Length, tag_pos) - 1] - line.widths[old_tag_pos - 1],
-                            line.height);
+						tag.Draw (g, current_color,
+								offset_x + line.X - viewport_x,
+								line_y + tag.Shift - tag.CharOffset,
+								old_tag_pos - 1, Math.Min (tag.Start + tag.Length, tag_pos) - 1,
+								text.ToString (), out text_size, tag.IsLink);
 
-                        // 2. Intersect it with whatever the current Skia clip is.
-                        RectangleF effText = g.Intersect(textRectF);
-
-                        // 3. Call tag.Draw with the intersected rect. The "out text_size" is now
-                        //    always reached, so the compiler is happy. If the intersection is empty,
-                        //    tag.Draw is a no-op for that rect.
-                        tag.Draw(g, current_color,
-                            offset_x + line.X - viewport_x,
-                            line_y + tag.Shift - tag.CharOffset,
-                            old_tag_pos - 1, Math.Min(tag.Start + tag.Length, tag_pos) - 1,
-                            text.ToString(),    // StringBuilder -> string
-                            out text_size,
-                            tag.IsLink);
-
-
-                        if (tag.IsLink) {
+						if (tag.IsLink) {
 							TextBoxBase.LinkRectangle link = new TextBoxBase.LinkRectangle (text_size);
 							link.LinkTag = tag;
 							owner.list_links.Add (link);
