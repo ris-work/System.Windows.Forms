@@ -60,7 +60,7 @@ using (var g = Graphics.FromImage(bitmap))
     
 }*/
 
-using var bmp = new Bitmap(1400, 900);
+using var bmp = new Bitmap(1400, 1600);
 using var g = Graphics.FromImage(bmp);
 g.Clear(Color.White);
 
@@ -195,6 +195,125 @@ g.FillRectangle(Brushes.Magenta, tRect);
 g.DrawString("rotated & clipped", font, Brushes.Black, tRect, fmt);
 g.ResetClip();
 g.ResetTransform();
+
+y += 100;
+
+// TEST 10: Star-shaped complex region + SetClip / ExcludeClip / IntersectClip
+DrawHeader("Test 10: Star region — SetClip / ExcludeClip / IntersectClip", 20, y);
+y += 25;
+
+// Build a 5-pointed star path
+int starCx = 200, starCy = y + 100;
+int starOuter = 100, starInner = 40;
+PointF[] starPts = new PointF[10];
+for (int i = 0; i < 10; i++)
+{
+    double angle = -Math.PI / 2 + i * Math.PI / 5;
+    float r = (i % 2 == 0) ? starOuter : starInner;
+    starPts[i] = new PointF(
+        (float)(starCx + Math.Cos(angle) * r),
+        (float)(starCy + Math.Sin(angle) * r)
+    );
+}
+using var starPath = new GraphicsPath();
+starPath.AddPolygon(starPts);
+using var starRegion = new Region(starPath);
+
+// Bounding box around the star (so we can see the "outside" zone)
+var starBbox = new Rectangle(starCx - starOuter, starCy - starOuter, starOuter * 2, starOuter * 2);
+g.DrawRectangle(Pens.Gray, starBbox);
+g.DrawPolygon(Pens.Black, starPts);
+
+// 10a: SetClip(starRegion) — fill is clipped to the star shape
+g.SetClip(starRegion, CombineMode.Replace);
+g.FillRectangle(Brushes.Cyan, starBbox);
+g.DrawString("INSIDE star", new Font(FontFamily.GenericSansSerif, 10, FontStyle.Bold), Brushes.Black, starCx - 40, starCy - 6);
+g.DrawString("OUTSIDE — should NOT appear", new Font(FontFamily.GenericSansSerif, 9, FontStyle.Italic), Brushes.Red, 110, 1080);
+g.ResetClip();
+
+// 10b: ExcludeClip(starRegion) — fill everywhere EXCEPT inside the star
+g.ExcludeClip(starRegion);
+g.FillRectangle(Brushes.Pink, starBbox);
+g.DrawString("anti-clip text — fills everywhere except the star", new Font(FontFamily.GenericSansSerif, 10), Brushes.Magenta, 110, 1045);
+g.ResetClip();
+
+// 10c: SetClip(starRegion) + IntersectClip(rightHalf) — star ∩ right half
+var rightHalf = new Rectangle(starCx, starCy - starOuter, starOuter, starOuter * 2);
+g.DrawRectangle(Pens.Blue, rightHalf);
+g.SetClip(starRegion, CombineMode.Replace);
+g.IntersectClip(rightHalf);
+g.FillRectangle(Brushes.AliceBlue, starBbox);
+g.DrawString("star ∩ right", new Font(FontFamily.GenericSansSerif, 9, FontStyle.Bold), Brushes.Orange, starCx + 20, starCy + 25);
+g.ResetClip();
+
+y += 230;
+
+// TEST 11: CombineMode matrix — star ⊕ ellipse in all 4 boolean clip modes
+DrawHeader("Test 11: CombineMode matrix — star ⊕ ellipse (Intersect / Union / Xor / Exclude)", 20, y);
+y += 25;
+
+int cellW = 320;
+int cellY = y + 30;                 // top of the cell row
+int starR = 65, starIr = 26;        // star outer/inner radii
+int elW = 50, elH = 150;            // ellipse size
+
+CombineMode[] modes = {
+    CombineMode.Intersect,
+    CombineMode.Union,
+    CombineMode.Xor,
+    CombineMode.Exclude
+};
+// Reusing the same brushes already in the file: Cyan, Magenta, Lime, Orange
+Brush[] fills = { Brushes.Cyan, Brushes.Magenta, Brushes.Pink, Brushes.Orange };
+string[] labels = { "Intersect (∩)", "Union (∪)", "Xor (⊕)", "Exclude (\\)" };
+
+for (int col = 0; col < 4; col++)
+{
+    int cx = 40 + col * cellW + cellW / 2;
+    int cy = cellY + 100;
+
+    // --- Build the star region (same recipe as Test 10) ---
+    PointF[] pts = new PointF[10];
+    for (int i = 0; i < 10; i++)
+    {
+        double angle = -Math.PI / 2 + i * Math.PI / 5;
+        float r = (i % 2 == 0) ? starR : starIr;
+        pts[i] = new PointF(
+            (float)(cx + Math.Cos(angle) * r),
+            (float)(cy + Math.Sin(angle) * r)
+        );
+    }
+    using var starPath2 = new GraphicsPath();
+    starPath2.AddPolygon(pts);
+    using var starReg = new Region(starPath2);
+
+    // --- Build the ellipse region via a path (works on Mono too) ---
+    using var ellipsePath = new GraphicsPath();
+    ellipsePath.AddEllipse(cx - elW / 2, cy - elH / 2, elW, elH);
+    using var ellipseReg = new Region(ellipsePath);
+
+    // --- Light outlines of both inputs (drawn BEFORE the clip is set) ---
+    g.DrawPolygon(Pens.Gray, pts);
+    g.DrawEllipse(Pens.Gray, cx - elW / 2, cy - elH / 2, elW, elH);
+
+    // --- Apply the combine mode: clip = star ⊕ ellipse ---
+    g.SetClip(starReg, CombineMode.Replace);   // current clip = star
+    g.SetClip(ellipseReg, modes[col]);         // combine per mode[col]
+
+    // --- Fill the cell bbox (only the boolean-combined pixels stay) ---
+    var bbox = new Rectangle(
+        cx - starR - 5, cy - starR - 5,
+        (starR + 5) * 2, (starR + 5) * 2);
+    g.FillRectangle(fills[col], bbox);
+
+    g.ResetClip();
+
+    // --- Label under the cell ---
+    using var lblFont = new Font(FontFamily.GenericSansSerif, 11, FontStyle.Bold);
+    g.DrawString(labels[col], lblFont, Brushes.Black, cx - 45, cy + starR + 12);
+}
+
+y += 250;
 
 bmp.Save("clipping_test.png", System.Drawing.Imaging.ImageFormat.Png);
 Console.WriteLine("Wrote clipping_test.png");
@@ -346,6 +465,7 @@ Application.Run(form);
 // ==========================================
 // 2. WinForms Application with Nested Controls
 // ==========================================
+/*
 var form = new Form
 {
     Text = "Nested Controls Test",
@@ -562,4 +682,563 @@ form.Controls.Add(comboBox2);
 var datePicker = new DateTimePicker { Location = new Point(310, 555), Width = 200 };
 form.Controls.Add(datePicker);
 
+Application.Run(form);*/
+
+// === Form ===
+var form = new Form
+{
+    AllowTransparency = true,
+    //BackColor = Color.Transparent,
+    BackgroundImage = Image.FromFile("328551_openclipart_transparent_cube_jarda.png"),
+    BackgroundImageLayout = ImageLayout.None,
+    ClientSize = new Size(1800, 950),
+    BackColor = Color.FromArgb(45, 48, 45),
+    Text = "Ultimate Control Test Bench",
+    WindowState = FormWindowState.Maximized,
+    //DoubleBuffered = true
+};
+
+// === Global Strips ===
+var menuStrip1 = new MenuStrip();
+var statusStrip1 = new StatusStrip();
+
+// === Zone 1: Inputs & Basics ===
+var grpInputs = new GroupBox
+{
+    Text = "Zone 1: Inputs & Basics",
+    Location = new Point(20, 40),
+    Size = new Size(400, 420),
+    BackColor = Color.FromArgb(150, 60, 60, 65),
+    ForeColor = Color.White,
+    FlatStyle = FlatStyle.Flat
+};
+
+var txtStandard = new TextBox
+{
+    Location = new Point(20, 30),
+    Size = new Size(360, 25),
+    Text = "Standard TextBox",
+    ForeColor = Color.Black,
+    BackColor = Color.Red
+};
+var txtStandard2 = new TextBox
+{
+    Location = new Point(200, 30),
+    Size = new Size(360, 25),
+    Text = "Standard TextBox",
+    ForeColor = Color.Black,
+    BackColor = Color.Red
+};
+var txtPassword = new TextBox
+{
+    Location = new Point(20, 70),
+    Size = new Size(360, 25),
+    UseSystemPasswordChar = true,
+    Text = "password",
+    ForeColor = Color.Black,
+    //BackColor = Color.FromArgb(200, 125, 75, 175)
+};
+var txtMulti = new TextBox
+{
+    Location = new Point(20, 110),
+    Size = new Size(360, 100),
+    Multiline = true,
+    ScrollBars = ScrollBars.Vertical,
+    Text = "Multiline text box...",
+    BackColor = Color.FromArgb(255, 255, 220)
+};
+var numericUpDown1 = new NumericUpDown
+{
+    Location = new Point(20, 230),
+    Size = new Size(150, 25),
+    Value = 50,
+    BorderStyle = BorderStyle.FixedSingle
+};
+var trackBar1 = new TrackBar
+{
+    Location = new Point(20, 270),
+    Size = new Size(360, 45),
+    Maximum = 100,
+    Value = 75
+};
+var comboBox1 = new ComboBox
+{
+    Location = new Point(20, 330),
+    Size = new Size(200, 25),
+    FlatStyle = FlatStyle.Flat,
+    DropDownStyle = ComboBoxStyle.DropDown
+};
+comboBox1.Items.AddRange(new object[] { "Option A", "Option B" });
+comboBox1.SelectedIndex = 0;
+
+var dateTimePicker1 = new DateTimePicker
+{
+    Location = new Point(20, 375),
+    Size = new Size(200, 25),
+    Format = DateTimePickerFormat.Short,
+    Value = DateTime.Now,
+    BackColor = Color.White,
+    ForeColor = Color.Black,
+    CalendarTitleBackColor = Color.Green
+};
+
+grpInputs.Controls.Add(txtStandard);
+grpInputs.Controls.Add(txtPassword);
+grpInputs.Controls.Add(txtMulti);
+grpInputs.Controls.Add(numericUpDown1);
+grpInputs.Controls.Add(trackBar1);
+grpInputs.Controls.Add(comboBox1);
+grpInputs.Controls.Add(dateTimePicker1);
+
+// === Zone 2: Builtin Transparency Test ===
+var grpTransparency = new GroupBox
+{
+    Text = "Zone 2: Builtin Transparency Test",
+    Location = new Point(440, 40),
+    Size = new Size(450, 420),
+    BackColor = Color.FromArgb(60, 60, 65),
+    ForeColor = Color.White,
+    FlatStyle = FlatStyle.Flat
+};
+
+var picStar = new PictureBox
+{
+    Location = new Point(25, 30),
+    Size = new Size(400, 350),
+    BackColor = Color.LightGray,
+    BorderStyle = BorderStyle.Fixed3D,
+    SizeMode = PictureBoxSizeMode.CenterImage
+};
+
+var btnTran1 = new Button
+{
+    Text = "Tran Btn 1",
+    Location = new Point(30, 30),
+    Size = new Size(150, 40),
+    BackColor = Color.Transparent,
+    FlatStyle = FlatStyle.Flat,
+    ForeColor = Color.Black
+};
+btnTran1.FlatAppearance.BorderSize = 0;
+
+var btnTran2 = new Button
+{
+    Text = "Tran Btn 2",
+    Location = new Point(200, 150),
+    Size = new Size(160, 40),
+    BackColor = Color.Transparent,
+    FlatStyle = FlatStyle.Flat,
+    Font = new Font("Arial", 10, FontStyle.Bold),
+    ForeColor = Color.Blue
+};
+btnTran2.FlatAppearance.BorderSize = 0;
+
+var btnTran3 = new Button
+{
+    Text = "Tran Btn 3",
+    Location = new Point(30, 270),
+    Size = new Size(120, 40),
+    BackColor = Color.Cyan,
+    FlatStyle = FlatStyle.Flat,
+    ForeColor = Color.Magenta
+};
+btnTran3.FlatAppearance.BorderSize = 0;
+
+picStar.Controls.Add(btnTran1);
+picStar.Controls.Add(btnTran2);
+picStar.Controls.Add(btnTran3);
+picStar.Controls.Add(txtStandard2);
+
+grpTransparency.Controls.Add(picStar);
+
+// === Zone 3: Rainbow Cell Grid ===
+var grpRainbowData = new GroupBox
+{
+    Text = "Zone 3: Rainbow Cell Grid",
+    Location = new Point(910, 40),
+    Size = new Size(450, 420),
+    BackColor = Color.FromArgb(60, 60, 65),
+    ForeColor = Color.White,
+    FlatStyle = FlatStyle.Flat
+};
+
+var dataGridViewRainbow = new DataGridView
+{
+    Location = new Point(10, 30),
+    Size = new Size(430, 380),
+    AllowUserToAddRows = false,
+    ReadOnly = true,
+    BorderStyle = BorderStyle.FixedSingle,
+    EnableHeadersVisualStyles = false,
+    BackgroundColor = Color.FromArgb(255, 60, 65),
+    GridColor = Color.Wheat
+};
+dataGridViewRainbow.DefaultCellStyle.BackColor = Color.White;
+dataGridViewRainbow.DefaultCellStyle.SelectionBackColor = Color.FromArgb(100, 0, 0, 0);
+dataGridViewRainbow.DefaultCellStyle.SelectionForeColor = Color.White;
+
+DataTable dtRainbow = new DataTable();
+dtRainbow.Columns.Add("R"); dtRainbow.Columns.Add("A");
+dtRainbow.Columns.Add("I"); dtRainbow.Columns.Add("N");
+for (int i = 0; i < 10; i++) dtRainbow.Rows.Add("Cel", "Cel", "Cel", "Cel");
+dataGridViewRainbow.DataSource = dtRainbow;
+
+dataGridViewRainbow.CellFormatting += (sender, e) =>
+{
+    if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
+    int seed = (e.RowIndex * 100) + e.ColumnIndex;
+    Random rnd = new Random(seed);
+    e.CellStyle.BackColor = Color.FromArgb(255, rnd.Next(150, 256), rnd.Next(150, 256), rnd.Next(150, 256));
+    e.CellStyle.ForeColor = Color.Black;
+    e.CellStyle.SelectionBackColor = dataGridViewRainbow.DefaultCellStyle.SelectionBackColor;
+};
+
+grpRainbowData.Controls.Add(dataGridViewRainbow);
+
+// === Zone 4: Interactive Buttons ===
+var grpButtons = new GroupBox
+{
+    Text = "Zone 4: Interactive Buttons",
+    Location = new Point(20, 480),
+    Size = new Size(400, 380),
+    BackColor = Color.FromArgb(60, 60, 65),
+    ForeColor = Color.White,
+    FlatStyle = FlatStyle.Flat
+};
+
+var btnColored1 = new Button
+{
+    Text = "RED ACTION",
+    Location = new Point(20, 30),
+    Size = new Size(150, 50),
+    BackColor = Color.DarkGray,
+    FlatStyle = FlatStyle.Flat,
+    ForeColor = Color.White
+};
+btnColored1.FlatAppearance.BorderSize = 0;
+
+var btnColored2 = new Button
+{
+    Text = "Blue Action",
+    Location = new Point(20, 100),
+    Size = new Size(150, 50),
+    BackColor = Color.Fuchsia,
+    FlatStyle = FlatStyle.Flat,
+    ForeColor = Color.White
+};
+btnColored2.FlatAppearance.BorderSize = 0;
+
+var btnColored3 = new Button
+{
+    Text = "Green Submit",
+    Location = new Point(20, 170),
+    Size = new Size(150, 50),
+    BackColor = Color.Lime,
+    FlatStyle = FlatStyle.Flat,
+    ForeColor = Color.White
+};
+btnColored3.FlatAppearance.BorderSize = 0;
+
+var checkBox1 = new CheckBox
+{
+    Text = "Enable Options",
+    Location = new Point(200, 40),
+    AutoSize = true,
+    ForeColor = Color.White,
+    FlatStyle = FlatStyle.Flat
+};
+var radioButton1 = new RadioButton
+{
+    Text = "Radio Choice",
+    Location = new Point(200, 80),
+    AutoSize = true,
+    ForeColor = Color.White,
+    FlatStyle = FlatStyle.Flat
+};
+var linkLabel1 = new LinkLabel
+{
+    Text = "Visit Example.com",
+    Location = new Point(200, 120),
+    AutoSize = true,
+    LinkColor = Color.Cyan
+};
+
+grpButtons.Controls.Add(btnColored1);
+grpButtons.Controls.Add(btnColored2);
+grpButtons.Controls.Add(btnColored3);
+grpButtons.Controls.Add(checkBox1);
+grpButtons.Controls.Add(radioButton1);
+grpButtons.Controls.Add(linkLabel1);
+
+// === Zone 5: Hierarchies ===
+var grpLists = new GroupBox
+{
+    Text = "Zone 5: Hierarchies",
+    Location = new Point(440, 480),
+    Size = new Size(450, 380),
+    BackColor = Color.FromArgb(60, 60, 65),
+    ForeColor = Color.White,
+    FlatStyle = FlatStyle.Flat
+};
+
+var treeView1 = new TreeView
+{
+    Location = new Point(10, 30),
+    Size = new Size(200, 330),
+    BackColor = Color.White,
+    BorderStyle = BorderStyle.FixedSingle
+};
+treeView1.Nodes.Add("Root");
+treeView1.Nodes[0].Nodes.Add("Child");
+
+var listView1 = new ListView
+{
+    Location = new Point(220, 30),
+    Size = new Size(200, 330),
+    View = View.Details,
+    BorderStyle = BorderStyle.FixedSingle
+};
+listView1.Columns.Add("Item");
+listView1.Columns.Add("Info");
+listView1.Items.Add("Item 1", "Info 1");
+
+grpLists.Controls.Add(treeView1);
+grpLists.Controls.Add(listView1);
+
+// === Zone 6: Standard Data ===
+var grpStandardData = new GroupBox
+{
+    Text = "Zone 6: Standard Data",
+    Location = new Point(910, 480),
+    Size = new Size(450, 380),
+    BackColor = Color.FromArgb(60, 60, 65),
+    ForeColor = Color.White,
+    FlatStyle = FlatStyle.Flat
+};
+
+var dataGridView1 = new DataGridView
+{
+    Location = new Point(10, 30),
+    Size = new Size(410, 150),
+    BorderStyle = BorderStyle.FixedSingle,
+    EnableHeadersVisualStyles = false
+};
+dataGridView1.ColumnHeadersDefaultCellStyle.BackColor = Color.Gray;
+dataGridView1.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
+
+DataTable dtStd = new DataTable();
+dtStd.Columns.Add("ID"); dtStd.Columns.Add("Data");
+dtStd.Rows.Add(1, "Alpha"); dtStd.Rows.Add(2, "Beta");
+dataGridView1.DataSource = dtStd;
+
+var richTextBox1 = new RichTextBox
+{
+    Location = new Point(10, 200),
+    Size = new Size(250, 150),
+    Text = "Rich Text Area...",
+    BackColor = Color.White
+};
+var progressBar1 = new ProgressBar
+{
+    Location = new Point(280, 200),
+    Size = new Size(140, 23),
+    Value = 60
+};
+
+grpStandardData.Controls.Add(dataGridView1);
+grpStandardData.Controls.Add(richTextBox1);
+grpStandardData.Controls.Add(progressBar1);
+
+// === Zone 7: Tab Control & Random Crap ===
+var grpTabs = new GroupBox
+{
+    Text = "Zone 7: Tab Control & Random Crap",
+    Location = new Point(1380, 40),
+    Size = new Size(380, 820),
+    BackColor = Color.FromArgb(60, 60, 65),
+    ForeColor = Color.White,
+    FlatStyle = FlatStyle.Flat
+};
+
+var tabControlRandom = new TabControl
+{
+    Location = new Point(10, 20),
+    Size = new Size(360, 780),
+    SelectedIndex = 0,
+    Appearance = TabAppearance.FlatButtons
+};
+
+// --- Tab 1: Scrolls ---
+var tabPageScrolls = new TabPage
+{
+    Text = "Scrolls",
+    BackColor = Color.FromArgb(70, 70, 75)
+};
+var hScrollBar1 = new HScrollBar
+{
+    Location = new Point(20, 30),
+    Size = new Size(300, 20),
+    Maximum = 100,
+    Value = 50
+};
+var vScrollBar1 = new VScrollBar
+{
+    Location = new Point(20, 70),
+    Size = new Size(20, 200),
+    Maximum = 100,
+    Value = 20
+};
+var progressBarCrap = new ProgressBar
+{
+    Location = new Point(60, 70),
+    Size = new Size(260, 20),
+    Style = ProgressBarStyle.Marquee,
+    MarqueeAnimationSpeed = 50
+};
+tabPageScrolls.Controls.Add(hScrollBar1);
+tabPageScrolls.Controls.Add(vScrollBar1);
+tabPageScrolls.Controls.Add(progressBarCrap);
+
+// --- Tab 2: More Lists ---
+var thisTabPageLists = new TabPage
+{
+    Text = "More Lists",
+    BackColor = Color.FromArgb(70, 70, 75)
+};
+var listBox1 = new ListBox
+{
+    Location = new Point(20, 20),
+    Size = new Size(150, 200),
+    BorderStyle = BorderStyle.FixedSingle
+};
+listBox1.Items.Add("List Item 1"); listBox1.Items.Add("List Item 2");
+listBox1.Items.Add("List Item 3"); listBox1.Items.Add("List Item 4");
+
+var checkedListBox1 = new CheckedListBox
+{
+    Location = new Point(180, 20),
+    Size = new Size(150, 200),
+    BorderStyle = BorderStyle.FixedSingle
+};
+checkedListBox1.Items.Add("Check 1");
+checkedListBox1.Items.Add("Check 2");
+checkedListBox1.Items.Add("Check 3");
+
+thisTabPageLists.Controls.Add(listBox1);
+thisTabPageLists.Controls.Add(checkedListBox1);
+
+// --- Tab 3: Weird Stuff ---
+var thisTabPageWeird = new TabPage
+{
+    Text = "Weird Stuff",
+    BackColor = Color.FromArgb(70, 70, 75)
+};
+var domainUpDown1 = new DomainUpDown
+{
+    Location = new Point(20, 30),
+    Size = new Size(120, 20),
+    BorderStyle = BorderStyle.FixedSingle
+};
+domainUpDown1.Items.Add("Item 1");
+domainUpDown1.SelectedIndex = 0;
+
+var maskedTextBox1 = new MaskedTextBox
+{
+    Location = new Point(20, 60),
+    Size = new Size(100, 20),
+    Mask = "00/00/0000"
+};
+
+var pictureBoxCrap = new PictureBox
+{
+    Location = new Point(20, 100),
+    Size = new Size(300, 100),
+    BackColor = Color.White,
+    BorderStyle = BorderStyle.FixedSingle
+};
+var bmpCrap = new Bitmap(300, 100);
+using (Graphics g_ = Graphics.FromImage(bmpCrap))
+{
+    g_.Clear(Color.White);
+    g_.FillEllipse(Brushes.Magenta, 10, 10, 80, 80);
+    g_.FillRectangle(Brushes.Orange, 100, 20, 180, 60);
+}
+pictureBoxCrap.Image = bmpCrap;
+
+thisTabPageWeird.Controls.Add(domainUpDown1);
+thisTabPageWeird.Controls.Add(maskedTextBox1);
+thisTabPageWeird.Controls.Add(pictureBoxCrap);
+
+tabControlRandom.Controls.Add(tabPageScrolls);
+tabControlRandom.Controls.Add(thisTabPageLists);
+tabControlRandom.Controls.Add(thisTabPageWeird);
+
+grpTabs.Controls.Add(tabControlRandom);
+
+// === Add Zones to Form ===
+form.Controls.Add(grpInputs);
+form.Controls.Add(grpTransparency);
+form.Controls.Add(grpRainbowData);
+form.Controls.Add(grpButtons);
+form.Controls.Add(grpLists);
+form.Controls.Add(grpStandardData);
+form.Controls.Add(grpTabs);
+form.Controls.Add(statusStrip1);
+form.Controls.Add(menuStrip1);
+
+// === Status & Menu Items ===
+statusStrip1.Items.Add("Ready");
+menuStrip1.Items.Add("File");
+menuStrip1.Items.Add("Edit");
+menuStrip1.Items.Add("View");
+
+// === Final Star Image (generated) ===
+picStar.Image = CreateStarBitmap(400, 350);
+
+// === Event Hookup ===
+btnTran1.Click += (_, __) => { txtMulti.Text = Logger.Log; };
+
+// === Run ===
 Application.Run(form);
+
+// === Local helper ===
+Bitmap CreateStarBitmap(int width, int height)
+{
+    var bmp = new Bitmap(width, height);
+    using (Graphics g = Graphics.FromImage(bmp))
+    {
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(Color.Transparent);
+
+        var center = new PointF(width / 2f, height / 2f);
+        float outerRadius = width / 2.5f;
+        float innerRadius = width / 6.0f;
+        int points = 5;
+
+        var starPoints = new PointF[points * 2];
+        float angle = (float)(-Math.PI / 2);
+        float step = (float)(Math.PI / points);
+
+        for (int i = 0; i < points * 2; i++)
+        {
+            float r = (i % 2 == 0) ? outerRadius : innerRadius;
+            starPoints[i] = new PointF(
+                center.X + (float)Math.Cos(angle) * r,
+                center.Y + (float)Math.Sin(angle) * r
+            );
+            angle += step;
+        }
+
+        using (var brush = new LinearGradientBrush(
+            new RectangleF(0, 0, width, height), Color.Yellow, Color.Red, LinearGradientMode.ForwardDiagonal))
+        {
+            g.FillPolygon(brush, starPoints);
+        }
+
+        using (var pen = new Pen(Color.White, 4))
+        {
+            g.DrawPolygon(pen, starPoints);
+        }
+    }
+    return bmp;
+}

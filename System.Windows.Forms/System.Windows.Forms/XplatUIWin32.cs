@@ -72,6 +72,7 @@ namespace System.Windows.Forms {
 		private static Hashtable	wm_nc_registered;
 		private static RECT		clipped_cursor_rect;
 		private Hashtable		registered_classes;
+		public static bool LOG = false;
 
 		#endregion	// Local Variables
 
@@ -1837,7 +1838,7 @@ namespace System.Windows.Forms {
                 int width = clientRect.right - clientRect.left;
                 int height = clientRect.bottom - clientRect.top;
 
-                Console.WriteLine($"[PaintStart] handle={handle}, msg.HWnd={msg.HWnd}, client={client}, width={width}, height={height}");
+                if (LOG) Console.WriteLine($"[PaintStart] handle={handle}, msg.HWnd={msg.HWnd}, client={client}, width={width}, height={height}");
 
                 if (width <= 0 || height <= 0)
                 {
@@ -1863,7 +1864,7 @@ namespace System.Windows.Forms {
                 // Determine the actual invalidated region
                 if (Win32GetUpdateRect(msg.HWnd, ref rect, false) && true)
                 {
-                    Console.WriteLine($"Rect: {rect.left} {rect.top} {rect.Width}x{rect.Height}");
+                    if (LOG) Console.WriteLine($"Rect: {rect.left} {rect.top} {rect.Width}x{rect.Height}");
                     if (handle != msg.HWnd)
                     {
                         Win32GetClientRect(msg.HWnd, out rect);
@@ -1888,7 +1889,7 @@ namespace System.Windows.Forms {
 
                 var context = new Win32PaintContext { Bitmap = backBuffer, Hdc = hdc, ClipRect = new Rectangle(0, 0, width, height), NativeContext = (ps.hdc != IntPtr.Zero ? (object)ps : (object)hdc) };
                 paint_event = new Win32PaintEventArgs(dc, clip_rect, context);
-				Console.WriteLine($"clientRect: {clientRect.left} {clientRect.top} {clientRect.Width}x{clientRect.Height}");
+				if(LOG) Console.WriteLine($"clientRect: {clientRect.left} {clientRect.top} {clientRect.Width}x{clientRect.Height}");
                 
                 return paint_event;
             }
@@ -3675,52 +3676,60 @@ namespace System.Windows.Forms {
             if (img == null)
                 return;
 
-            string logDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SDLogs");
-            System.IO.Directory.CreateDirectory(logDir);
-            string ts = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+			string logDir = "", ts="";
 
-            string imgPath = System.IO.Path.Combine(logDir, ts + "_Blit_IncomingImg.png");
-            try
-            {
-                img.Save(imgPath, System.Drawing.Imaging.ImageFormat.Png);
-                Console.WriteLine("[DIAG] Saved incoming img to " + imgPath);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("[DIAG] Failed to save img: " + ex.Message);
-            }
+			if (LOG)
+			{
+				logDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SDLogs");
+				System.IO.Directory.CreateDirectory(logDir);
+				ts = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
 
-            using (Bitmap temp = new Bitmap(r.Width, r.Height))
-            {
-                temp.SetResolution(img.HorizontalResolution, img.VerticalResolution);
+				string imgPath = System.IO.Path.Combine(logDir, ts + "_Blit_IncomingImg.png");
+				try
+				{
+					img.Save(imgPath, System.Drawing.Imaging.ImageFormat.Png);
+					Console.WriteLine("[DIAG] Saved incoming img to " + imgPath);
+				}
+				catch (Exception ex)
+				{
+					Console.WriteLine("[DIAG] Failed to save img: " + ex.Message);
+				}
+			}
 
-                using (Graphics g = Graphics.FromImage(temp))
-                {
-                    using (SolidBrush yellow = new SolidBrush(Color.Magenta))
-                    {
-                        g.FillRectangle(yellow, 0, 0, temp.Width, temp.Height);
-                    }
+			using (Bitmap temp = new Bitmap(r.Width, r.Height))
+			{
+				temp.SetResolution(img.HorizontalResolution, img.VerticalResolution);
 
-                    g.DrawImage(img, new Rectangle(0, 0, r.Width, r.Height), r.X, r.Y, r.Width, r.Height, GraphicsUnit.Pixel);
+				using (Graphics g = Graphics.FromImage(temp))
+				{
+					using (SolidBrush yellow = new SolidBrush(Color.Magenta))
+					{
+						g.FillRectangle(yellow, 0, 0, temp.Width, temp.Height);
+					}
 
-                    using (SolidBrush blue = new SolidBrush(Color.Blue))
-                    {
-                        g.DrawRectangle(new Pen(blue), new Rectangle(0, 0, r.Width - 1, r.Height - 1));
-                    }
-                }
+					g.DrawImage(img, new Rectangle(0, 0, r.Width, r.Height), r.X, r.Y, r.Width, r.Height, GraphicsUnit.Pixel);
 
-                string tempPath = System.IO.Path.Combine(logDir, ts + "_Blit_TempAfterDraw.png");
-                try
-                {
-                    temp.Save(tempPath, System.Drawing.Imaging.ImageFormat.Png);
-                    Console.WriteLine("[DIAG] Saved temp after DrawImage to " + tempPath);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("[DIAG] Failed to save temp: " + ex.Message);
-                }
+					using (SolidBrush blue = new SolidBrush(Color.Blue))
+					{
+						g.DrawRectangle(new Pen(blue), new Rectangle(0, 0, r.Width - 1, r.Height - 1));
+					}
+				}
+				if (LOG)
+				{
+					string tempPath = System.IO.Path.Combine(logDir, ts + "_Blit_TempAfterDraw.png");
+					try
+					{
+						temp.Save(tempPath, System.Drawing.Imaging.ImageFormat.Png);
+						Console.WriteLine("[DIAG] Saved temp after DrawImage to " + tempPath);
+					}
+					catch (Exception ex)
+					{
+						Console.WriteLine("[DIAG] Failed to save temp: " + ex.Message);
+					}
+				}
 
-                dest_dc.DrawImage(temp, r, 0, 0, temp.Width, temp.Height, GraphicsUnit.Pixel);
+				dest_dc.DrawImage(temp, r, 0, 0, temp.Width, temp.Height, GraphicsUnit.Pixel);
+				
             }
         }
 
