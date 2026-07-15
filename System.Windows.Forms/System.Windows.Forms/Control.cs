@@ -36,10 +36,10 @@
 #undef DebugPreferredSizeCache
 
 using System;
+using System.Collections;
 using System.ComponentModel;
 using System.ComponentModel.Design;
 using System.ComponentModel.Design.Serialization;
-using System.Collections;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -48,6 +48,7 @@ using System.Runtime.InteropServices;
 using System.Security;
 using System.Threading;
 using System.Windows.Forms.Layout;
+using System.Xml.Linq;
 
 namespace System.Windows.Forms
 {
@@ -158,13 +159,12 @@ namespace System.Windows.Forms
 		private bool suppressing_key_press;
 
 		public bool rv_region_set = false;
-        
 
-        #endregion  // Local Variables                    
+		#endregion	// Local Variables
 
-        #region Private Classes
-        // This helper class allows us to dispatch messages to Control.WndProc
-        internal class ControlNativeWindow : NativeWindow {
+		#region Private Classes
+		// This helper class allows us to dispatch messages to Control.WndProc
+		internal class ControlNativeWindow : NativeWindow {
 			private Control owner;
 
 			public ControlNativeWindow(Control control) : base() {
@@ -948,9 +948,7 @@ namespace System.Windows.Forms
 			explicit_bounds = bounds;
 			explicit_bounds_valid = false;
 			cached_preferred_size = Size.Empty;
-
-            SetStyle(ControlStyles.SupportsTransparentBackColor, true);
-        }
+		}
 
 		public Control (Control parent, string text) : this()
 		{
@@ -1342,205 +1340,148 @@ namespace System.Windows.Forms
 			return ((int)(short)(param >> 16));
 		}
 
-        // This method exists so controls overriding OnPaintBackground can have default background painting done
-        // This method exists so controls overriding OnPaintBackground can have default background painting done
-        // This method exists so controls overriding OnPaintBackground can have default background painting done
-        // This method exists so controls overriding OnPaintBackground can have default background painting done
-        internal virtual void PaintControlBackground(PaintEventArgs pevent)
-        {
+		// This method exists so controls overriding OnPaintBackground can have default background painting done
+		internal virtual void PaintControlBackground (PaintEventArgs pevent) {
 
-            // Quality hint (set on the backbuffer's Graphics; harmless leak
-            // because the backbuffer is disposed in DoubleBuffer.End).
-            pevent.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+			bool tbstyle_flat = ((CreateParams.Style & (int) ToolBarStyles.TBSTYLE_FLAT) != 0);
 
-            bool tbstyle_flat = ((CreateParams.Style & (int)ToolBarStyles.TBSTYLE_FLAT) != 0);
+			// If we have transparent background
+			if (((BackColor.A != 0xff) && GetStyle(ControlStyles.SupportsTransparentBackColor)) || tbstyle_flat) {
+				if (parent != null) {
+					PaintEventArgs	parent_pe;
+					GraphicsState	state;
 
-            // If we have transparent background
-            if (((BackColor.A != 0xff) && GetStyle(ControlStyles.SupportsTransparentBackColor)) || tbstyle_flat)
-            {
-                if (parent != null)
-                {
-                    PaintEventArgs parent_pe;
-                    GraphicsState state;
+					parent_pe = new PaintEventArgs(pevent.Graphics, new Rectangle(pevent.ClipRectangle.X + Left, pevent.ClipRectangle.Y + Top, pevent.ClipRectangle.Width, pevent.ClipRectangle.Height));
 
-                    parent_pe = new PaintEventArgs(pevent.Graphics, new Rectangle(pevent.ClipRectangle.X + Left, pevent.ClipRectangle.Y + Top, pevent.ClipRectangle.Width, pevent.ClipRectangle.Height));
+					state = parent_pe.Graphics.Save();
+					parent_pe.Graphics.TranslateTransform(-Left, -Top);
+					parent.OnPaintBackground(parent_pe);
+					parent_pe.Graphics.Restore(state);
 
-                    state = parent_pe.Graphics.Save();
-                    parent_pe.Graphics.TranslateTransform(-Left, -Top);
-                    parent.OnPaintBackground(parent_pe);
-                    parent_pe.Graphics.Restore(state);
+					state = parent_pe.Graphics.Save();
+					parent_pe.Graphics.TranslateTransform(-Left, -Top);
+					parent.OnPaint(parent_pe);
+					parent_pe.Graphics.Restore(state);
+					parent_pe.SetGraphics(null);
+				}
+			}
 
-                    state = parent_pe.Graphics.Save();
-                    parent_pe.Graphics.TranslateTransform(-Left, -Top);
-                    parent.OnPaint(parent_pe);
-                    parent_pe.Graphics.Restore(state);
-                    parent_pe.SetGraphics(null);
-                }
-            }
+			if ((clip_region != null) && (XplatUI.UserClipWontExposeParent)) {
+				if (parent != null) {
+					PaintEventArgs	parent_pe;
+					Region		region;
+					GraphicsState	state;
+					Hwnd		hwnd;
 
-            if ((clip_region != null) && (XplatUI.UserClipWontExposeParent))
-            {
-                if (parent != null)
-                {
-                    PaintEventArgs parent_pe;
-                    Region region;
-                    GraphicsState state;
-                    Hwnd hwnd;
+					hwnd = Hwnd.ObjectFromHandle(Handle);
 
-                    hwnd = Hwnd.ObjectFromHandle(Handle);
+					if (hwnd != null) {
+						parent_pe = new PaintEventArgs(pevent.Graphics, new Rectangle(pevent.ClipRectangle.X + Left, pevent.ClipRectangle.Y + Top, pevent.ClipRectangle.Width, pevent.ClipRectangle.Height));
 
-                    if (hwnd != null)
-                    {
-                        parent_pe = new PaintEventArgs(pevent.Graphics, new Rectangle(pevent.ClipRectangle.X + Left, pevent.ClipRectangle.Y + Top, pevent.ClipRectangle.Width, pevent.ClipRectangle.Height));
+						region = new Region ();
+						region.MakeEmpty();
+						region.Union(ClientRectangle);
 
-                        region = new Region();
-                        region.MakeEmpty();
-                        region.Union(ClientRectangle);
+						foreach (Rectangle r in hwnd.ClipRectangles) {
+							region.Union (r);
+						}
 
-                        foreach (Rectangle r in hwnd.ClipRectangles)
-                        {
-                            region.Union(r);
-                        }
+						state = parent_pe.Graphics.Save();
+						parent_pe.Graphics.Clip = region;
 
-                        state = parent_pe.Graphics.Save();
-                        parent_pe.Graphics.Clip = region;
+						parent_pe.Graphics.TranslateTransform(-Left, -Top);
+						parent.OnPaintBackground(parent_pe);
+						parent_pe.Graphics.Restore(state);
 
-                        parent_pe.Graphics.TranslateTransform(-Left, -Top);
-                        parent.OnPaintBackground(parent_pe);
-                        parent_pe.Graphics.Restore(state);
+						state = parent_pe.Graphics.Save();
+						parent_pe.Graphics.Clip = region;
 
-                        state = parent_pe.Graphics.Save();
-                        parent_pe.Graphics.Clip = region;
+						parent_pe.Graphics.TranslateTransform(-Left, -Top);
+						parent.OnPaint(parent_pe);
+						parent_pe.Graphics.Restore(state);
+						parent_pe.SetGraphics(null);
 
-                        parent_pe.Graphics.TranslateTransform(-Left, -Top);
-                        parent.OnPaint(parent_pe);
-                        parent_pe.Graphics.Restore(state);
-                        parent_pe.SetGraphics(null);
+						region.Intersect(clip_region);
+						pevent.Graphics.Clip = region;
+					}
+				}
+			}
 
-                        region.Intersect(clip_region);
-                        pevent.Graphics.Clip = region;
-                    }
-                }
-            }
-
+            // Inside PaintControlBackground
             if (background_image == null)
             {
-                if (!tbstyle_flat)
+                Rectangle paintRect = pevent.ClipRectangle;
+                bool isInteractive = this is Button or TextBoxBase or ComboBox or DateTimePicker or UpDownBase or ListBox or MonthCalendar or ProgressBar or ScrollBar or TreeView;
+                bool isContainer = this is Panel or GroupBox or ScrollableControl or DataGrid or DataGridView or ContainerControl or Form;
+
+
+                // If we want rounded corners, just use a Graphics clip, NOT this.Region
+                if (RVUtils.cornerRadius > 0 && !tbstyle_flat)
                 {
-                    bool isInteractive = this is Button or TextBoxBase or ComboBox or DateTimePicker or UpDownBase or ListBox or MonthCalendar or ProgressBar or ScrollBar or TreeView;
-                    bool isContainer = this is Panel or GroupBox or ScrollableControl or DataGrid or DataGridView or ContainerControl or Form;
-                    bool isRounded = isInteractive || isContainer;
-
-                    // Tinted fill color: derived locally so we never write
-                    // back to the user-set BackColor (which would fire
-                    // OnBackColorChanged + Invalidate on every paint and
-                    // create the re-paint loop that plagued rv-rounded-g2).
-                    Color fillColor = BackColor.A == 255
-                            ? Color.FromArgb(RVUtils.UniversalAlpha, BackColor)
-                            : BackColor;
-
-                    if (isRounded)
+                    Rectangle fullRect = new Rectangle(0, 0, this.Width, this.Height);
+                    using (var path = RVUtils.CreateRoundedRectanglePath(fullRect, RVUtils.cornerRadius))
                     {
-                        // Set the OS Region first, so the window's hit-
-                        // testing is correct even if the backbuffer blit
-                        // takes an extra frame to catch up.
-                        EnsureRoundedRegion();
-
-                        Rectangle fullRect = new Rectangle(0, 0, this.Width, this.Height);
-
-                        // SINGLE save/restore for the entire rounded-paint
-                        // block. The rv-rounded-g2 version had two
-                        // Clip.Clone() pairs and an unclipped ButtonBase
-                        // border drawn between them, which leaked the
-                        // rounded clip into OnPaint. Here, all work that
-                        // mutates the graphics state is inside the try.
-                        GraphicsState state = pevent.Graphics.Save();
-                        try
+                        // Save the current clip state
+                        // Replace the old try/finally block with this:
+                        using (pevent.Graphics.UseRoundedClip(fullRect, RVUtils.cornerRadius))
                         {
-                            // Clip to the rounded path. The path is
-                            // built fresh each paint; the path object
-                            // is disposed in the using-block so we
-                            // don't leak Skia path handles across paints.
-                            using (var path = RVUtils.CreateRoundedRectanglePath(fullRect, RVUtils.cornerRadius))
-                            {
-                                pevent.Graphics.SetClip(path, CombineMode.Replace);
-                            }
+                            // 4. Paint Background
+                            //pevent.Graphics.FillRectangle(BackColorBrush, fullRect);
 
-                            // The fill itself. Brush is local because
-                            // BackColorBrush from the resource pool
-                            // doesn't know about our tinted alpha.
-                            using (var brush = new SolidBrush(fillColor))
-                            {
-                                pevent.Graphics.FillRectangle(brush, fullRect);
-                            }
-
-                            if (RVUtils.IsFrutigerAero)
+                            // 5. Paint Overlay using Extension Methods
+                            if (RVUtils.IsFrutigerAero == true)
                             {
                                 if (isInteractive)
+                                {
                                     pevent.Graphics.DrawAeroInteractive(fullRect);
+                                }
                                 else if (isContainer)
+                                {
                                     pevent.Graphics.DrawAeroContainer(fullRect);
+                                }
                             }
 
-                            if (RVUtils.BorderWidth > 0 && isInteractive)
+                            if (RVUtils.BorderWidth > 0)
                             {
-                                pevent.Graphics.DrawBorderInteractive(fullRect);
+                                if (isInteractive)
+                                {
+                                    pevent.Graphics.DrawBorderInteractive(fullRect);
+                                }
                             }
 
-                            // Fake anti-aliased inset stroke to mask the
-                            // pixel aliasing on the OS Region edge. The
-                            // SmoothingMode is saved and restored locally
-                            // so we don't leak AntiAlias into the rest
-                            // of the paint pipeline.
                             if (RVUtils.cornerRadius > 0 && RVUtils.FakeAA)
                             {
-                                using (var path = RVUtils.CreateRoundedRectanglePath(fullRect, RVUtils.cornerRadius))
-                                using (var pen = new Pen(Color.FromArgb(125, 50, 50, 50), 1.5f) { Alignment = PenAlignment.Inset })
+                                // FIX: Anti-aliased inner stroke to mask Region aliasing
+                                using (var path2 = RVUtils.CreateRoundedRectanglePath(fullRect, RVUtils.cornerRadius))
                                 {
-                                    var oldMode = pevent.Graphics.SmoothingMode;
-                                    pevent.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                                    pevent.Graphics.DrawPath(pen, path);
-                                    pevent.Graphics.SmoothingMode = oldMode;
+                                    var originalMode = pevent.Graphics.SmoothingMode;
+                                    pevent.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+                                    Color aaColor = Color.FromArgb(125, 50, 50, 50);
+
+                                    using (var pen = new Pen(aaColor, 1.5f) { })
+                                    {
+                                        pevent.Graphics.DrawPath(pen, path2);
+                                    }
+
+                                    pevent.Graphics.SmoothingMode = originalMode;
                                 }
                             }
                         }
-                        finally
-                        {
-                            pevent.Graphics.Restore(state);
-                        }
 
-                        // ButtonBase outer border is drawn AFTER the clip
-                        // is restored, so the border stroke is allowed to
-                        // extend slightly outside the path. The OS Region
-                        // we set in EnsureRoundedRegion will clip the
-                        // corners at blit time, so the visible result is
-                        // the same as drawing inside the clip — without
-                        // the cost of clipping a 1.5-px stroke.
-                        if (this is ButtonBase && this is not (CheckBox or RadioButton))
-                        {
-                            if (RVUtils.IsFrutigerAeroEnableBorder)
-                                pevent.Graphics.DrawRoundedRectangleBorder(fullRect, RVUtils.cornerRadius, 1);
-                        }
                     }
-                    else
-                    {
-                        // Non-rounded control. Plain fill. The default
-                        // used BackColorBrush here; we use a local brush
-                        // for the same reason as above (the res pool
-                        // brush doesn't see the tinted alpha).
-                        using (var brush = new SolidBrush(fillColor))
-                        {
-                            pevent.Graphics.FillRectangle(brush, pevent.ClipRectangle);
-                        }
-                    }
+                }
+                else
+                {
+                    //pevent.Graphics.FillRectangle(BackColorBrush, paintRect);
                 }
                 return;
             }
 
-            DrawBackgroundImage(pevent.Graphics);
-        }
+            DrawBackgroundImage (pevent.Graphics);
+		}
 
-        void DrawBackgroundImage (Graphics g) {
+		void DrawBackgroundImage (Graphics g) {
 			Rectangle drawing_rectangle = new Rectangle ();
 			g.FillRectangle (BackColorBrush, ClientRectangle);
 			
@@ -3463,8 +3404,7 @@ namespace System.Windows.Forms
 				create_params.ClassName = XplatUI.GetDefaultClassName (GetType ());
 				create_params.ClassStyle = (int)(XplatUIWin32.ClassStyle.CS_OWNDC | XplatUIWin32.ClassStyle.CS_DBLCLKS);
 				create_params.ExStyle = 0;
-                create_params.ExStyle = (this is Form) ? 0x20 : 0;
-                create_params.Param = 0;
+				create_params.Param = 0;
 
 				if (allow_drop) {
 					create_params.ExStyle |= (int)WindowExStyles.WS_EX_ACCEPTFILES;
@@ -6067,41 +6007,14 @@ namespace System.Windows.Forms
 				eh (this, e);
 		}
 
-        [EditorBrowsable(EditorBrowsableState.Advanced)]
-        protected virtual void OnHandleCreated(EventArgs e)
-        {
-            EventHandler eh = (EventHandler)(Events[HandleCreatedEvent]);
-            if (eh != null)
-                eh(this, e);
+		[EditorBrowsable(EditorBrowsableState.Advanced)]
+		protected virtual void OnHandleCreated(EventArgs e) {
+			EventHandler eh = (EventHandler)(Events [HandleCreatedEvent]);
+			if (eh != null)
+				eh (this, e);
+		}
 
-            // If this control type exposes a FlatStyle property, set it to
-            // FlatStyle.Flat so it stops drawing its own Windows-themed
-            // background and lets our rounded-corner PaintControlBackground
-            // be the source of truth. We only do this on controls where
-            // the property is defined (ButtonBase and its descendants),
-            // and only when the current value isn't already Flat, so the
-            // setter doesn't run its OnFlatStyleChanged → UpdateStyles
-            // path a second time.
-            if (this is ButtonBase buttonBase)
-            {
-                if (buttonBase.FlatStyle != FlatStyle.Flat)
-                {
-                    buttonBase.FlatStyle = FlatStyle.Flat;
-                }
-            }
-            var prop = this.GetType().GetProperty("FlatStyle",
-    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-            if (prop != null && prop.CanWrite && prop.PropertyType == typeof(FlatStyle))
-            {
-                var current = (FlatStyle)prop.GetValue(this);
-                if (current != FlatStyle.Flat)
-                {
-                    prop.SetValue(this, FlatStyle.Flat);
-                }
-            }
-        }
-
-        [EditorBrowsable(EditorBrowsableState.Advanced)]
+		[EditorBrowsable(EditorBrowsableState.Advanced)]
 		protected virtual void OnHandleDestroyed(EventArgs e) {
 			EventHandler eh = (EventHandler)(Events [HandleDestroyedEvent]);
 			if (eh != null)
@@ -6433,56 +6346,16 @@ namespace System.Windows.Forms
 		protected virtual void OnResize(EventArgs e) {
 			OnResizeInternal (e);
 		}
+		
+		internal virtual void OnResizeInternal (EventArgs e) {
+			PerformLayout(this, "Bounds");
 
-        internal virtual void OnResizeInternal(EventArgs e)
-        {
-            // The cached rounded-corner OS Region was built from the
-            // previous Size. Invalidate the cache; the next paint
-            // will rebuild it with the new bounds. We do NOT set
-            // this.Region = null here — that would fire
-            // OnRegionChanged and force a redundant XplatUI
-            // SetClipRegion(null) call. The next paint's
-            // EnsureRoundedRegion will overwrite the Region.
-            rv_region_set = false;
+			EventHandler eh = (EventHandler)(Events [ResizeEvent]);
+			if (eh != null)
+				eh (this, e);
+		}
 
-            PerformLayout(this, "Bounds");
-
-            EventHandler eh = (EventHandler)(Events[ResizeEvent]);
-            if (eh != null)
-                eh(this, e);
-        }
-
-        // Sets this.Region to the rounded-corner path of the current
-        // bounds, but only when (a) RVUtils.SetRegion is enabled,
-        // (b) the cache flag is clear, (c) the user has not set
-        // their own Region, and (d) this is not a Form (Forms use
-        // WS_EX_TRANSPARENT for click-through, not the Region).
-        //
-        // The user-Region check is the load-bearing one: if the
-        // caller has done `this.Region = someShape` for their own
-        // reasons, we must not overwrite it. The rv-rounded-g2
-        // version did overwrite it on every paint, which broke any
-        // custom-shaped control.
-        private void EnsureRoundedRegion()
-        {
-            if (rv_region_set)
-                return;
-            if (!RVUtils.SetRegion)
-                return;
-            if (this is Form)
-                return;
-            if (this.Region != null)
-                return;  // user-supplied Region, leave it
-
-            var bounds = new Rectangle(0, 0, this.Width, this.Height);
-            using (var path = RVUtils.CreateRoundedRectanglePath(bounds, RVUtils.cornerRadius))
-            {
-                this.Region = new Region(path);
-            }
-            rv_region_set = true;
-        }
-
-        [EditorBrowsable(EditorBrowsableState.Advanced)]
+		[EditorBrowsable(EditorBrowsableState.Advanced)]
 		protected virtual void OnRightToLeftChanged(EventArgs e) {
 			EventHandler eh = (EventHandler)(Events [RightToLeftChangedEvent]);
 			if (eh != null)

@@ -27,7 +27,7 @@ namespace System.Windows.Forms
         public static Brush DefaultInnerBrushD = new LinearGradientBrush(new Rectangle(0, 0, 100, 100), CielColorGenerator.RandomColorWithLightnessAndChroma(40, 65), CielColorGenerator.RandomColorWithLightnessAndChroma(40, 65), LinearGradientMode.Vertical) { WrapMode = WrapMode.Tile, GammaCorrection=true };
         public static Brush NewGradientPen() { return new LinearGradientBrush(new Rectangle(0, 0, 100, 100), CielColorGenerator.RandomColorWithLightnessAndChroma(40, 65), CielColorGenerator.RandomColorWithLightnessAndChroma(40, 65), LinearGradientMode.Vertical) { WrapMode = WrapMode.Tile, GammaCorrection = true }; }
         public static SolidBrush DefaultInnerBrushHover = new SolidBrush(Color.LightGoldenrodYellow) { };
-        public static int cornerRadius = 6;
+        public static int cornerRadius = 20;
 
         // near the top of RVUtils
         private static volatile int _captureOriginX = -1;
@@ -323,6 +323,7 @@ namespace System.Windows.Forms
         /// </summary>
         public static void EnableOptimizedCustomPainting(this Control control)
         {
+            return;
             control.SetStyle(ControlStyles.Opaque, true);
             control.SetStyle(ControlStyles.UserPaint, false);
             control.SetStyle(ControlStyles.AllPaintingInWmPaint, true); // Reduces flicker
@@ -730,6 +731,15 @@ namespace System.Windows.Forms
             using (var pen = new Pen(Color.FromArgb(80, Color.Black))) { g.DrawLine(pen, rect.X + 1, rect.Y + 1, rect.Right - 1, rect.Y + 1); g.DrawLine(pen, rect.X + 1, rect.Y + 1, rect.X + 1, rect.Bottom - 1); }
             using (var pen = new Pen(Color.FromArgb(120, Color.White))) { g.DrawLine(pen, rect.Right - 1, rect.Y + 1, rect.Right - 1, rect.Bottom - 1); g.DrawLine(pen, rect.X + 1, rect.Bottom - 1, rect.Right - 1, rect.Bottom - 1); }
         }
+
+        public static IDisposable UseRoundedClip(this Graphics g, Rectangle rect, int cornerRadius)
+        {
+            var path = RVUtils.CreateRoundedRectanglePath(rect, cornerRadius);
+            var scope = g.SetClip(path);
+            path.Dispose();
+            return scope;
+        }
+
 
     }
 }
