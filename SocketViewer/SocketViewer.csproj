@@ -1,0 +1,34 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+
+	<!-- ADD THIS SINGLE TARGET -->
+	<Target Name="AliasFrameworkDrawingReferences" AfterTargets="ResolveAssemblyReferences" BeforeTargets="CoreCompile">
+		<ItemGroup>
+			<!-- Alias the framework's System.Drawing.Primitives so it doesn't collide with your custom System.Drawing.dll -->
+			<ReferencePath Condition="'%(FileName)' == 'System.Drawing.Primitives'">
+				<Aliases>sysdrawing</Aliases>
+			</ReferencePath>
+			<!-- Also alias System.Drawing.Common just in case ConfigurationManager pulls it in -->
+			<ReferencePath Condition="'%(FileName)' == 'System.Drawing.Common'">
+				<Aliases>sysdrawingcommon</Aliases>
+			</ReferencePath>
+
+		</ItemGroup>
+	</Target>
+
+	<ItemGroup>
+		<ProjectReference Include="..\System.Drawing.Design\System.Drawing.Design.csproj" />
+		<ProjectReference Include="..\..\..\..\invnew\System.Drawing\System.Drawing.csproj" />
+	</ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\System.Windows.Forms\System.Windows.Forms.csproj" />
+	</ItemGroup>
+
+</Project>
