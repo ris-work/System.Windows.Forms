@@ -190,8 +190,10 @@ void RebuildItems(List<(string handle, string title, string socket, int w, int h
 }
 
 // ──────────────────────────────── window socket ────────────────────────────────
+int connSeq = 0;
 void CloseCurrentWindow()
 {
+    connSeq++;
     dead = true;
     try { curSock?.Close(); } catch { }
     curSock = null; curNs = null; curRd = null;
@@ -207,28 +209,27 @@ void ConnectTo((string handle, string title, string socket, int w, int h) e)
     Log($"[win] connecting {e.socket} ({e.title})");
     try
     {
-        curSock = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.IP);
-        curSock.Connect(new UnixDomainSocketEndPoint(e.socket));
-        curNs = new NetworkStream(curSock, true);
-        curRd = new StreamReader(curNs, Encoding.UTF8);
-        Task.Run(WindowReader);
+        var sock = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.IP);
+        sock.Connect(new UnixDomainSocketEndPoint(e.socket));
+        var ns = new NetworkStream(sock, true);
+        var rd = new StreamReader(ns, Encoding.UTF8);
+        curSock = sock; curNs = ns; curRd = rd;
+        int myConn = ++connSeq;
+        Task.Run(() => WindowReader(myConn, sock, rd));
         if (chkLive.Checked)
             SendRaw("{\"type\":\"subscribe\",\"format\":\"jpeg\",\"quality\":75}", true);
-        SendRaw("{\"type\":\"refresh\",\"format\":\"jpeg\",\"quality\":75}", true);
+        SendRaw("{\"type\":\"refresh\",\"format\":\"jpeg\",\"quality\":75,\"full\":true}", true);
     }
-    catch (Exception ex)
-    {
-        Log("[win] connect failed: " + ex.Message);
-        dead = true;
-    }
+    catch (Exception ex) { Log("[win] connect failed: " + ex.Message); dead = true; }
 }
 
-void WindowReader()
+
+void WindowReader(int myConn, Socket sock, StreamReader rd)
 {
     try
     {
         string? line;
-        while (running && (line = curRd!.ReadLine()) != null)
+        while (running && myConn == connSeq && (line = rd.ReadLine()) != null)
         {
             using var doc = JsonDocument.Parse(line);
             var r = doc.RootElement;
@@ -276,8 +277,8 @@ void WindowReader()
             }
         }
     }
-    catch (Exception ex) { if (running) Log("[win] read error: " + ex.Message); }
-    dead = true;
+    catch (Exception ex) { if (running && myConn == connSeq) Log("[win] read error: " + ex.Message); }
+    if (myConn == connSeq) dead = true;   // only the CURRENT connection may declare death
 }
 
 // ──────────────────────────────── window-list worker ────────────────────────────────
@@ -418,7 +419,7 @@ pb.MouseMove += (_, e) =>
         SendMouse("mousemove", p.Value, "left");
     }
 };
-pb.MouseClick += (_, e) => { var p = MapToImage(e.Location); if (p.HasValue) SendMouse("click", p.Value, Btn(e.Button)); };
+//pb.MouseClick += (_, e) => { var p = MapToImage(e.Location); if (p.HasValue) SendMouse("click", p.Value, Btn(e.Button)); };
 
 form.MouseWheel += (_, e) =>
 {
@@ -431,7 +432,7 @@ form.KeyDown += (_, e) =>
 {
     if (e.KeyCode == Keys.F5)
     {
-        SendRaw("{\"type\":\"refresh\",\"format\":\"jpeg\",\"quality\":75}", true);
+        SendRaw("{\"type\":\"refresh\",\"format\":\"jpeg\",\"quality\":75,\"full\":true}", true);
         e.Handled = true;
         return;
     }

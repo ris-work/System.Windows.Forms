@@ -403,6 +403,14 @@ namespace System.Windows.Forms
                     cc.Subscribed = true;
                     if (root.TryGetProperty("format", out var f2)) cc.Format = f2.GetString() == "png" ? "png" : "jpeg";
                     if (root.TryGetProperty("quality", out var q2)) cc.Quality = Math.Max(1, Math.Min(100, q2.GetInt32()));
+                    if (root.TryGetProperty("full", out var fe) && fe.GetBoolean())
+                    {
+                        var c = Control.FromHandle(wi.Handle);
+                        if (c != null)
+                            c.BeginInvoke((Action)(() => { try { c.Refresh(); } catch { } }));
+                        // repaint happens on the UI thread; subscribers get the fresh frames pushed
+                    }
+
                     SendFrame(cc);
                     break;
 
@@ -579,8 +587,10 @@ namespace System.Windows.Forms
             if (isDown)
             {
                 int now = Environment.TickCount;
-                if (clickPending && clickHwnd == target && clickMsg == msgClient && clickL == PackLP(tx, ty) &&
-                    unchecked((uint)(now - clickTime)) < DoubleClickInterval)
+                if (clickPending && clickHwnd == target && clickMsg == msgClient &&
+    Math.Abs((clickL.ToInt32() & 0xFFFF) - (tx & 0xFFFF)) <= 4 &&
+    Math.Abs(((clickL.ToInt32() >> 16) & 0xFFFF) - (ty & 0xFFFF)) <= 4 &&
+    unchecked((uint)(now - clickTime)) < DoubleClickInterval)
                 {
                     finalMsg = msgDbl;
                     clickPending = false;
