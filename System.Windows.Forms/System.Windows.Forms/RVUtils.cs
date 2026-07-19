@@ -373,8 +373,8 @@ namespace System.Windows.Forms
             // Adjust these values to correct for asymmetry or specific DPI clipping issues.
             // insetTopLeft shifts the Top and Left edges inward (away from 0,0).
             // insetBottomRight shifts the Bottom and Right edges inward (towards 0,0).
-            float insetTopLeft = 1.0f;     // Try 0.5f or 0f if left/top is too cut off
-            float insetBottomRight = 2.0f;  // Try 1.5f or 2f if right/bottom is still overflowing
+            float insetTopLeft = 0.0f;     // Try 0.5f or 0f if left/top is too cut off
+            float insetBottomRight = 0.0f;  // Try 1.5f or 2f if right/bottom is still overflowing
             //insetTopLeft = 0; insetBottomRight = 0;
 
             float left = rect.Left + insetTopLeft;
@@ -736,10 +736,38 @@ namespace System.Windows.Forms
         {
             var path = RVUtils.CreateRoundedRectanglePath(rect, cornerRadius);
             var scope = g.SetClip(path);
-            path.Dispose();
-            return scope;
+
+            // Do NOT dispose `path` here — the canvas clip stack references the
+            // native SKPath pointer.  We must keep it alive until the ClipScope
+            // restores the canvas (which pops the dangling reference off the
+            // clip stack).  Wrap both the scope and the path so the path is
+            // disposed after the scope restores the canvas state.
+            return new ClipScopeWithCleanup(scope, path);
         }
 
+        private sealed class ClipScopeWithCleanup : IDisposable
+        {
+            private IDisposable _scope;
+            private System.Drawing.Drawing2D.GraphicsPath _path;
+
+            public ClipScopeWithCleanup(IDisposable scope, System.Drawing.Drawing2D.GraphicsPath path)
+            {
+                _scope = scope;
+                _path = path;
+            }
+
+            public void Dispose()
+            {
+                // Restore the canvas clip state FIRST (pops the reference off the stack).
+                _scope?.Dispose();
+                _scope = null;
+
+                // Now it is safe to dispose the path — nothing references it.
+                _path?.Dispose();
+                _path = null;
+            }
+        }
 
     }
+    
 }

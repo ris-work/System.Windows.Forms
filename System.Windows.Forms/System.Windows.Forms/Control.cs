@@ -36,10 +36,10 @@
 #undef DebugPreferredSizeCache
 
 using System;
-using System.Collections;
 using System.ComponentModel;
 using System.ComponentModel.Design;
 using System.ComponentModel.Design.Serialization;
+using System.Collections;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -48,7 +48,6 @@ using System.Runtime.InteropServices;
 using System.Security;
 using System.Threading;
 using System.Windows.Forms.Layout;
-using System.Xml.Linq;
 
 namespace System.Windows.Forms
 {
@@ -1407,78 +1406,15 @@ namespace System.Windows.Forms
 				}
 			}
 
-            // Inside PaintControlBackground
-            if (background_image == null)
-            {
-                Rectangle paintRect = pevent.ClipRectangle;
-                bool isInteractive = this is Button or TextBoxBase or ComboBox or DateTimePicker or UpDownBase or ListBox or MonthCalendar or ProgressBar or ScrollBar or TreeView;
-                bool isContainer = this is Panel or GroupBox or ScrollableControl or DataGrid or DataGridView or ContainerControl or Form;
+			if (background_image == null) {
+				if (!tbstyle_flat) {
+					Rectangle paintRect = pevent.ClipRectangle;
+					pevent.Graphics.FillRectangle(BackColorBrush, paintRect);
+				}
+				return;
+			}
 
-
-                // If we want rounded corners, just use a Graphics clip, NOT this.Region
-                if (RVUtils.cornerRadius > 0 && !tbstyle_flat)
-                {
-                    Rectangle fullRect = new Rectangle(0, 0, this.Width, this.Height);
-                    using (var path = RVUtils.CreateRoundedRectanglePath(fullRect, RVUtils.cornerRadius))
-                    {
-                        // Save the current clip state
-                        // Replace the old try/finally block with this:
-                        using (pevent.Graphics.UseRoundedClip(fullRect, RVUtils.cornerRadius))
-                        {
-                            // 4. Paint Background
-                            //pevent.Graphics.FillRectangle(BackColorBrush, fullRect);
-
-                            // 5. Paint Overlay using Extension Methods
-                            if (RVUtils.IsFrutigerAero == true)
-                            {
-                                if (isInteractive)
-                                {
-                                    pevent.Graphics.DrawAeroInteractive(fullRect);
-                                }
-                                else if (isContainer)
-                                {
-                                    pevent.Graphics.DrawAeroContainer(fullRect);
-                                }
-                            }
-
-                            if (RVUtils.BorderWidth > 0)
-                            {
-                                if (isInteractive)
-                                {
-                                    pevent.Graphics.DrawBorderInteractive(fullRect);
-                                }
-                            }
-
-                            if (RVUtils.cornerRadius > 0 && RVUtils.FakeAA)
-                            {
-                                // FIX: Anti-aliased inner stroke to mask Region aliasing
-                                using (var path2 = RVUtils.CreateRoundedRectanglePath(fullRect, RVUtils.cornerRadius))
-                                {
-                                    var originalMode = pevent.Graphics.SmoothingMode;
-                                    pevent.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-
-                                    Color aaColor = Color.FromArgb(125, 50, 50, 50);
-
-                                    using (var pen = new Pen(aaColor, 1.5f) { })
-                                    {
-                                        pevent.Graphics.DrawPath(pen, path2);
-                                    }
-
-                                    pevent.Graphics.SmoothingMode = originalMode;
-                                }
-                            }
-                        }
-
-                    }
-                }
-                else
-                {
-                    //pevent.Graphics.FillRectangle(BackColorBrush, paintRect);
-                }
-                return;
-            }
-
-            DrawBackgroundImage (pevent.Graphics);
+			DrawBackgroundImage (pevent.Graphics);
 		}
 
 		void DrawBackgroundImage (Graphics g) {

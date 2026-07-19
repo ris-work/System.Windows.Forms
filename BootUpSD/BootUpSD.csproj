@@ -5,6 +5,7 @@
     <TargetFramework>net11.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+	  <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
 
@@ -34,6 +35,7 @@
 	  <None Update="328551_openclipart_transparent_cube_jarda.png">
 	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 	  </None>
+		
 	</ItemGroup>
 
 </Project>
