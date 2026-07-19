@@ -93,7 +93,11 @@ namespace System.Windows.Forms {
 //			default_class_name = "SWFClass" + System.Threading.Thread.GetDomainID ().ToString ();
 			LibraryResolver.EnsureRegistered();
 
-			if (RunningOnUnix) {
+            if (Environment.GetEnvironmentVariable("MONO_MWF_USE_SOCKET") != null && Environment.GetEnvironmentVariable("MONO_MWF_USE_SOCKET").ToLowerInvariant() == "yes")
+            {
+                driver = XplatUISocket.GetInstance();
+            }
+            else if (RunningOnUnix) {
 				//if (Environment.GetEnvironmentVariable ("not_supported_MONO_MWF_USE_NEW_X11_BACKEND") != null) {
 				//        driver=XplatUIX11_new.GetInstance ();
 				//} else

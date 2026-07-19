@@ -665,6 +665,19 @@ namespace System.Windows.Forms
             if (flag != 0) { if (isDown) mods |= flag; else mods &= ~flag; }
         }
 
+        static string CharForKey(Keys k)
+        {
+            switch (k)
+            {
+                case Keys.Return: return "\r";
+                case Keys.Back: return "\b";
+                case Keys.Tab: return "\t";
+                case Keys.Escape: return "\u001B";
+                default: return null;
+            }
+        }
+
+        // inside RouteKey, replace the "if (down) { ... }" block with:
         static void RouteKey(JsonElement root, bool down, bool up)
         {
             string name = root.TryGetProperty("key", out var ke) ? ke.GetString() : "";
@@ -680,8 +693,9 @@ namespace System.Windows.Forms
             {
                 UpdateMods(k, true);
                 EnqueueMsg(target, Msg.WM_KEYDOWN, (IntPtr)(int)k, IntPtr.Zero);
-                if (!string.IsNullOrEmpty(text))
-                    foreach (var ch in text)
+                var chars = !string.IsNullOrEmpty(text) ? text : CharForKey(k);
+                if (chars != null)
+                    foreach (var ch in chars)
                         EnqueueMsg(target, Msg.WM_CHAR, (IntPtr)ch, IntPtr.Zero);
             }
             if (up)
@@ -728,6 +742,7 @@ namespace System.Windows.Forms
             }
             return wi.Buffer;
         }
+
 
         void AddExpose(Hwnd hwnd, bool client, int x, int y, int w, int h)
         {
@@ -791,6 +806,8 @@ namespace System.Windows.Forms
             hwnd.ClientWindow = (IntPtr)Interlocked.Increment(ref nextNative);
             hwnd.ClientRect = new Rectangle(0, 0, W, H);
 
+           
+
             if (hwnd.parent == null && (cp.Style & (int)WindowStyles.WS_CHILD) != 0)
             {
                 // park under foster parent until reparented
@@ -805,8 +822,10 @@ namespace System.Windows.Forms
                 hwnd.parent = Hwnd.ObjectFromHandle(FosterParent);
             }
 
+            //SetHwndStyles(hwnd, cp);      // sets border_style/border_static/title_style/caption heights
             var wi = RegisterWindow(hwnd, cp);
             PerformNCCalc(hwnd);
+            AddExpose(hwnd, false, 0, 0, hwnd.width, hwnd.height);   // initial NC/border paint
 
             // MWF draws its own decorations for tool windows
             if (cp.control is Form form && cp.IsSet(WindowExStyles.WS_EX_TOOLWINDOW) && form.window_manager == null)
@@ -880,6 +899,19 @@ namespace System.Windows.Forms
 
             foreach (Hwnd h in list)
             {
+                WinInfo hw;
+                lock (Sync)
+                {
+                    if (windows.TryGetValue(h.Handle, out hw))
+                    {
+                        windows.Remove(h.Handle);
+                        handleThread.Remove(h.Handle);
+                        if (hw.IsTop) topWindows.Remove(h.Handle);
+                    }
+                }
+                if (hw != null)
+                    lock (hw.BufLock) { hw.Buffer?.Dispose(); hw.Buffer = null; }
+
                 h.zombie = true;
                 h.expose_pending = h.nc_expose_pending = false;
                 h.Dispose();
@@ -917,47 +949,55 @@ namespace System.Windows.Forms
         // ── Driver: painting (fully virtual) ─────────────────────────────
         internal override PaintEventArgs PaintEventStart(ref Message msg, IntPtr handle, bool client)
         {
-            var hwnd = Hwnd.ObjectFromHandle(msg.HWnd) ?? Hwnd.ObjectFromHandle(handle);
-            if (hwnd == null)
+            var hwnd = Hwnd.ObjectFromHandle(msg.HWnd);        // invalid-region owner
+            var paint_hwnd = Hwnd.ObjectFromHandle(handle);    // drawable owner
+            if (hwnd == null) hwnd = paint_hwnd;
+            if (paint_hwnd == null)
                 return new PaintEventArgs(Graphics.FromImage(new Bitmap(1, 1)), Rectangle.Empty);
 
-            var top = Toplevel(hwnd);
             WinInfo wi;
-            lock (Sync) windows.TryGetValue(top.Handle, out wi);
+            lock (Sync) windows.TryGetValue(paint_hwnd.Handle, out wi);
             if (wi == null)
                 return new PaintEventArgs(Graphics.FromImage(new Bitmap(1, 1)), Rectangle.Empty);
 
             Monitor.Enter(wi.BufLock);
             try
             {
-                var bmp = GetBuffer(wi, top.width, top.height);
-                var off = OffsetInToplevel(hwnd, client);
+                // Buffer is the WHOLE window area (native semantics: client area
+                // starts at ClientRect.X/Y inside it).
+                var bmp = GetBuffer(wi, paint_hwnd.width, paint_hwnd.height);
                 Graphics dc = Graphics.FromImage(bmp);
-                if (off.X != 0 || off.Y != 0) dc.TranslateTransform(off.X, off.Y);
+                if (client && (paint_hwnd.ClientRect.X != 0 || paint_hwnd.ClientRect.Y != 0))
+                    dc.TranslateTransform(paint_hwnd.ClientRect.X, paint_hwnd.ClientRect.Y);
 
-                Rectangle clip;
-                if (client)
+                // Update-region clip (perf + parity). Even if MWF later replaces the
+                // clip, nothing can leak: compositing clips to our bounds.
+                Rectangle bounds = client
+                    ? new Rectangle(0, 0, paint_hwnd.ClientRect.Width, paint_hwnd.ClientRect.Height)
+                    : new Rectangle(0, 0, paint_hwnd.width, paint_hwnd.height);
+                Rectangle clip = bounds;
+                if (client && !hwnd.Invalid.IsEmpty) clip = Rectangle.Intersect(bounds, hwnd.Invalid);
+                else if (!client && !hwnd.nc_invalid.IsEmpty) clip = Rectangle.Intersect(bounds, hwnd.nc_invalid);
+                if (!clip.IsEmpty) dc.SetClip(clip);
+
+                // Plain-control borders — the X11 driver draws these itself.
+                if (!client)
                 {
-                    clip = hwnd.Invalid.IsEmpty ? new Rectangle(0, 0, hwnd.ClientRect.Width, hwnd.ClientRect.Height) : hwnd.Invalid;
-                    if (!clip.IsEmpty) dc.SetClip(clip);
-                    hwnd.expose_pending = false;
-                    hwnd.ClearInvalidArea();
+                    if (hwnd.border_style == FormBorderStyle.Fixed3D)
+                        ControlPaint.DrawBorder3D(dc, new Rectangle(0, 0, hwnd.Width, hwnd.Height),
+                            hwnd.border_static ? Border3DStyle.SunkenOuter : Border3DStyle.Sunken);
+                    else if (hwnd.border_style == FormBorderStyle.FixedSingle)
+                        ControlPaint.DrawBorder(dc, new Rectangle(0, 0, hwnd.Width, hwnd.Height),
+                            Color.Black, ButtonBorderStyle.Solid);
                 }
-                else
-                {
-                    clip = !hwnd.nc_invalid.IsEmpty ? hwnd.nc_invalid : new Rectangle(0, 0, hwnd.width, hwnd.height);
-                    if (!clip.IsEmpty) dc.SetClip(clip);
-                    hwnd.nc_expose_pending = false;
-                    hwnd.ClearNcInvalidArea();
-                }
+
+                if (client) { hwnd.expose_pending = false; hwnd.ClearInvalidArea(); }
+                else { hwnd.nc_expose_pending = false; hwnd.ClearNcInvalidArea(); }
                 return new SocketPaintEventArgs(dc, clip, wi);
             }
-            catch
-            {
-                Monitor.Exit(wi.BufLock);
-                throw;
-            }
+            catch { Monitor.Exit(wi.BufLock); throw; }
         }
+
 
         internal override void PaintEventEnd(ref Message msg, IntPtr handle, bool client, PaintEventArgs pevent)
         {
@@ -967,10 +1007,96 @@ namespace System.Windows.Forms
             {
                 var wi = spea.Win;
                 Monitor.Exit(wi.BufLock);
-                PushFrames(wi);
+                Composite(wi);           // blit this window into the top-level frame
             }
             pevent.Dispose();
         }
+
+        // Blit wi's whole-window buffer into the top-level frame buffer, clipped to
+        // wi's bounds and excluding wi's children when WS_CLIPCHILDREN is set.
+        static void CompositeBlit(WinInfo wi)
+        {
+            var hwnd = wi.Hwnd;
+            var top = Toplevel(hwnd);
+            WinInfo topWi;
+            lock (Sync) windows.TryGetValue(top.Handle, out topWi);
+            if (topWi == null) return;
+
+            lock (topWi.BufLock)
+            {
+                if (topWi.Buffer == null || wi.Buffer == null) return;
+                var off = OffsetInToplevel(hwnd, false);
+                var dest = new Rectangle(off.X, off.Y, hwnd.width, hwnd.height);
+                dest = Rectangle.Intersect(dest, new Rectangle(0, 0, topWi.Buffer.Width, topWi.Buffer.Height));
+                if (dest.IsEmpty) return;
+
+                using (var g = Graphics.FromImage(topWi.Buffer))
+                {
+                    g.SetClip(dest);
+
+                    // WS_CLIPCHILDREN: a parent's DC never covers child windows.
+                    var ctrl = Control.FromHandle(hwnd.Handle);
+                    if (ctrl != null)
+                    {
+                        CreateParams cp = null;
+                        try { cp = ctrl.GetCreateParams(); } catch { }
+                        if (cp != null && (cp.Style & (int)WindowStyles.WS_CLIPCHILDREN) != 0)
+                        {
+                            foreach (Control child in ctrl.Controls)
+                            {
+                                if (!child.Visible || !child.IsHandleCreated) continue;
+                                var ch = Hwnd.ObjectFromHandle(child.Handle);
+                                if (ch == null) continue;
+                                var coff = OffsetInToplevel(ch, false);
+                                g.ExcludeClip(new Rectangle(coff.X, coff.Y, ch.width, ch.height));
+                            }
+                        }
+                    }
+
+                    g.DrawImage(wi.Buffer, dest,
+                        new Rectangle(dest.X - off.X, dest.Y - off.Y, dest.Width, dest.Height),
+                        GraphicsUnit.Pixel);
+                }
+            }
+        }
+
+        static void Composite(WinInfo wi)
+        {
+            var hwnd = wi.Hwnd;
+            var top = Toplevel(hwnd);
+            if (hwnd == top)
+            {
+                // Toplevel paints straight into the frame buffer.
+                PushFrames(wi);
+                return;
+            }
+
+            CompositeBlit(wi);
+
+            // Z-order repair: re-composite siblings stacked ABOVE us that overlap,
+            // so our fresh pixels don't incorrectly cover them.
+            var parentHwnd = hwnd.parent;
+            var parentCtrl = parentHwnd != null ? Control.FromHandle(parentHwnd.Handle) : null;
+            var me = Control.FromHandle(hwnd.Handle);
+            if (parentCtrl != null && me != null)
+            {
+                int myIdx = parentCtrl.Controls.IndexOf(me);
+                for (int i = 0; i < myIdx; i++)   // Controls[0] == top of z-order
+                {
+                    var s = parentCtrl.Controls[i];
+                    if (!s.Visible || !s.IsHandleCreated || !s.Bounds.IntersectsWith(me.Bounds)) continue;
+                    WinInfo swi;
+                    lock (Sync) windows.TryGetValue(s.Handle, out swi);
+                    if (swi != null && swi.Buffer != null) CompositeBlit(swi);
+                }
+            }
+
+            WinInfo topWi;
+            lock (Sync) windows.TryGetValue(top.Handle, out topWi);
+            if (topWi != null) PushFrames(topWi);
+        }
+
+
 
         internal override void UpdateWindow(IntPtr handle)
         {
@@ -996,6 +1122,37 @@ namespace System.Windows.Forms
 
         internal override void ScrollWindow(IntPtr handle, Rectangle area, int XAmount, int YAmount, bool with_children)
         {
+            var hwnd = Hwnd.ObjectFromHandle(handle);
+            if (hwnd == null) return;
+
+            WinInfo wi;
+            lock (Sync) windows.TryGetValue(hwnd.Handle, out wi);
+            if (wi != null)
+            {
+                lock (wi.BufLock)
+                {
+                    if (wi.Buffer != null && area.Width > 0 && area.Height > 0)
+                    {
+                        var r = Rectangle.Intersect(area,
+                            new Rectangle(0, 0, wi.Buffer.Width, wi.Buffer.Height));
+                        if (r.Width > 0 && r.Height > 0)
+                        {
+                            using (var tmp = new Bitmap(r.Width, r.Height))
+                            {
+                                using (var g = Graphics.FromImage(tmp))
+                                    g.DrawImage(wi.Buffer, 0, 0, r, GraphicsUnit.Pixel);
+                                using (var g2 = Graphics.FromImage(wi.Buffer))
+                                {
+                                    g2.SetClip(r);
+                                    g2.DrawImage(tmp, r.X + XAmount, r.Y + YAmount);
+                                }
+                            }
+                        }
+                    }
+                }
+                Composite(wi);   // uses the client-area variant of ScrollWindow's caller rect
+            }
+            // Repaint the scrolled region (exposed strip included) — cheap and correct.
             Invalidate(handle, area, false);
         }
 
@@ -1003,8 +1160,14 @@ namespace System.Windows.Forms
         {
             var hwnd = Hwnd.ObjectFromHandle(handle);
             if (hwnd == null) return;
-            Invalidate(handle, new Rectangle(0, 0, hwnd.Width, hwnd.Height), false);
+            var rect = hwnd.ClientRect;
+            rect.X = 0; rect.Y = 0;
+            // shift within the client region of the control's own buffer
+            var clientArea = new Rectangle(hwnd.ClientRect.X, hwnd.ClientRect.Y, rect.Width, rect.Height);
+            ScrollWindow(handle, clientArea, XAmount, YAmount, with_children);
         }
+
+        
 
         // ── Driver: message loop ─────────────────────────────────────────
         internal override object StartLoop(Thread thread) => ThreadQueue(thread);
@@ -1251,6 +1414,9 @@ namespace System.Windows.Forms
             var hwnd = Hwnd.ObjectFromHandle(handle);
             if (hwnd == null || hwnd.zombie) return false;
             hwnd.visible = visible;
+            if (!visible && hwnd.parent != null)
+                AddExpose(hwnd.parent, true, 0, 0, hwnd.parent.width, hwnd.parent.height);
+
             hwnd.mapped = visible;
             hwnd.Mapped = visible;
             SendMessageStatic(handle, Msg.WM_SHOWWINDOW, visible ? (IntPtr)1 : IntPtr.Zero, IntPtr.Zero);
@@ -1303,7 +1469,13 @@ namespace System.Windows.Forms
             var hwnd = Hwnd.ObjectFromHandle(handle);
             if (hwnd == null) return IntPtr.Zero;
             var oldTop = Toplevel(hwnd);
+            var oldP = oldTop; // (captured before reassignment)
+
             hwnd.parent = Hwnd.ObjectFromHandle(parent);
+            if (oldP != null && oldP.Handle != handle)
+                AddExpose(oldP, true, 0, 0, oldP.width, oldP.height);
+            if (hwnd.parent != null)
+                AddExpose(hwnd.parent, true, 0, 0, hwnd.parent.width, hwnd.parent.height);
             var newTop = Toplevel(hwnd);
             WinInfo w1, w2;
             lock (Sync) { windows.TryGetValue(oldTop?.Handle ?? IntPtr.Zero, out w1); windows.TryGetValue(newTop?.Handle ?? IntPtr.Zero, out w2); }
@@ -1538,7 +1710,7 @@ namespace System.Windows.Forms
         static int clipType;
         internal override IntPtr ClipboardOpen(bool primary_selection) => (IntPtr)0xC11B;
         internal override void ClipboardClose(IntPtr handle) { }
-        internal override int ClipboardGetID(IntPtr handle, string format) => DataFormats.GetFormat(format).Id;
+        internal override int ClipboardGetID(IntPtr handle, string format) => 0; // DataFormats.GetFormat(format).Id;
         internal override int[] ClipboardAvailableFormats(IntPtr handle) => clipObj == null ? new int[0] : new[] { clipType };
         internal override void ClipboardStore(IntPtr handle, object obj, int type, XplatUI.ObjectToClipboard converter, bool copy)
         { clipObj = obj; clipType = type; }
