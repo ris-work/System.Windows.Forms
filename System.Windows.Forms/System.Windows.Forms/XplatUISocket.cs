@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -23,6 +24,8 @@ namespace System.Windows.Forms
         static volatile XplatUISocket Instance;
         static int RefCount;
         static readonly object instancelock = new object();
+
+        static WinInfo desktopWi;
 
         public static XplatUISocket GetInstance()
         {
@@ -94,10 +97,11 @@ namespace System.Windows.Forms
             public Socket Listener;
             public string SockPath;
             public readonly List<ClientConn> Clients = new List<ClientConn>();
-            public Bitmap Buffer;                 // toplevel only
+            public Bitmap Buffer;
             public readonly object BufLock = new object();
             public FormWindowState State = FormWindowState.Normal;
             public Rectangle SavedBounds;
+            public bool IsDesktop;        // ← was "= true"; only desktopWi sets this
         }
 
         class ClientConn
@@ -111,6 +115,7 @@ namespace System.Windows.Forms
             public int Quality = 80;
             public readonly object WLock = new object();
             public volatile bool Dead;
+            public bool Gray;
             public void Send(string s)
             {
                 if (Dead) return;
@@ -157,6 +162,18 @@ namespace System.Windows.Forms
             var t = new Thread(ListAcceptLoop) { IsBackground = true, Name = "XplatUISocket.List" };
             t.Start();
 
+            desktopWi = new WinInfo { IsDesktop = true, SockPath = Path.Combine(SockDir, "compositor") };
+            desktopWi.Listener = ListenUnix(desktopWi.SockPath);
+            new Thread(() => WinAcceptLoop(desktopWi)) { IsBackground = true }.Start();
+
+            static string DesktopJson() =>
+    "{\"handle\":\"desktop\",\"title\":\"Desktop (compositor)\",\"x\":0,\"y\":0," +
+    "\"width\":" + screenW + ",\"height\":" + screenH +
+    ",\"visible\":true,\"state\":\"Normal\",\"compositor\":true,\"socket\":\"" +
+    JEsc(desktopWi.SockPath) + "\"}";
+
+
+
             AppDomain.CurrentDomain.ProcessExit += (s, e) => CleanupSockets();
             Console.Error.WriteLine($"[XplatUISocket] serving windows in '{Path.GetFullPath(SockDir)}' (screen {screenW}x{screenH})");
         }
@@ -175,6 +192,8 @@ namespace System.Windows.Forms
                 }
                 try { listListener?.Close(); } catch { }
                 try { File.Delete(Path.Combine(SockDir, "window-list")); } catch { }
+                try { desktopWi?.Listener?.Close(); } catch { }
+                try { if (desktopWi != null && File.Exists(desktopWi.SockPath)) File.Delete(desktopWi.SockPath); } catch { }
             }
             catch { }
         }
@@ -238,6 +257,7 @@ namespace System.Windows.Forms
 
         static string WindowJson(WinInfo wi)
         {
+            if (wi == null || wi.IsDesktop || wi.Hwnd == null) return DesktopJson();
             var h = wi.Hwnd;
             return "{\"handle\":\"0x" + wi.Handle.ToInt64().ToString("X") +
                    "\",\"title\":\"" + JEsc(wi.Title) +
@@ -248,22 +268,29 @@ namespace System.Windows.Forms
                    "\",\"socket\":\"" + JEsc(wi.SockPath) + "\"}";
         }
 
+        static string DesktopJson() =>
+            "{\"handle\":\"desktop\",\"title\":\"Desktop (compositor)\",\"x\":0,\"y\":0," +
+            "\"width\":" + screenW + ",\"height\":" + screenH +
+            ",\"visible\":true,\"state\":\"Normal\",\"compositor\":true,\"socket\":\"" +
+            JEsc(desktopWi.SockPath) + "\"}";
+
         static string ListJson()
         {
             lock (Sync)
             {
                 var sb = new StringBuilder("{\"type\":\"list\",\"screen\":[" + screenW + "," + screenH + "],\"windows\":[");
-                bool first = true;
+                sb.Append(DesktopJson());
                 foreach (var wi in topWindows.Values)
                 {
-                    if (!first) sb.Append(',');
+                    sb.Append(',');
                     sb.Append(WindowJson(wi));
-                    first = false;
                 }
                 sb.Append("]}");
                 return sb.ToString();
             }
         }
+
+        
 
         static void BroadcastList(string kind, WinInfo wi)
         {
@@ -319,7 +346,9 @@ namespace System.Windows.Forms
                 var cc = new ClientConn { Sock = s, Ns = new NetworkStream(s, true), Win = wi };
                 cc.Rd = new StreamReader(cc.Ns, Encoding.UTF8);
                 lock (Sync) wi.Clients.Add(cc);
-                cc.Send("{\"type\":\"hello\",\"protocol\":1,\"screen\":[" + screenW + "," + screenH + "],\"window\":" + WindowJson(wi) + "}");
+                string hello = "{\"type\":\"hello\",\"protocol\":1,\"screen\":[" + screenW + "," + screenH +
+                               "],\"window\":" + (wi.IsDesktop ? DesktopJson() : WindowJson(wi)) + "}";
+                cc.Send(hello);
                 var t = new Thread(() => WinClientLoop(cc)) { IsBackground = true };
                 t.Start();
             }
@@ -344,31 +373,97 @@ namespace System.Windows.Forms
         }
 
         // ── Frame encoding / pushing ─────────────────────────────────────
-        static byte[] EncodeFrame(Bitmap bmp, string fmt, int quality)
+        static byte[] EncodeFrame(Bitmap bmp, string fmt, int quality, bool gray)
         {
-            using (var img = SKImage.FromBitmap(bmp._skBitmap))
+            var src = bmp._skBitmap;
+            SKBitmap use = src;
+            if (gray)
+            {
+                use = new SKBitmap(src.Width, src.Height, SKColorType.Gray8, SKAlphaType.Opaque);
+                unsafe
+                {
+                    byte* s = (byte*)src.GetPixels(); byte *d = (byte*)use.GetPixels();
+                    for (int y = 0; y < src.Height; y++)
+                    {
+                        byte* sr = s + y * src.RowBytes; byte *dr = d + y * use.RowBytes;
+                        for (int x = 0; x < src.Width; x++)
+                        {
+                            int b = sr[x * 4], g = sr[x * 4 + 1], r = sr[x * 4 + 2];
+                            dr[x] = (byte)((r * 77 + g * 150 + b * 29) >> 8);
+                        }
+                    }
+                }
+            }
+            byte[] result = null;
+            using (var img = SKImage.FromBitmap(use))
             using (var data = img.Encode(fmt == "jpeg" ? SKEncodedImageFormat.Jpeg : SKEncodedImageFormat.Png, quality))
-                return data.ToArray();
+                result = data?.ToArray();
+            if (use != src) use.Dispose();
+            if (result == null && gray)   // encoder rejected Gray8 (older Skia JPEG)
+                return EncodeFrame(bmp, fmt, quality, false);
+            return result;
+        }
+        static byte[] EncodeWindowFrame(WinInfo wi, string fmt, int q, bool gray)
+        {
+            var pops = PopupsFor(wi);
+            var locks = pops.Select(p => (object)p.BufLock).Append(wi.BufLock)
+                            .OrderBy(o => o.GetHashCode()).ToList();
+            foreach (var l in locks) Monitor.Enter(l);
+            Bitmap comp = null;
+            try
+            {
+                if (wi.Buffer == null) return null;
+                Bitmap src = wi.Buffer;
+                if (pops.Count > 0)
+                {
+                    comp = new Bitmap(wi.Buffer.Width, wi.Buffer.Height);
+                    using (var g = Graphics.FromImage(comp))
+                    {
+                        g.DrawImage(wi.Buffer, 0, 0);
+                        foreach (var p in pops)
+                            if (p.Buffer != null)
+                                g.DrawImage(p.Buffer, p.Hwnd.x - wi.Hwnd.x, p.Hwnd.y - wi.Hwnd.y);
+                    }
+                    src = comp;
+                }
+                return EncodeFrame(src, fmt, q, gray);
+            }
+            finally
+            {
+                foreach (var l in locks) Monitor.Exit(l);
+                comp?.Dispose();
+            }
         }
 
         static void SendFrame(ClientConn cc)
         {
             var wi = cc.Win;
             if (wi == null) return;
-            byte[] bytes = null;
-            int w = 0, h = 0;
-            lock (wi.BufLock)
+
+            if (wi.IsDesktop)
             {
-                if (wi.Buffer != null)
-                {
-                    w = wi.Buffer.Width; h = wi.Buffer.Height;
-                    bytes = EncodeFrame(wi.Buffer, cc.Format, cc.Quality);
-                }
+                var desk = BuildDesktopFrame();
+                var dbytes = EncodeFrame(desk, cc.Format, cc.Quality, cc.Gray);
+                desk.Dispose();
+                cc.Send("{\"type\":\"frame\",\"format\":\"" + cc.Format + "\",\"width\":" + screenW +
+                        ",\"height\":" + screenH + ",\"data\":\"" +
+                        (dbytes != null ? Convert.ToBase64String(dbytes) : "") + "\"}");
+                return;
             }
+
+            int w = wi.Hwnd.width, h = wi.Hwnd.height;
+            byte[] bytes = EncodeWindowFrame(wi, cc.Format, cc.Quality, cc.Gray);
             if (bytes == null)
-                cc.Send("{\"type\":\"frame\",\"format\":\"" + cc.Format + "\",\"width\":" + wi.Hwnd.width + ",\"height\":" + wi.Hwnd.height + ",\"data\":\"\"}");
+            {
+                cc.Send("{\"type\":\"frame\",\"format\":\"" + cc.Format + "\",\"width\":" + w +
+                        ",\"height\":" + h + ",\"data\":\"\"}");
+            }
             else
-                cc.Send("{\"type\":\"frame\",\"format\":\"" + cc.Format + "\",\"width\":" + w + ",\"height\":" + h + ",\"data\":\"" + Convert.ToBase64String(bytes) + "\"}");
+            {
+                if (wi.Buffer != null) { w = wi.Buffer.Width; h = wi.Buffer.Height; }
+                cc.Send("{\"type\":\"frame\",\"format\":\"" + cc.Format + "\",\"width\":" + w +
+                        ",\"height\":" + h + ",\"data\":\"" + Convert.ToBase64String(bytes) + "\"}");
+            }
         }
 
         static void PushFrames(WinInfo wi)
@@ -376,6 +471,89 @@ namespace System.Windows.Forms
             ClientConn[] subs;
             lock (Sync) subs = wi.Clients.FindAll(c => c.Subscribed && !c.Dead).ToArray();
             foreach (var c in subs) SendFrame(c);
+        }
+
+        void FullRedraw(WinInfo topWi)
+        {
+            if (topWi.IsDesktop)
+            {
+                List<WinInfo> tops;
+                lock (Sync) tops = topWindows.Values.ToList();
+                foreach (var t in tops) FullRedraw(t);
+                return;
+            }
+            var top = topWi.Hwnd;
+            if (top == null) return;
+            var subtree = new List<IntPtr>();
+            lock (Sync)
+                foreach (var kv in windows)
+                    if (Toplevel(kv.Value.Hwnd) == top && !kv.Value.Hwnd.zombie)
+                        subtree.Add(kv.Key);
+
+            var c = Control.FromHandle(top.Handle);
+            Action work = () =>
+            {
+                foreach (var h in subtree)
+                {
+                    var hw = Hwnd.ObjectFromHandle(h);
+                    if (hw == null || hw.zombie) continue;
+                    AddExpose(hw, true, 0, 0, hw.width, hw.height);
+                    UpdateWindow(h);
+                }
+            };
+            if (c != null) c.BeginInvoke(work); else work();
+        }
+
+        static bool Retarget(ref WinInfo wi, ref int fx, ref int fy)
+        {
+            int sx = wi.IsDesktop ? fx : wi.Hwnd.x + fx;
+            int sy = wi.IsDesktop ? fy : wi.Hwnd.y + fy;
+            WinInfo hit = null;
+            lock (Sync)
+                for (int i = zOrder.Count - 1; i >= 0; i--)
+                    if (topWindows.TryGetValue(zOrder[i], out var w) &&
+                        w.Hwnd != null && w.Hwnd.visible && !w.Hwnd.zombie &&
+                        sx >= w.Hwnd.x && sx < w.Hwnd.x + w.Hwnd.width &&
+                        sy >= w.Hwnd.y && sy < w.Hwnd.y + w.Hwnd.height)
+                    { hit = w; break; }
+            if (hit == null) return false;               // clicked bare desktop
+            if (hit != wi) { wi = hit; fx = sx - hit.Hwnd.x; fy = sy - hit.Hwnd.y; }
+            return true;
+        }
+
+        static readonly List<IntPtr> zOrder = new List<IntPtr>();   // back = topmost
+
+        static bool LooksPopup(WinInfo w) =>
+            w.Hwnd != null && ((int)w.Hwnd.initial_style & (int)WindowStyles.WS_POPUP) != 0;
+
+        static bool IsPopupOf(WinInfo popup, WinInfo owner)
+        {
+            for (var o = popup.Hwnd?.owner; o != null; o = o.owner)
+                if (o.Handle == owner.Handle) return true;
+            return false;
+        }
+
+        static List<WinInfo> PopupsFor(WinInfo owner)
+        {
+            var list = new List<WinInfo>();
+            lock (Sync)
+            {
+                foreach (var w in topWindows.Values)
+                {
+                    if (w == owner || w.Hwnd == null || !w.Hwnd.visible || w.Hwnd.zombie) continue;
+                    bool yes = IsPopupOf(w, owner);
+                    // fallback for ownerless MWF menus/dropdowns: WS_POPUP over the active window
+                    if (!yes && LooksPopup(w) && ActiveWindow == owner.Handle)
+                    {
+                        var a = new Rectangle(w.Hwnd.x, w.Hwnd.y, w.Hwnd.width, w.Hwnd.height);
+                        var b = new Rectangle(owner.Hwnd.x, owner.Hwnd.y, owner.Hwnd.width, owner.Hwnd.height);
+                        yes = a.IntersectsWith(b);
+                    }
+                    if (yes) list.Add(w);
+                }
+                list.Sort((x, y) => zOrder.IndexOf(x.Handle).CompareTo(zOrder.IndexOf(y.Handle)));
+            }
+            return list;
         }
 
         // ── Message handling from clients ────────────────────────────────
@@ -390,27 +568,17 @@ namespace System.Windows.Forms
                     break;
 
                 case "getinfo":
-                    cc.Send("{\"type\":\"info\",\"window\":" + WindowJson(wi) + "}");
+                    cc.Send("{\"type\":\"info\",\"window\":" + (wi.IsDesktop ? DesktopJson() : WindowJson(wi)) + "}");
                     break;
 
                 case "refresh":
+                case "subscribe":
+                    if (type == "subscribe") cc.Subscribed = true;
                     if (root.TryGetProperty("format", out var f)) cc.Format = f.GetString() == "png" ? "png" : "jpeg";
                     if (root.TryGetProperty("quality", out var q)) cc.Quality = Math.Max(1, Math.Min(100, q.GetInt32()));
-                    SendFrame(cc);
-                    break;
-
-                case "subscribe":
-                    cc.Subscribed = true;
-                    if (root.TryGetProperty("format", out var f2)) cc.Format = f2.GetString() == "png" ? "png" : "jpeg";
-                    if (root.TryGetProperty("quality", out var q2)) cc.Quality = Math.Max(1, Math.Min(100, q2.GetInt32()));
+                    if (root.TryGetProperty("gray", out var ge)) cc.Gray = ge.GetBoolean();
                     if (root.TryGetProperty("full", out var fe) && fe.GetBoolean())
-                    {
-                        var c = Control.FromHandle(wi.Handle);
-                        if (c != null)
-                            c.BeginInvoke((Action)(() => { try { c.Refresh(); } catch { } }));
-                        // repaint happens on the UI thread; subscribers get the fresh frames pushed
-                    }
-
+                        Instance.FullRedraw(wi);
                     SendFrame(cc);
                     break;
 
@@ -423,10 +591,10 @@ namespace System.Windows.Forms
                 case "click": RouteMouse(wi, root, down: true, up: true); break;
                 case "mousemove": RouteMouseMove(wi, root); break;
                 case "wheel": RouteWheel(wi, root); break;
-
                 case "keydown": RouteKey(root, down: true, up: false); break;
                 case "keyup": RouteKey(root, down: false, up: true); break;
                 case "key": RouteKey(root, down: true, up: true); break;
+
                 case "char":
                 case "text":
                     {
@@ -438,10 +606,10 @@ namespace System.Windows.Forms
 
                 case "resize":
                     {
+                        if (wi.IsDesktop || wi.Hwnd == null) break;
                         int rw = root.GetProperty("width").GetInt32();
                         int rh = root.GetProperty("height").GetInt32();
-                        var handle = wi.Handle;
-                        var c = Control.FromHandle(handle);
+                        var c = Control.FromHandle(wi.Handle);
                         if (c != null)
                             c.BeginInvoke((Action)(() => { try { c.ClientSize = new Size(rw, rh); } catch { } }));
                         break;
@@ -449,6 +617,7 @@ namespace System.Windows.Forms
 
                 case "close":
                     {
+                        if (wi.IsDesktop || wi.Hwnd == null) break;
                         var c = Control.FromHandle(wi.Handle);
                         if (c is Form frm)
                             frm.BeginInvoke((Action)(() => { try { frm.Close(); } catch { } }));
@@ -478,6 +647,7 @@ namespace System.Windows.Forms
             if (ActiveWindow == handle || handle == IntPtr.Zero) return;
             var prev = ActiveWindow;
             ActiveWindow = handle;
+            lock (Sync) { zOrder.Remove(handle); zOrder.Add(handle); }
             if (prev != IntPtr.Zero) SendMessageStatic(prev, Msg.WM_ACTIVATE, (IntPtr)WindowActiveFlags.WA_INACTIVE, IntPtr.Zero);
             SendMessageStatic(handle, Msg.WM_ACTIVATE, (IntPtr)WindowActiveFlags.WA_ACTIVE, IntPtr.Zero);
         }
@@ -516,6 +686,7 @@ namespace System.Windows.Forms
         {
             int x = root.TryGetProperty("x", out var xe) ? xe.GetInt32() : 0;
             int y = root.TryGetProperty("y", out var ye) ? ye.GetInt32() : 0;
+            if (!Retarget(ref wi, ref x, ref y)) return;
             string btn = root.TryGetProperty("button", out var be) ? be.GetString() : "left";
             MouseButtons button = btn == "right" ? MouseButtons.Right : btn == "middle" ? MouseButtons.Middle : MouseButtons.Left;
 
@@ -612,6 +783,7 @@ namespace System.Windows.Forms
         {
             int fx = root.TryGetProperty("x", out var xe) ? xe.GetInt32() : 0;
             int fy = root.TryGetProperty("y", out var ye) ? ye.GetInt32() : 0;
+            if (!Retarget(ref wi, ref fx, ref fy)) return;
             var topHwnd = wi.Hwnd;
             mouse_position = new Point(topHwnd.x + fx, topHwnd.y + fy);
 
@@ -725,7 +897,12 @@ namespace System.Windows.Forms
             {
                 windows[wi.Handle] = wi;
                 handleThread[wi.Handle] = Thread.CurrentThread;
-                if (isTop) topWindows[wi.Handle] = wi;
+                if (isTop)
+                {
+                    topWindows[wi.Handle] = wi;
+                    zOrder.Remove(wi.Handle);
+                    zOrder.Add(wi.Handle);           // back = topmost
+                }
             }
             if (isTop)
             {
@@ -752,6 +929,27 @@ namespace System.Windows.Forms
             }
             return wi.Buffer;
         }
+
+        static Bitmap BuildDesktopFrame()
+        {
+            List<WinInfo> vis;
+            lock (Sync)
+                vis = zOrder
+                    .Select(h => topWindows.TryGetValue(h, out var w) ? w : null)
+                    .Where(w => w?.Hwnd != null && w.Hwnd.visible && !w.Hwnd.zombie)
+                    .ToList();
+            var bmp = new Bitmap(screenW, screenH);
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.Clear(Color.FromArgb(58, 58, 64));
+                foreach (var w in vis)
+                    lock (w.BufLock)
+                        if (w.Buffer != null)
+                            g.DrawImage(w.Buffer, w.Hwnd.x, w.Hwnd.y);
+            }
+            return bmp;
+        }
+
 
 
         void AddExpose(Hwnd hwnd, bool client, int x, int y, int w, int h)
@@ -893,7 +1091,7 @@ namespace System.Windows.Forms
                 {
                     windows.Remove(handle);
                     handleThread.Remove(handle);
-                    if (wi.IsTop) topWindows.Remove(handle);
+                    if (wi.IsTop) { topWindows.Remove(handle); zOrder.Remove(handle); }
                 }
                 if (wi.IsTop)
                 {
@@ -1070,28 +1268,36 @@ namespace System.Windows.Forms
             }
         }
 
+        static void PushRelated(WinInfo wi)
+        {
+            PushFrames(wi);
+            if (desktopWi != null && wi != desktopWi) PushFrames(desktopWi);
+            List<WinInfo> tops;
+            lock (Sync) tops = topWindows.Values.ToList();
+            foreach (var t in tops)
+                if (t != wi && (IsPopupOf(t, wi) || IsPopupOf(wi, t)))
+                    PushFrames(t);
+        }
+
         static void Composite(WinInfo wi)
         {
             var hwnd = wi.Hwnd;
             var top = Toplevel(hwnd);
             if (hwnd == top)
             {
-                // Toplevel paints straight into the frame buffer.
-                PushFrames(wi);
+                PushRelated(wi);       // was PushFrames
                 return;
             }
 
             CompositeBlit(wi);
 
-            // Z-order repair: re-composite siblings stacked ABOVE us that overlap,
-            // so our fresh pixels don't incorrectly cover them.
             var parentHwnd = hwnd.parent;
             var parentCtrl = parentHwnd != null ? Control.FromHandle(parentHwnd.Handle) : null;
             var me = Control.FromHandle(hwnd.Handle);
             if (parentCtrl != null && me != null)
             {
                 int myIdx = parentCtrl.Controls.IndexOf(me);
-                for (int i = 0; i < myIdx; i++)   // Controls[0] == top of z-order
+                for (int i = 0; i < myIdx; i++)
                 {
                     var s = parentCtrl.Controls[i];
                     if (!s.Visible || !s.IsHandleCreated || !s.Bounds.IntersectsWith(me.Bounds)) continue;
@@ -1103,7 +1309,7 @@ namespace System.Windows.Forms
 
             WinInfo topWi;
             lock (Sync) windows.TryGetValue(top.Handle, out topWi);
-            if (topWi != null) PushFrames(topWi);
+            if (topWi != null) PushRelated(topWi);   // was PushFrames
         }
 
 

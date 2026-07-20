@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SocketViewerWinForms")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+bfc678ec5d723181dbad1008a8cb1fc4fab6b789")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ffd45712952906e866aa5f63448a4686cda750c1")]
 [assembly: System.Reflection.AssemblyProductAttribute("SocketViewerWinForms")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SocketViewerWinForms")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
