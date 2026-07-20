@@ -1,7 +1,5 @@
-﻿// SocketViewerWinForms.cs — single-file WinForms viewer for XplatUISocket.
-// Deps: SkiaSharp + the Skia System.Drawing/WinForms stack. Run it WITHOUT
-// MONO_MWF_USE_SOCKET (uses the normal X11/Win32 driver; it also works under
-// the socket driver, it will just list itself too).
+﻿// SocketViewerWinForms.cs — WinForms viewer for XplatUISocket, with toolbar.
+// Single file, script-style. Deps: SkiaSharp + the Skia System.Drawing/WinForms stack.
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -10,6 +8,8 @@ using System.Windows.Forms;
 
 string sockDir = Environment.GetEnvironmentVariable("XPLAT_UI_SOCKET_DIR") ?? "windows";
 string listPath = Path.Combine(sockDir, "window-list");
+string shotDir = Path.Combine(Directory.GetCurrentDirectory(), "screenshots");
+Directory.CreateDirectory(shotDir);
 
 Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
 
@@ -17,10 +17,30 @@ Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
 var form = new Form
 {
     Text = "SocketViewerWinForms",
-    ClientSize = new Size(1150, 780),
+    ClientSize = new Size(1150, 810),
     StartPosition = FormStartPosition.CenterScreen,
     KeyPreview = true
 };
+
+// --- toolbar ---
+var toolbar = new Panel { Dock = DockStyle.Top, Height = 34, BackColor = SystemColors.Control };
+var btnRefresh = new Button { Text = "⟳ Full", Width = 70, Dock = DockStyle.Left };
+var btnSave = new Button { Text = "💾 Save", Width = 70, Dock = DockStyle.Left };
+var sep1 = new Label { Text = "", Width = 8, Dock = DockStyle.Left };
+var btnFmt = new Button { Text = "JPEG", Width = 60, Dock = DockStyle.Left };
+var btnGray = new Button { Text = "Gray: OFF", Width = 80, Dock = DockStyle.Left };
+var sep2 = new Label { Text = "", Width = 8, Dock = DockStyle.Left };
+var btnQMinus = new Button { Text = "Q−", Width = 40, Dock = DockStyle.Left };
+var lblQ = new Label { Text = "75", Width = 34, Dock = DockStyle.Left, TextAlign = ContentAlignment.MiddleCenter };
+var btnQPlus = new Button { Text = "Q+", Width = 40, Dock = DockStyle.Left };
+var sep3 = new Label { Text = "", Width = 8, Dock = DockStyle.Left };
+var btnZoom = new Button { Text = "Fit", Width = 50, Dock = DockStyle.Left };
+var chkLive = new CheckBox { Text = "Live", Checked = true, Dock = DockStyle.Left, Width = 55, TextAlign = ContentAlignment.MiddleCenter };
+toolbar.Controls.AddRange(new Control[]
+{
+    // reverse order: Dock.Left stacks from the right of the previous
+    chkLive, btnZoom, sep3, btnQPlus, lblQ, btnQMinus, sep2, btnGray, btnFmt, sep1, btnSave, btnRefresh
+});
 
 var pb = new PictureBox
 {
@@ -41,22 +61,20 @@ var debug = new TextBox
     ForeColor = Color.LightGray
 };
 
-var rightSplit = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 580, FixedPanel = FixedPanel.Panel2 };
+var rightSplit = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 600, FixedPanel = FixedPanel.Panel2 };
 rightSplit.Panel1.Controls.Add(pb);
 rightSplit.Panel2.Controls.Add(debug);
 
 var listBox = new ListBox { Dock = DockStyle.Fill, IntegralHeight = false };
-var chkLive = new CheckBox { Text = "Live (subscribe)", Dock = DockStyle.Top, Checked = true };
 var lblHint = new Label
 {
     Dock = DockStyle.Bottom,
     Height = 34,
-    Text = "F5=refresh · click/type into image",
-    ForeColor = Color.DarkGray
+    Text = "F5=full refresh · click/type into image",
+    ForeColor = Color.Gray
 };
 var leftPanel = new Panel { Dock = DockStyle.Fill };
 leftPanel.Controls.Add(listBox);
-leftPanel.Controls.Add(chkLive);
 leftPanel.Controls.Add(lblHint);
 
 var mainSplit = new SplitContainer { Dock = DockStyle.Fill, SplitterDistance = 300, FixedPanel = FixedPanel.Panel1 };
@@ -70,8 +88,10 @@ var stFrame = new ToolStripStatusLabel("  frames: 0");
 status.Items.AddRange(new ToolStripItem[] { stConn, stWin, stFrame });
 
 form.Controls.Add(mainSplit);
+form.Controls.Add(toolbar);
 form.Controls.Add(status);
 status.Dock = DockStyle.Bottom;
+toolbar.Dock = DockStyle.Top;
 
 // ──────────────────────────────── state ────────────────────────────────
 var entries = new List<(string handle, string title, string socket, int w, int h)>();
@@ -81,10 +101,15 @@ bool running = true;
 bool dead = true;
 bool rebuilding = false;
 int frameCount = 0;
+int connSeq = 0;
 DateTime lastMoveSend = DateTime.MinValue;
 DateTime lastMoveLog = DateTime.MinValue;
 DateTime lastFrameLog = DateTime.MinValue;
 DateTime lastReconnectTry = DateTime.MinValue;
+
+string format = "jpeg";
+int quality = 75;
+bool gray = false;
 
 Socket? curSock = null;
 NetworkStream? curNs = null;
@@ -136,6 +161,23 @@ void SendRaw(string json, bool logIt)
     catch (Exception ex) { Log("[send] failed: " + ex.Message); dead = true; }
 }
 
+string ParamsJson() =>
+    $"\"format\":\"{format}\",\"quality\":{quality},\"gray\":{(gray ? "true" : "false")}";
+
+void ResubscribeAndRefresh()
+{
+    if (chkLive.Checked)
+        SendRaw("{\"type\":\"subscribe\"," + ParamsJson() + "}", true);
+    SendRaw("{\"type\":\"refresh\"," + ParamsJson() + "}", true);
+}
+
+void UpdateToolbar()
+{
+    btnFmt.Text = format.ToUpper();
+    btnGray.Text = gray ? "Gray: ON" : "Gray: OFF";
+    lblQ.Text = quality.ToString();
+}
+
 void SendMouse(string type, Point p, string button)
 {
     SendRaw($"{{\"type\":\"{type}\",\"x\":{p.X},\"y\":{p.Y},\"button\":\"{button}\"}}",
@@ -160,7 +202,7 @@ void Reselect(string? preferHandle)
         int idx = preferHandle != null ? entries.FindIndex(x => x.handle == preferHandle) : -1;
         if (idx < 0 && entries.Count > 0)
             idx = Math.Min(Math.Max(listBox.SelectedIndex, 0), entries.Count - 1);
-        listBox.SelectedIndex = idx;   // fires SelectedIndexChanged -> ConnectTo
+        listBox.SelectedIndex = idx;
     }
     finally { rebuilding = false; }
     if (entries.Count == 0)
@@ -190,7 +232,6 @@ void RebuildItems(List<(string handle, string title, string socket, int w, int h
 }
 
 // ──────────────────────────────── window socket ────────────────────────────────
-int connSeq = 0;
 void CloseCurrentWindow()
 {
     connSeq++;
@@ -217,12 +258,15 @@ void ConnectTo((string handle, string title, string socket, int w, int h) e)
         int myConn = ++connSeq;
         Task.Run(() => WindowReader(myConn, sock, rd));
         if (chkLive.Checked)
-            SendRaw("{\"type\":\"subscribe\",\"format\":\"jpeg\",\"quality\":75}", true);
-        SendRaw("{\"type\":\"refresh\",\"format\":\"jpeg\",\"quality\":75,\"full\":true}", true);
+            SendRaw("{\"type\":\"subscribe\"," + ParamsJson() + "}", true);
+        SendRaw("{\"type\":\"refresh\"," + ParamsJson() + ",\"full\":true}", true);
     }
-    catch (Exception ex) { Log("[win] connect failed: " + ex.Message); dead = true; }
+    catch (Exception ex)
+    {
+        Log("[win] connect failed: " + ex.Message);
+        dead = true;
+    }
 }
-
 
 void WindowReader(int myConn, Socket sock, StreamReader rd)
 {
@@ -272,13 +316,13 @@ void WindowReader(int myConn, Socket sock, StreamReader rd)
                     break;
                 case "bye":
                     Log("<< bye (window closed)");
-                    dead = true;
+                    if (myConn == connSeq) dead = true;
                     break;
             }
         }
     }
     catch (Exception ex) { if (running && myConn == connSeq) Log("[win] read error: " + ex.Message); }
-    if (myConn == connSeq) dead = true;   // only the CURRENT connection may declare death
+    if (myConn == connSeq) dead = true;
 }
 
 // ──────────────────────────────── window-list worker ────────────────────────────────
@@ -330,7 +374,7 @@ void HandleListLine(string line)
                 rebuilding = true;
                 try { listBox.Items.RemoveAt(i); } finally { rebuilding = false; }
             }
-            if (cur.handle == h) dead = true;   // auto-reselect happens in watchdog
+            if (cur.handle == h) dead = true;
             if (listBox.SelectedIndex < 0 && entries.Count > 0) Reselect(null);
         });
     }
@@ -389,10 +433,61 @@ void ListWorker()
     }
 }
 
+// ──────────────────────────────── toolbar actions ────────────────────────────────
+btnRefresh.Click += (_, __) =>
+    SendRaw("{\"type\":\"refresh\"," + ParamsJson() + ",\"full\":true}", true);
+
+btnSave.Click += (_, __) =>
+{
+    var img = pb.Image;
+    if (img == null) { Log("[save] no frame yet"); return; }
+    try
+    {
+        string safe = string.Concat((cur.title ?? "window").Select(c => char.IsLetterOrDigit(c) ? c : '_'));
+        string path = Path.Combine(shotDir, $"{safe}_{DateTime.Now:yyyyMMdd_HHmmss_fff}.png");
+        img.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        Log("[save] " + path);
+    }
+    catch (Exception ex) { Log("[save] failed: " + ex.Message); }
+};
+
+btnFmt.Click += (_, __) =>
+{
+    format = format == "jpeg" ? "png" : "jpeg";
+    UpdateToolbar();
+    ResubscribeAndRefresh();
+};
+
+btnGray.Click += (_, __) =>
+{
+    gray = !gray;
+    UpdateToolbar();
+    ResubscribeAndRefresh();
+};
+
+btnQMinus.Click += (_, __) => { quality = Math.Max(1, quality - 5); UpdateToolbar(); ResubscribeAndRefresh(); };
+btnQPlus.Click += (_, __) => { quality = Math.Min(100, quality + 5); UpdateToolbar(); ResubscribeAndRefresh(); };
+
+btnZoom.Click += (_, __) =>
+{
+    pb.SizeMode = pb.SizeMode == PictureBoxSizeMode.Zoom ? PictureBoxSizeMode.Normal : PictureBoxSizeMode.Zoom;
+    btnZoom.Text = pb.SizeMode == PictureBoxSizeMode.Zoom ? "Fit" : "1:1";
+    Log("[view] SizeMode = " + pb.SizeMode);
+};
+
+chkLive.CheckedChanged += (_, __) =>
+{
+    if (curNs == null || dead) return;
+    if (chkLive.Checked) SendRaw("{\"type\":\"subscribe\"," + ParamsJson() + "}", true);
+    else SendRaw("{\"type\":\"unsubscribe\"}", true);
+};
+
 // ──────────────────────────────── input plumbing ────────────────────────────────
 Point? MapToImage(Point p)
 {
     if (pb.Image == null) return null;
+    if (pb.SizeMode == PictureBoxSizeMode.Normal)
+        return new Point(p.X, p.Y);
     float scale = Math.Min((float)pb.ClientSize.Width / pb.Image.Width,
                            (float)pb.ClientSize.Height / pb.Image.Height);
     int dw = Math.Max(1, (int)(pb.Image.Width * scale));
@@ -419,7 +514,6 @@ pb.MouseMove += (_, e) =>
         SendMouse("mousemove", p.Value, "left");
     }
 };
-//pb.MouseClick += (_, e) => { var p = MapToImage(e.Location); if (p.HasValue) SendMouse("click", p.Value, Btn(e.Button)); };
 
 form.MouseWheel += (_, e) =>
 {
@@ -432,7 +526,7 @@ form.KeyDown += (_, e) =>
 {
     if (e.KeyCode == Keys.F5)
     {
-        SendRaw("{\"type\":\"refresh\",\"format\":\"jpeg\",\"quality\":75,\"full\":true}", true);
+        SendRaw("{\"type\":\"refresh\"," + ParamsJson() + ",\"full\":true}", true);
         e.Handled = true;
         return;
     }
@@ -451,13 +545,6 @@ listBox.SelectedIndexChanged += (_, __) =>
     int i = listBox.SelectedIndex;
     if (i >= 0 && i < entries.Count && entries[i].handle != cur.handle)
         ConnectTo(entries[i]);
-};
-
-chkLive.CheckedChanged += (_, __) =>
-{
-    if (curNs == null || dead) return;
-    if (chkLive.Checked) SendRaw("{\"type\":\"subscribe\",\"format\":\"jpeg\",\"quality\":75}", true);
-    else SendRaw("{\"type\":\"unsubscribe\"}", true);
 };
 
 // Watchdog: reconnect dead window (with backoff), or fall over to another one.
@@ -495,6 +582,7 @@ form.FormClosed += (_, __) =>
 };
 
 // ──────────────────────────────── go ────────────────────────────────
+UpdateToolbar();
 Log("SocketViewerWinForms starting, dir = " + Path.GetFullPath(sockDir));
 var listThread = new Thread(ListWorker) { IsBackground = true, Name = "window-list" };
 listThread.Start();

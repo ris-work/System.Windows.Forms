@@ -1290,7 +1290,47 @@ namespace System.Windows.Forms
                 var c = Control.FromHandle(top.Handle);
                 if (c != null) RenderChildren(c, g);
             }
+            DrawCaretIfAny(top, frame);
             return frame;   // caller disposes
+        }
+
+        static void DrawCaretIfAny(Hwnd top, Bitmap frame)
+        {
+            IntPtr cw; int cx, cy, cw2, ch2;
+            lock (caret)
+            {
+                if (!caret.Visible || !caret.On || caret.Hwnd == IntPtr.Zero) return;
+                cw = caret.Hwnd; cx = caret.X; cy = caret.Y; cw2 = caret.W; ch2 = caret.H;
+            }
+            var h = Hwnd.ObjectFromHandle(cw);
+            if (h == null || Toplevel(h) != top) return;
+
+            var off = OffsetInToplevel(h, true);          // caret pos is client-relative
+            int rx = off.X + cx, ry = off.Y + cy;
+            int rw = Math.Max(1, cw2), rh = Math.Max(1, ch2);
+            if (rx < 0) { rw += rx; rx = 0; }
+            if (ry < 0) { rh += ry; ry = 0; }
+            rw = Math.Min(rw, frame.Width - rx);
+            rh = Math.Min(rh, frame.Height - ry);
+            if (rw <= 0 || rh <= 0) return;
+
+            var skb = frame._skBitmap;
+            unsafe
+            {
+                byte* basePtr = (byte*)skb.GetPixels();
+                int stride = skb.RowBytes;
+                for (int y = 0; y < rh; y++)
+                {
+                    byte* row = basePtr + (ry + y) * stride + rx * 4;
+                    for (int x = 0; x < rw; x++)
+                    {
+                        row[0] = (byte)(255 - row[0]);
+                        row[1] = (byte)(255 - row[1]);
+                        row[2] = (byte)(255 - row[2]);
+                        row += 4;
+                    }
+                }
+            }
         }
 
         static void RenderChildren(Control parent, Graphics g)
@@ -1969,10 +2009,92 @@ namespace System.Windows.Forms
         }
 
         // ── Driver: caret (tracked, not drawn) ───────────────────────────
-        internal override void CreateCaret(IntPtr hwnd, int width, int height) { }
-        internal override void DestroyCaret(IntPtr hwnd) { }
-        internal override void SetCaretPos(IntPtr hwnd, int x, int y) { }
-        internal override void CaretVisible(IntPtr hwnd, bool visible) { }
+        // ── Caret: drawn into the served frame at render time ───────────
+        class CaretState
+        {
+            public IntPtr Hwnd;
+            public int X, Y, W, H;
+            public bool Visible;
+            public bool On;                       // blink phase
+            public System.Threading.Timer Timer;
+        }
+        static readonly CaretState caret = new CaretState();
+
+        internal override void CreateCaret(IntPtr handle, int width, int height)
+        {
+            lock (caret)
+            {
+                caret.Hwnd = handle;
+                caret.W = Math.Max(1, width);
+                caret.H = Math.Max(1, height);
+                caret.X = caret.Y = 0;
+                caret.Visible = false;
+                caret.On = false;
+            }
+        }
+
+        internal override void DestroyCaret(IntPtr handle)
+        {
+            lock (caret)
+            {
+                if (caret.Hwnd != handle) return;
+                caret.Visible = false;
+                caret.On = false;
+                caret.Hwnd = IntPtr.Zero;
+                caret.Timer?.Change(Timeout.Infinite, Timeout.Infinite);
+            }
+        }
+
+        internal override void SetCaretPos(IntPtr handle, int x, int y)
+        {
+            lock (caret)
+            {
+                if (caret.Hwnd != handle) return;
+                caret.X = x; caret.Y = y;
+                if (caret.Visible && !caret.On) caret.On = true;   // re-show immediately on move
+            }
+            PushCaretFrame();
+        }
+
+        internal override void CaretVisible(IntPtr handle, bool visible)
+        {
+            lock (caret)
+            {
+                if (caret.Hwnd != handle || caret.Visible == visible) return;
+                caret.Visible = visible;
+                caret.On = visible;
+                if (visible)
+                {
+                    caret.Timer ??= new System.Threading.Timer(_ => CaretBlink(), null,
+                        Timeout.Infinite, Timeout.Infinite);
+                    caret.Timer.Change(CaretBlinkTime, CaretBlinkTime);
+                }
+                else
+                {
+                    caret.Timer?.Change(Timeout.Infinite, Timeout.Infinite);
+                }
+            }
+            PushCaretFrame();
+        }
+
+        static void CaretBlink()
+        {
+            bool push = false;
+            lock (caret)
+                if (caret.Visible && caret.Hwnd != IntPtr.Zero) { caret.On = !caret.On; push = true; }
+            if (push) PushCaretFrame();
+        }
+
+        static void PushCaretFrame()
+        {
+            Hwnd h;
+            lock (caret) h = Hwnd.ObjectFromHandle(caret.Hwnd);
+            if (h == null) return;
+            var top = Toplevel(h);
+            WinInfo wi;
+            lock (Sync) windows.TryGetValue(top.Handle, out wi);
+            if (wi != null) PushRelated(wi);
+        }
 
         // ── Driver: timers ───────────────────────────────────────────────
         internal override void SetTimer(Timer timer)
