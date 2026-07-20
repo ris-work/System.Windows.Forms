@@ -405,34 +405,28 @@ namespace System.Windows.Forms
         }
         static byte[] EncodeWindowFrame(WinInfo wi, string fmt, int q, bool gray)
         {
+            Bitmap frame = BuildTopFrame(wi);
+            if (frame == null) return null;
+
             var pops = PopupsFor(wi);
-            var locks = pops.Select(p => (object)p.BufLock).Append(wi.BufLock)
-                            .OrderBy(o => o.GetHashCode()).ToList();
-            foreach (var l in locks) Monitor.Enter(l);
-            Bitmap comp = null;
-            try
+            Bitmap src = frame, comp = null;
+            if (pops.Count > 0)
             {
-                if (wi.Buffer == null) return null;
-                Bitmap src = wi.Buffer;
-                if (pops.Count > 0)
+                comp = new Bitmap(frame.Width, frame.Height);
+                using (var g = Graphics.FromImage(comp))
                 {
-                    comp = new Bitmap(wi.Buffer.Width, wi.Buffer.Height);
-                    using (var g = Graphics.FromImage(comp))
-                    {
-                        g.DrawImage(wi.Buffer, 0, 0);
-                        foreach (var p in pops)
-                            if (p.Buffer != null)
-                                g.DrawImage(p.Buffer, p.Hwnd.x - wi.Hwnd.x, p.Hwnd.y - wi.Hwnd.y);
-                    }
-                    src = comp;
+                    g.DrawImage(frame, 0, 0);
+                    foreach (var p in pops)
+                        using (var pf = BuildTopFrame(p))
+                            if (pf != null)
+                                g.DrawImage(pf, p.Hwnd.x - wi.Hwnd.x, p.Hwnd.y - wi.Hwnd.y);
                 }
-                return EncodeFrame(src, fmt, q, gray);
+                src = comp;
             }
-            finally
-            {
-                foreach (var l in locks) Monitor.Exit(l);
-                comp?.Dispose();
-            }
+            var bytes = EncodeFrame(src, fmt, q, gray);
+            comp?.Dispose();
+            frame.Dispose();
+            return bytes;
         }
 
         static void SendFrame(ClientConn cc)
@@ -656,7 +650,7 @@ namespace System.Windows.Forms
 
         static Control HitTestDeep(Control parent, Point p)
         {
-            for (int i = parent.Controls.Count - 1; i >= 0; i--)
+            for (int i = 0; i < parent.Controls.Count; i++)   // was: Count-1 down to 0
             {
                 var c = parent.Controls[i];
                 if (!c.Visible || !c.IsHandleCreated) continue;
@@ -707,61 +701,63 @@ namespace System.Windows.Forms
 
         static void DoButton(WinInfo wi, int fx, int fy, MouseButtons button, bool isDown)
         {
-            var topHwnd = wi.Hwnd;
-            int cx = fx - topHwnd.ClientRect.X;
-            int cy = fy - topHwnd.ClientRect.Y;
+            int sx = wi.IsDesktop ? fx : wi.Hwnd.x + fx;
+            int sy = wi.IsDesktop ? fy : wi.Hwnd.y + fy;
+            mouse_position = new Point(sx, sy);
 
-            Msg msgClient, msgNC, msgDbl;
-            switch (button)
+            ButtonMsgs(button, isDown, out Msg msgClient, out Msg msgNC, out Msg msgDbl);
+
+            // (1) mouse capture: ALL buttons go to the grab window, in ITS space
+            if (GrabHwnd != IntPtr.Zero)
             {
-                case MouseButtons.Right:
-                    msgClient = isDown ? Msg.WM_RBUTTONDOWN : Msg.WM_RBUTTONUP;
-                    msgNC = isDown ? Msg.WM_NCRBUTTONDOWN : Msg.WM_NCRBUTTONUP;
-                    msgDbl = Msg.WM_RBUTTONDBLCLK; break;
-                case MouseButtons.Middle:
-                    msgClient = isDown ? Msg.WM_MBUTTONDOWN : Msg.WM_MBUTTONUP;
-                    msgNC = isDown ? Msg.WM_NCMBUTTONDOWN : Msg.WM_NCMBUTTONUP;
-                    msgDbl = Msg.WM_MBUTTONDBLCLK; break;
-                default:
-                    msgClient = isDown ? Msg.WM_LBUTTONDOWN : Msg.WM_LBUTTONUP;
-                    msgNC = isDown ? Msg.WM_NCLBUTTONDOWN : Msg.WM_NCLBUTTONUP;
-                    msgDbl = Msg.WM_LBUTTONDBLCLK; break;
+                var gh = Hwnd.ObjectFromHandle(GrabHwnd);
+                if (gh != null)
+                {
+                    var gtop = Toplevel(gh);
+                    var goff = OffsetInToplevel(gh, true);          // grab client offset in its toplevel frame
+                    int tx = sx - gtop.x - goff.X;
+                    int ty = sy - gtop.y - goff.Y;
+                    EnqueueMsg(GrabHwnd, msgClient, MouseWParam(), PackLP(tx, ty));
+                    EnqueueMsg(GrabHwnd, Msg.WM_MOUSEMOVE, MouseWParam(), PackLP(tx, ty));
+                    return;
+                }
+                GrabHwnd = IntPtr.Zero;
             }
 
-            // NC area (frame coords outside client rect)
+            // (2) topmost window under the point (popups beat their owner)
+            var hit = TopmostAt(sx, sy);
+            if (hit == null) return;                                // bare desktop
+            DeliverButton(hit, sx - hit.Hwnd.x, sy - hit.Hwnd.y, msgClient, msgNC, msgDbl, isDown);
+        }
+
+        static void DeliverButton(WinInfo wi, int fx, int fy, Msg msgClient, Msg msgNC, Msg msgDbl, bool isDown)
+        {
+            var topHwnd = wi.Hwnd;
+            ActivateInternal(wi.Handle);
+
+            int cx = fx - topHwnd.ClientRect.X;
+            int cy = fy - topHwnd.ClientRect.Y;
             if (cx < 0 || cy < 0 || cx >= topHwnd.ClientRect.Width || cy >= topHwnd.ClientRect.Height)
             {
                 EnqueueMsg(topHwnd.Handle, msgNC, (IntPtr)HitTest.HTCLIENT, PackLP(fx, fy));
                 return;
             }
 
-            IntPtr target;
-            int tx, ty;
-            if (GrabHwnd != IntPtr.Zero)
-            {
-                target = GrabHwnd;
-                var gh = Hwnd.ObjectFromHandle(target);
-                var off = gh != null ? OffsetInToplevel(gh, true) : new Point(0, 0);
-                tx = fx - off.X; ty = fy - off.Y;
-            }
-            else
-            {
-                var topCtrl = Control.FromHandle(topHwnd.Handle);
-                Control hit = topCtrl != null ? HitTestDeep(topCtrl, new Point(cx, cy)) : null;
-                target = hit != null && hit.IsHandleCreated ? hit.Handle : topHwnd.Handle;
-                var hh = Hwnd.ObjectFromHandle(target);
-                var off = hh != null ? OffsetInToplevel(hh, true) : new Point(topHwnd.ClientRect.X, topHwnd.ClientRect.Y);
-                tx = fx - off.X; ty = fy - off.Y;
-            }
+            var topCtrl = Control.FromHandle(topHwnd.Handle);
+            Control hitCtrl = topCtrl != null ? HitTestDeep(topCtrl, new Point(cx, cy)) : null;
+            IntPtr target = hitCtrl != null && hitCtrl.IsHandleCreated ? hitCtrl.Handle : topHwnd.Handle;
+            var hh = Hwnd.ObjectFromHandle(target);
+            var off = hh != null ? OffsetInToplevel(hh, true) : new Point(topHwnd.ClientRect.X, topHwnd.ClientRect.Y);
+            int tx = fx - off.X, ty = fy - off.Y;
 
             Msg finalMsg = msgClient;
             if (isDown)
             {
                 int now = Environment.TickCount;
                 if (clickPending && clickHwnd == target && clickMsg == msgClient &&
-    Math.Abs((clickL.ToInt32() & 0xFFFF) - (tx & 0xFFFF)) <= 4 &&
-    Math.Abs(((clickL.ToInt32() >> 16) & 0xFFFF) - (ty & 0xFFFF)) <= 4 &&
-    unchecked((uint)(now - clickTime)) < DoubleClickInterval)
+                    Math.Abs((clickL.ToInt32() & 0xFFFF) - (tx & 0xFFFF)) <= 4 &&
+                    Math.Abs(((clickL.ToInt32() >> 16) & 0xFFFF) - (ty & 0xFFFF)) <= 4 &&
+                    unchecked((uint)(now - clickTime)) < DoubleClickInterval)
                 {
                     finalMsg = msgDbl;
                     clickPending = false;
@@ -774,10 +770,9 @@ namespace System.Windows.Forms
             }
 
             EnqueueMsg(target, finalMsg, MouseWParam(), PackLP(tx, ty));
-
-            // Win32 splurts a mousemove after up/down; some apps rely on it
             EnqueueMsg(target, Msg.WM_MOUSEMOVE, MouseWParam(), PackLP(tx, ty));
         }
+
 
         static void RouteMouseMove(WinInfo wi, JsonElement root)
         {
@@ -943,9 +938,8 @@ namespace System.Windows.Forms
             {
                 g.Clear(Color.FromArgb(58, 58, 64));
                 foreach (var w in vis)
-                    lock (w.BufLock)
-                        if (w.Buffer != null)
-                            g.DrawImage(w.Buffer, w.Hwnd.x, w.Hwnd.y);
+                    using (var f = BuildTopFrame(w))
+                        g.DrawImage(f, w.Hwnd.x, w.Hwnd.y);
             }
             return bmp;
         }
@@ -1124,6 +1118,15 @@ namespace System.Windows.Forms
                 h.expose_pending = h.nc_expose_pending = false;
                 h.Dispose();
             }
+
+            if (hwnd.parent != null)
+            {
+                AddExpose(hwnd.parent, true, 0, 0, hwnd.parent.width, hwnd.parent.height);
+                var ptop = Toplevel(hwnd.parent);
+                WinInfo pwi;
+                lock (Sync) windows.TryGetValue(ptop.Handle, out pwi);
+                if (pwi != null) PushRelated(pwi);
+            }
         }
 
         void AccumulateDestroyedHandles(Control c, ArrayList list)
@@ -1159,6 +1162,8 @@ namespace System.Windows.Forms
         {
             var hwnd = Hwnd.ObjectFromHandle(msg.HWnd);        // invalid-region owner
             var paint_hwnd = Hwnd.ObjectFromHandle(handle);    // drawable owner
+            if (!paint_hwnd.visible)
+                return new PaintEventArgs(Graphics.FromImage(new Bitmap(1, 1)), Rectangle.Empty);
             if (hwnd == null) hwnd = paint_hwnd;
             if (paint_hwnd == null)
                 return new PaintEventArgs(Graphics.FromImage(new Bitmap(1, 1)), Rectangle.Empty);
@@ -1215,7 +1220,10 @@ namespace System.Windows.Forms
             {
                 var wi = spea.Win;
                 Monitor.Exit(wi.BufLock);
-                Composite(wi);           // blit this window into the top-level frame
+                var top = Toplevel(wi.Hwnd);
+                WinInfo topWi;
+                lock (Sync) windows.TryGetValue(top.Handle, out topWi);
+                if (topWi != null) PushRelated(topWi);
             }
             pevent.Dispose();
         }
@@ -1242,22 +1250,19 @@ namespace System.Windows.Forms
                 {
                     g.SetClip(dest);
 
-                    // WS_CLIPCHILDREN: a parent's DC never covers child windows.
+                    // Compositor stencil: never blit over a visible child region.
+                    // Do NOT gate this on WS_CLIPCHILDREN — the child's own buffer
+                    // is authoritative for its pixels in every case.
                     var ctrl = Control.FromHandle(hwnd.Handle);
                     if (ctrl != null)
                     {
-                        CreateParams cp = null;
-                        try { cp = ctrl.GetCreateParams(); } catch { }
-                        if (cp != null && (cp.Style & (int)WindowStyles.WS_CLIPCHILDREN) != 0)
+                        foreach (Control child in ctrl.Controls)
                         {
-                            foreach (Control child in ctrl.Controls)
-                            {
-                                if (!child.Visible || !child.IsHandleCreated) continue;
-                                var ch = Hwnd.ObjectFromHandle(child.Handle);
-                                if (ch == null) continue;
-                                var coff = OffsetInToplevel(ch, false);
-                                g.ExcludeClip(new Rectangle(coff.X, coff.Y, ch.width, ch.height));
-                            }
+                            if (!child.Visible || !child.IsHandleCreated) continue;
+                            var ch = Hwnd.ObjectFromHandle(child.Handle);
+                            if (ch == null) continue;
+                            var coff = OffsetInToplevel(ch, false);
+                            g.ExcludeClip(new Rectangle(coff.X, coff.Y, ch.width, ch.height));
                         }
                     }
 
@@ -1265,6 +1270,49 @@ namespace System.Windows.Forms
                         new Rectangle(dest.X - off.X, dest.Y - off.Y, dest.Width, dest.Height),
                         GraphicsUnit.Pixel);
                 }
+            }
+        }
+
+        // ── Frame rendering: full-tree painter's algorithm ──────────────
+        // Every hwnd paints into its own buffer (unchanged). The served frame is
+        // rebuilt from the control tree on each send: parents first, then children
+        // bottom-of-z to top-of-z. No stencil/exclusion, no ordering assumptions.
+        static Bitmap BuildTopFrame(WinInfo topWi)
+        {
+            var top = topWi.Hwnd;
+            var frame = new Bitmap(Math.Max(1, top.width), Math.Max(1, top.height));
+            using (var g = Graphics.FromImage(frame))
+            {
+                lock (topWi.BufLock)
+                    if (topWi.Buffer != null)
+                        g.DrawImage(topWi.Buffer, 0, 0);
+
+                var c = Control.FromHandle(top.Handle);
+                if (c != null) RenderChildren(c, g);
+            }
+            return frame;   // caller disposes
+        }
+
+        static void RenderChildren(Control parent, Graphics g)
+        {
+            // Controls[0] == TOP of z-order, so iterate backwards (bottom first).
+            for (int i = parent.Controls.Count - 1; i >= 0; i--)
+            {
+                var c = parent.Controls[i];
+                if (!c.Visible || !c.IsHandleCreated) continue;      // hidden subtrees never render
+                var h = Hwnd.ObjectFromHandle(c.Handle);
+                if (h == null || h.zombie) continue;
+
+                WinInfo wi;
+                lock (Sync) windows.TryGetValue(c.Handle, out wi);
+                if (wi != null)
+                {
+                    var off = OffsetInToplevel(h, false);
+                    lock (wi.BufLock)
+                        if (wi.Buffer != null)
+                            g.DrawImage(wi.Buffer, off.X, off.Y);   // SrcOver: alpha just works
+                }
+                RenderChildren(c, g);
             }
         }
 
@@ -1570,6 +1618,8 @@ namespace System.Windows.Forms
             if (width < 0) width = 0;
             if (height < 0) height = 0;
             if (hwnd.x == x && hwnd.y == y && hwnd.width == width && hwnd.height == height) return;
+            if (hwnd.parent != null && (hwnd.x != x || hwnd.y != y))
+                AddExpose(hwnd.parent, true, hwnd.x, hwnd.y, hwnd.width, hwnd.height);
 
             hwnd.x = x; hwnd.y = y; hwnd.width = width; hwnd.height = height;
             PerformNCCalc(hwnd);
@@ -1630,19 +1680,25 @@ namespace System.Windows.Forms
             var hwnd = Hwnd.ObjectFromHandle(handle);
             if (hwnd == null || hwnd.zombie) return false;
             hwnd.visible = visible;
+            hwnd.mapped = visible;
+            hwnd.Mapped = visible;
+
+            if (visible)
+                lock (Sync) { zOrder.Remove(handle); zOrder.Add(handle); }   // newly-shown is topmost
+
             if (!visible && hwnd.parent != null)
                 AddExpose(hwnd.parent, true, 0, 0, hwnd.parent.width, hwnd.parent.height);
 
-            hwnd.mapped = visible;
-            hwnd.Mapped = visible;
             SendMessageStatic(handle, Msg.WM_SHOWWINDOW, visible ? (IntPtr)1 : IntPtr.Zero, IntPtr.Zero);
             SendMessageStatic(handle, Msg.WM_WINDOWPOSCHANGED, IntPtr.Zero, IntPtr.Zero);
+            if (!visible && hwnd.parent != null)
+                AddExpose(hwnd.parent, true, hwnd.x, hwnd.y, hwnd.width, hwnd.height);
             if (visible)
             {
                 AddExpose(hwnd, true, 0, 0, hwnd.width, hwnd.height);
                 WinInfo wi;
                 lock (Sync) windows.TryGetValue(handle, out wi);
-                if (wi != null && wi.IsTop) { PushFrames(wi); BroadcastList("window-updated", wi); }
+                if (wi != null && wi.IsTop) { PushRelated(wi); BroadcastList("window-updated", wi); }
             }
             return true;
         }
@@ -1710,6 +1766,39 @@ namespace System.Windows.Forms
         }
 
         internal override bool SetZOrder(IntPtr handle, IntPtr AfterhWnd, bool Top, bool Bottom) => true;
+        static WinInfo TopmostAt(int sx, int sy)
+        {
+            lock (Sync)
+                for (int i = zOrder.Count - 1; i >= 0; i--)
+                    if (topWindows.TryGetValue(zOrder[i], out var w) &&
+                        w.Hwnd != null && w.Hwnd.visible && !w.Hwnd.zombie &&
+                        sx >= w.Hwnd.x && sx < w.Hwnd.x + w.Hwnd.width &&
+                        sy >= w.Hwnd.y && sy < w.Hwnd.y + w.Hwnd.height)
+                        return w;
+            return null;
+        }
+
+        static void ButtonMsgs(MouseButtons button, bool isDown, out Msg client, out Msg nc, out Msg dbl)
+        {
+            switch (button)
+            {
+                case MouseButtons.Right:
+                    client = isDown ? Msg.WM_RBUTTONDOWN : Msg.WM_RBUTTONUP;
+                    nc = isDown ? Msg.WM_NCRBUTTONDOWN : Msg.WM_NCRBUTTONUP;
+                    dbl = Msg.WM_RBUTTONDBLCLK; break;
+                case MouseButtons.Middle:
+                    client = isDown ? Msg.WM_MBUTTONDOWN : Msg.WM_MBUTTONUP;
+                    nc = isDown ? Msg.WM_NCMBUTTONDOWN : Msg.WM_NCMBUTTONUP;
+                    dbl = Msg.WM_MBUTTONDBLCLK; break;
+                default:
+                    client = isDown ? Msg.WM_LBUTTONDOWN : Msg.WM_LBUTTONUP;
+                    nc = isDown ? Msg.WM_NCLBUTTONDOWN : Msg.WM_NCLBUTTONUP;
+                    dbl = Msg.WM_LBUTTONDBLCLK; break;
+            }
+        }
+
+
+
         internal override bool SetTopmost(IntPtr handle, bool Enabled)
         {
             var hwnd = Hwnd.ObjectFromHandle(handle);
