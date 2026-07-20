@@ -1731,16 +1731,16 @@ namespace System.Windows.Forms
         internal override bool GetFontMetrics(Graphics g, Font font, out int ascent, out int descent)
         {
             var ff = font.FontFamily;
-            ascent = ff.GetCellAscent(font.Style);
-            descent = ff.GetCellDescent(font.Style);
+            ascent = 0;//ff.GetCellAscent(font.Style);
+            descent = 0;// ff.GetCellDescent(font.Style);
             return true;
         }
 
         internal override SizeF GetAutoScaleSize(Font font)
         {
             const string magic_string = "The quick brown fox jumped over the lazy dog.";
-            const double magic_number = 44.549996948242189;
-            using (var bmp = new Bitmap(1, 1))
+            const double magic_number = 1;// 44.549996948242189;
+            using (var bmp = new Bitmap(128, 128))
             using (var g = Graphics.FromImage(bmp))
             {
                 float width = (float)(g.MeasureString(magic_string, font).Width / magic_number);
