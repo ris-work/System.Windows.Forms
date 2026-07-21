@@ -28,6 +28,8 @@ var form = new Form
 // next to the other state vars:
 string? lastSvg = null;
 bool lastFrameWasSvg = false;
+long totalIn=0, totalOut=0;      // cumulative bytes since viewer start
+long winIn=0, winOut=0;          // bytes in the current 1-second window (for rate)
 
 // --- toolbar ---
 var toolbar = new Panel { Dock = DockStyle.Top, Height = 34, BackColor = SystemColors.Control };
@@ -162,7 +164,9 @@ void SendRaw(string json, bool logIt)
     try
     {
         var b = Encoding.UTF8.GetBytes(json + "\n");
-        lock (writeLock) { curNs.Write(b, 0, b.Length); curNs.Flush(); }
+        lock (writeLock) { curNs.Write(b, 0, b.Length); curNs.Flush(); Interlocked.Add(ref totalOut, b.Length);
+            Interlocked.Add(ref winOut, b.Length);
+        }
         if (logIt) Log(">> " + json);
     }
     catch (Exception ex) { Log("[send] failed: " + ex.Message); dead = true; }
@@ -301,6 +305,8 @@ Image RenderSvgToImage(string svgText, int w, int h)
 
 
 // ──────────────────────────────── window socket ────────────────────────────────
+
+
 void CloseCurrentWindow()
 {
     connSeq++;
@@ -344,6 +350,8 @@ void WindowReader(int myConn, Socket sock, StreamReader rd)
         string? line;
         while (running && myConn == connSeq && (line = rd.ReadLine()) != null)
         {
+            Interlocked.Add(ref totalIn, line.Length + 1);   // +1 for the newline
+            Interlocked.Add(ref winIn, line.Length + 1);
             using var doc = JsonDocument.Parse(line);
             var r = doc.RootElement;
             var t = r.GetProperty("type").GetString();
@@ -414,6 +422,13 @@ void WindowReader(int myConn, Socket sock, StreamReader rd)
     if (myConn == connSeq) dead = true;
 }
 
+
+
+
+string FmtBytes(long n) =>
+    n < 1024 ? n + " B" :
+    n < 1024 * 1024 ? (n / 1024.0).ToString("F1") + " KB" :
+    (n / 1048576.0).ToString("F2") + " MB";
 // ──────────────────────────────── window-list worker ────────────────────────────────
 void HandleListLine(string line)
 {
@@ -528,14 +543,27 @@ btnRefresh.Click += (_, __) =>
 
 btnSave.Click += (_, __) =>
 {
-    var img = pb.Image;
-    if (img == null) { Log("[save] no frame yet"); return; }
     try
     {
         string safe = string.Concat((cur.title ?? "window").Select(c => char.IsLetterOrDigit(c) ? c : '_'));
-        string path = Path.Combine(shotDir, $"{safe}_{DateTime.Now:yyyyMMdd_HHmmss_fff}.png");
-        img.Save(path, System.Drawing.Imaging.ImageFormat.Png);
-        Log("[save] " + path);
+        string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+
+        // SVG frame: export the raw wire text verbatim — works even if it's malformed
+        if (lastFrameWasSvg && lastSvg != null)
+        {
+            string path = Path.Combine(shotDir, $"{safe}_{stamp}.svg");
+            File.WriteAllText(path, lastSvg);
+            Log("[save] " + path + (lastSvgError != null
+                ? $"  (frame had render errors: {lastSvgError} — raw SVG saved anyway)"
+                : ""));
+            return;
+        }
+
+        var img = pb.Image;
+        if (img == null) { Log("[save] no frame yet"); return; }
+        string p2 = Path.Combine(shotDir, $"{safe}_{stamp}.png");
+        img.Save(p2, System.Drawing.Imaging.ImageFormat.Png);
+        Log("[save] " + p2);
     }
     catch (Exception ex) { Log("[save] failed: " + ex.Message); }
 };
@@ -592,6 +620,9 @@ Point? MapToImage(Point p)
 string Btn(MouseButtons b) =>
     b == MouseButtons.Right ? "right" : b == MouseButtons.Middle ? "middle" : "left";
 
+var stNet = new ToolStripStatusLabel("  ↓ 0 ↑ 0");
+status.Items.AddRange(new ToolStripItem[] { stConn, stWin, stFrame, stNet });
+
 pb.MouseDown += (_, e) => { var p = MapToImage(e.Location); if (p.HasValue) SendMouse("mousedown", p.Value, Btn(e.Button)); };
 pb.MouseUp += (_, e) => { var p = MapToImage(e.Location); if (p.HasValue) SendMouse("mouseup", p.Value, Btn(e.Button)); };
 pb.MouseMove += (_, e) =>
@@ -640,6 +671,11 @@ listBox.SelectedIndexChanged += (_, __) =>
 var watchdog = new System.Windows.Forms.Timer { Interval = 1000 };
 watchdog.Tick += (_, __) =>
 {
+    long wi = Interlocked.Exchange(ref winIn, 0);
+    long wo = Interlocked.Exchange(ref winOut, 0);
+    stNet.Text = $"  ↓ {FmtBytes(Interlocked.Read(ref totalIn))} ↑ {FmtBytes(Interlocked.Read(ref totalOut))}" +
+                 $"  ({FmtBytes(wi)}/s in, {FmtBytes(wo)}/s out)";
+
     if (!dead) return;
     if ((DateTime.Now - lastReconnectTry).TotalSeconds < 3) return;
     lastReconnectTry = DateTime.Now;
