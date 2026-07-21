@@ -109,18 +109,79 @@ namespace System.Windows.Forms
             public Socket Sock;
             public NetworkStream Ns;
             public StreamReader Rd;
-            public WinInfo Win;                   // null for window-list watchers
+            public WinInfo Win;
             public bool Subscribed;
             public string Format = "jpeg";
             public int Quality = 80;
-            public readonly object WLock = new object();
-            public volatile bool Dead;
             public bool Gray;
+            public volatile bool Dead;
+
+            public readonly object WLock = new object();
+            public readonly object QueueLock = new object();
+            public readonly Queue<string> OutQueue = new Queue<string>();   // control msgs
+            public bool FrameWanted;                                        // coalesce slot
+            public readonly ManualResetEventSlim HasWork = new ManualResetEventSlim(false);
+            public Thread Writer;
+            const int MaxCtrl = 64;
+
+            public void StartWriter()
+            {
+                Writer = new Thread(WriterLoop) { IsBackground = true, Name = "conn-writer" };
+                Writer.Start();
+            }
+
+            // Control messages (hello/info/pong/bye) — queued, capped.
             public void Send(string s)
             {
                 if (Dead) return;
-                try { var b = Encoding.UTF8.GetBytes(s + "\n"); lock (WLock) { Ns.Write(b, 0, b.Length); Ns.Flush(); } }
-                catch { Dead = true; }
+                lock (QueueLock)
+                {
+                    if (OutQueue.Count >= MaxCtrl) { Dead = true; HasWork.Set(); return; } // hopeless client: cut it, don't OOM
+                    OutQueue.Enqueue(s);
+                }
+                HasWork.Set();
+            }
+
+            // Frames — coalesced to a single "wanted" flag; encoded at send time
+            // on the writer thread, so it's ALWAYS the freshest state.
+            public void RequestFrame()
+            {
+                if (Dead) return;
+                lock (QueueLock) FrameWanted = true;
+                HasWork.Set();
+            }
+
+            void WriterLoop()
+            {
+                try
+                {
+                    while (!Dead)
+                    {
+                        HasWork.Wait(500);
+                        HasWork.Reset();
+                        for (; ; )
+                        {
+                            string msg = null;
+                            bool wantFrame = false;
+                            lock (QueueLock)
+                            {
+                                if (OutQueue.Count > 0) msg = OutQueue.Dequeue();
+                                else if (FrameWanted) { FrameWanted = false; wantFrame = true; }
+                            }
+                            if (msg != null) WriteRaw(msg);
+                            else if (wantFrame) SendFrame(this);   // build+encode+write HERE, off the UI thread
+                            else break;
+                        }
+                    }
+                }
+                catch { }
+                Dead = true;
+            }
+
+            public void WriteRaw(string s)
+            {
+                var b = Encoding.UTF8.GetBytes(s + "\n");
+                lock (WLock) { Ns.Write(b, 0, b.Length); Ns.Flush(); }
             }
         }
 
@@ -315,6 +376,7 @@ namespace System.Windows.Forms
                 var cc = new ClientConn { Sock = s, Ns = new NetworkStream(s, true) };
                 cc.Rd = new StreamReader(cc.Ns, Encoding.UTF8);
                 lock (Sync) listWatchers.Add(cc);
+                cc.StartWriter();
                 cc.Send(ListJson());
                 var t = new Thread(() => ListClientLoop(cc)) { IsBackground = true };
                 t.Start();
@@ -335,6 +397,11 @@ namespace System.Windows.Forms
             cc.Dead = true;
             lock (Sync) listWatchers.Remove(cc);
             try { cc.Sock.Close(); } catch { }
+            finally
+            {
+                cc.Dead = true;
+                cc.HasWork.Set();
+            }
         }
 
         static void WinAcceptLoop(WinInfo wi)
@@ -346,6 +413,7 @@ namespace System.Windows.Forms
                 var cc = new ClientConn { Sock = s, Ns = new NetworkStream(s, true), Win = wi };
                 cc.Rd = new StreamReader(cc.Ns, Encoding.UTF8);
                 lock (Sync) wi.Clients.Add(cc);
+                cc.StartWriter();
                 string hello = "{\"type\":\"hello\",\"protocol\":1,\"screen\":[" + screenW + "," + screenH +
                                "],\"window\":" + (wi.IsDesktop ? DesktopJson() : WindowJson(wi)) + "}";
                 cc.Send(hello);
@@ -369,7 +437,13 @@ namespace System.Windows.Forms
             catch { }
             cc.Dead = true;
             lock (Sync) cc.Win?.Clients.Remove(cc);
-            try { cc.Sock.Close(); } catch { }
+            try { cc.Sock.Close(); }
+            catch { }
+            finally
+            {
+                cc.Dead = true;
+                cc.HasWork.Set();
+            }
         }
 
         // ── Frame encoding / pushing ─────────────────────────────────────
@@ -483,8 +557,9 @@ namespace System.Windows.Forms
         {
             ClientConn[] subs;
             lock (Sync) subs = wi.Clients.FindAll(c => c.Subscribed && !c.Dead).ToArray();
-            foreach (var c in subs) SendFrame(c);
+            foreach (var c in subs) c.RequestFrame();
         }
+
 
         void FullRedraw(WinInfo topWi)
         {
