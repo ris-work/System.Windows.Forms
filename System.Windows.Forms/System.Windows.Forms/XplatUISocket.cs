@@ -1241,6 +1241,12 @@ namespace System.Windows.Forms
                     ? new Rectangle(0, 0, paint_hwnd.ClientRect.Width, paint_hwnd.ClientRect.Height)
                     : new Rectangle(0, 0, paint_hwnd.width, paint_hwnd.height);
                 Rectangle clip = bounds;
+                // A repaint covering ~(almost) the whole control starts a new vector
+                // generation: drop accumulated SVG ops (pixels are unaffected).
+                if (client && wi.Buffer != null && !hwnd.Invalid.IsEmpty &&
+                    hwnd.Invalid.Width >= bounds.Width * 0.9f &&
+                    hwnd.Invalid.Height >= bounds.Height * 0.9f)
+                    wi.Buffer.ClearSvg();
                 if (client && !hwnd.Invalid.IsEmpty) clip = Rectangle.Intersect(bounds, hwnd.Invalid);
                 else if (!client && !hwnd.nc_invalid.IsEmpty) clip = Rectangle.Intersect(bounds, hwnd.nc_invalid);
                 if (!clip.IsEmpty) dc.SetClip(clip);
