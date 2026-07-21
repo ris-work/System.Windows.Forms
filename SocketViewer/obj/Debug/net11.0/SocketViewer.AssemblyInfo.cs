@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SocketViewer")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+bcfcb7aaf1229e2fdaae3e1679f50fd0484a7437")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+196a14aafcd48e7ed777865af8950e28a5f0b82a")]
 [assembly: System.Reflection.AssemblyProductAttribute("SocketViewer")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SocketViewer")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

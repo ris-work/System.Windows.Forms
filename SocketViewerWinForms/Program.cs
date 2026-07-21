@@ -1,10 +1,12 @@
 ﻿// SocketViewerWinForms.cs — WinForms viewer for XplatUISocket, with toolbar.
 // Single file, script-style. Deps: SkiaSharp + the Skia System.Drawing/WinForms stack.
+using SkiaSharp;
+using System.Drawing;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
-using System.Drawing;
 using System.Windows.Forms;
+using SKSvg = SkiaSharp.SKSvg;   // built into your SkiaSharp; swap to SkiaSharp.Extended.Svg.SKSvg if preferred
 
 string sockDir = Environment.GetEnvironmentVariable("XPLAT_UI_SOCKET_DIR") ?? "windows";
 string listPath = Path.Combine(sockDir, "window-list");
@@ -21,6 +23,10 @@ var form = new Form
     StartPosition = FormStartPosition.CenterScreen,
     KeyPreview = true
 };
+
+// next to the other state vars:
+string? lastSvg = null;
+bool lastFrameWasSvg = false;
 
 // --- toolbar ---
 var toolbar = new Panel { Dock = DockStyle.Top, Height = 34, BackColor = SystemColors.Control };
@@ -231,6 +237,68 @@ void RebuildItems(List<(string handle, string title, string socket, int w, int h
     });
 }
 
+string? lastSvgError = null;
+Image RenderSvgToImage(string svgText, int w, int h)
+{
+    w = Math.Max(1, w); h = Math.Max(1, h);
+    var bmp = new Bitmap(w, h);
+    string? err = null;
+    SKPicture? pic = null;
+
+    using (var g = Graphics.FromImage(bmp))
+    {
+        g.Clear(Color.White);
+
+        // Phase 1: parse (may throw OR return null on malformed input)
+        try
+        {
+            var svg = new SKSvg();
+            using var ms = new MemoryStream(Encoding.UTF8.GetBytes(svgText));
+            pic = svg.Load(ms);
+            if (pic == null) err = "SKSvg.Load returned null (malformed SVG?)";
+        }
+        catch (Exception ex) { err = ex.GetType().Name + ": " + ex.Message; pic = null; }
+
+        // Phase 2: rasterize, always restoring canvas state
+        if (pic != null)
+        {
+            int sc = g._canvas.Save();
+            try
+            {
+                var cull = pic.CullRect;
+                if (cull.Width > 0 && cull.Height > 0)
+                {
+                    g._canvas.Scale(w / cull.Width, h / cull.Height);
+                    g._canvas.Translate(-cull.Left, -cull.Top);
+                }
+                g._canvas.DrawPicture(pic);
+            }
+            catch (Exception ex) { err = "draw: " + ex.Message; }
+            finally
+            {
+                g._canvas.RestoreToCount(sc);
+                pic.Dispose();
+            }
+        }
+
+        // Phase 3: error placeholder instead of a crash
+        if (err != null)
+        {
+            g.Clear(Color.FromArgb(45, 24, 24));
+            using var pen = new Pen(Color.Red, 3);
+            g.DrawRectangle(pen, 2, 2, w - 4, h - 4);
+            using var font = new Font(FontFamily.GenericMonospace, 10);
+            using var br = new SolidBrush(Color.Orange);
+            g.DrawString("SVG render error (raw kept for export):\n" + err,
+                font, br, new RectangleF(10, 10, w - 20, h - 20));
+        }
+    }
+    lastSvgError = err;
+    return bmp;
+}
+
+
+
 // ──────────────────────────────── window socket ────────────────────────────────
 void CloseCurrentWindow()
 {
@@ -284,27 +352,41 @@ void WindowReader(int myConn, Socket sock, StreamReader rd)
                     {
                         var data = r.GetProperty("data").GetString();
                         if (string.IsNullOrEmpty(data)) break;
-                        try
+                        var ffmt = r.TryGetProperty("format", out var fe) ? fe.GetString() : "jpeg";
+
+                        Image? img = null;
+                        if (ffmt == "svg")
                         {
-                            using var ms = new MemoryStream(Convert.FromBase64String(data));
-                            var img = Image.FromStream(ms);
-                            int fc = ++frameCount;
-                            UI(() =>
-                            {
-                                var old = pb.Image;
-                                pb.Image = img;
-                                old?.Dispose();
-                                stFrame.Text = $"  frames: {fc} ({img.Width}x{img.Height})";
-                            });
-                            if ((DateTime.Now - lastFrameLog).TotalMilliseconds > 1000)
-                            {
-                                lastFrameLog = DateTime.Now;
-                                Log($"<< frame {img.Width}x{img.Height} {data.Length / 1024.0:F1}KB");
-                            }
+                            lastSvg = data;
+                            lastFrameWasSvg = true;
+                            img = RenderSvgToImage(data,
+                                r.GetProperty("width").GetInt32(),
+                                r.GetProperty("height").GetInt32());
+                            if (lastSvgError != null) Log("[svg] " + lastSvgError);
                         }
-                        catch (Exception ex) { Log("[win] bad frame: " + ex.Message); }
+                        else
+                        {
+                            lastFrameWasSvg = false;
+                            using var ms = new MemoryStream(Convert.FromBase64String(data));
+                            img = Image.FromStream(ms);
+                        }
+
+                        int fc = ++frameCount;
+                        UI(() =>
+                        {
+                            var old = pb.Image;
+                            pb.Image = img;
+                            old?.Dispose();
+                            stFrame.Text = $"  frames: {fc} ({ffmt} {img.Width}x{img.Height})";
+                        });
+                        if ((DateTime.Now - lastFrameLog).TotalMilliseconds > 1000)
+                        {
+                            lastFrameLog = DateTime.Now;
+                            Log($"<< frame {ffmt} {img.Width}x{img.Height} {data.Length / 1024.0:F1}KB");
+                        }
                         break;
                     }
+
                 case "hello":
                 case "info":
                     if (r.TryGetProperty("window", out var we) && we.TryGetProperty("title", out var tt))
@@ -321,7 +403,13 @@ void WindowReader(int myConn, Socket sock, StreamReader rd)
             }
         }
     }
-    catch (Exception ex) { if (running && myConn == connSeq) Log("[win] read error: " + ex.Message); }
+    catch (Exception lineEx)
+    {
+        // one malformed line must not kill the connection
+        Log("[win] bad line skipped: " + lineEx.Message);
+    }
+
+    //catch (Exception ex) { if (running && myConn == connSeq) Log("[win] read error: " + ex.Message); }
     if (myConn == connSeq) dead = true;
 }
 
@@ -453,7 +541,7 @@ btnSave.Click += (_, __) =>
 
 btnFmt.Click += (_, __) =>
 {
-    format = format == "jpeg" ? "png" : "jpeg";
+    format = format == "jpeg" ? "png" : format == "png" ? "svg" : "jpeg";
     UpdateToolbar();
     ResubscribeAndRefresh();
 };

@@ -446,6 +446,17 @@ namespace System.Windows.Forms
             }
 
             int w = wi.Hwnd.width, h = wi.Hwnd.height;
+            if (cc.Format == "svg")
+            {
+                if (!SvgSupport.Enabled) cc.Format = "png";          // negotiate down
+                else
+                {
+                    string svg = BuildTopFrameSvg(wi);
+                    cc.Send("{\"type\":\"frame\",\"format\":\"svg\",\"width\":" + wi.Hwnd.width +
+                            ",\"height\":" + wi.Hwnd.height + ",\"data\":\"" + JEsc(svg) + "\"}");
+                    return;
+                }
+            }
             byte[] bytes = EncodeWindowFrame(wi, cc.Format, cc.Quality, cc.Gray);
             if (bytes == null)
             {
@@ -481,8 +492,11 @@ namespace System.Windows.Forms
             var subtree = new List<IntPtr>();
             lock (Sync)
                 foreach (var kv in windows)
+                {
+                    kv.Value.Buffer?.ClearSvg();
                     if (Toplevel(kv.Value.Hwnd) == top && !kv.Value.Hwnd.zombie)
                         subtree.Add(kv.Key);
+                }
 
             var c = Control.FromHandle(top.Handle);
             Action work = () =>
@@ -1293,6 +1307,54 @@ namespace System.Windows.Forms
             DrawCaretIfAny(top, frame);
             return frame;   // caller disposes
         }
+
+        static string BuildTopFrameSvg(WinInfo topWi)
+        {
+            var top = topWi.Hwnd;
+            var sb = new StringBuilder();
+            sb.Append("<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" " +
+                      $"width=\"{top.width}\" height=\"{top.height}\" viewBox=\"0 0 {top.width} {top.height}\">");
+            lock (topWi.BufLock)
+                if (topWi.Buffer != null)
+                    sb.Append(Nest(topWi.Buffer.AsSvg(), 0, 0, top.width, top.height));
+            var c = Control.FromHandle(top.Handle);
+            if (c != null) SvgChildren(c, sb);
+            foreach (var p in PopupsFor(topWi))
+            {
+                var pf = RenderTopFrameSvg(p);
+                if (pf != null)
+                    sb.Append(Nest(pf, p.Hwnd.x - top.x, p.Hwnd.y - top.y, p.Hwnd.width, p.Hwnd.height));
+            }
+            sb.Append("</svg>");
+            return sb.ToString();
+        }
+
+        static string RenderTopFrameSvg(WinInfo wi) =>
+            wi.Buffer != null ? wi.Buffer.AsSvg() : null;   // popup chrome; children ride along via NestedSvg below
+
+        static void SvgChildren(Control parent, StringBuilder sb)
+        {
+            for (int i = parent.Controls.Count - 1; i >= 0; i--)
+            {
+                var c = parent.Controls[i];
+                if (!c.Visible || !c.IsHandleCreated) continue;
+                var h = Hwnd.ObjectFromHandle(c.Handle);
+                if (h == null || h.zombie) continue;
+                WinInfo wi;
+                lock (Sync) windows.TryGetValue(c.Handle, out wi);
+                if (wi != null)
+                {
+                    var off = OffsetInToplevel(h, false);
+                    lock (wi.BufLock)
+                        if (wi.Buffer != null)
+                            sb.Append(Nest(wi.Buffer.AsSvg(), off.X, off.Y, h.width, h.height));
+                }
+                SvgChildren(c, sb);
+            }
+        }
+
+        static string Nest(string inner, int x, int y, int w, int h) =>
+            $"<svg x=\"{x}\" y=\"{y}\" width=\"{w}\" height=\"{h}\">{inner}</svg>";
 
         static void DrawCaretIfAny(Hwnd top, Bitmap frame)
         {

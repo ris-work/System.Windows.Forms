@@ -26,6 +26,12 @@
 	<ItemGroup>
 		<ProjectReference Include="..\System.Drawing.Design\System.Drawing.Design.csproj" />
 		<ProjectReference Include="..\..\..\..\invnew\System.Drawing\System.Drawing.csproj" />
+		<PackageReference Include="SkiaSharp" Version="4.148.0" />
+		<PackageReference Include="SkiaSharp.Svg" Version="1.60.0" />
+		<!--<PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.148.0" />-->
+		<!--We don't target NoDeps now-->
+		<PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="4.148.0" />
+		<PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="4.148.0" />
 	</ItemGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\System.Windows.Forms\System.Windows.Forms.csproj" />
