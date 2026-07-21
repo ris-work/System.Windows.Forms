@@ -434,8 +434,19 @@ namespace System.Windows.Forms
             var wi = cc.Win;
             if (wi == null) return;
 
+            // SVG requested but server-side SVG is off: negotiate down to PNG
+            if (cc.Format == "svg" && !SvgSupport.Enabled)
+                cc.Format = "png";
+
             if (wi.IsDesktop)
             {
+                if (cc.Format == "svg")
+                {
+                    string dsvg = BuildDesktopSvg();
+                    cc.Send("{\"type\":\"frame\",\"format\":\"svg\",\"width\":" + screenW +
+                            ",\"height\":" + screenH + ",\"data\":\"" + JEsc(dsvg) + "\"}");
+                    return;
+                }
                 var desk = BuildDesktopFrame();
                 var dbytes = EncodeFrame(desk, cc.Format, cc.Quality, cc.Gray);
                 desk.Dispose();
@@ -445,18 +456,15 @@ namespace System.Windows.Forms
                 return;
             }
 
-            int w = wi.Hwnd.width, h = wi.Hwnd.height;
             if (cc.Format == "svg")
             {
-                if (!SvgSupport.Enabled) cc.Format = "png";          // negotiate down
-                else
-                {
-                    string svg = BuildTopFrameSvg(wi);
-                    cc.Send("{\"type\":\"frame\",\"format\":\"svg\",\"width\":" + wi.Hwnd.width +
-                            ",\"height\":" + wi.Hwnd.height + ",\"data\":\"" + JEsc(svg) + "\"}");
-                    return;
-                }
+                string svg = BuildTopFrameSvg(wi);
+                cc.Send("{\"type\":\"frame\",\"format\":\"svg\",\"width\":" + wi.Hwnd.width +
+                        ",\"height\":" + wi.Hwnd.height + ",\"data\":\"" + JEsc(svg) + "\"}");
+                return;
             }
+
+            int w = wi.Hwnd.width, h = wi.Hwnd.height;
             byte[] bytes = EncodeWindowFrame(wi, cc.Format, cc.Quality, cc.Gray);
             if (bytes == null)
             {
@@ -582,7 +590,11 @@ namespace System.Windows.Forms
                 case "refresh":
                 case "subscribe":
                     if (type == "subscribe") cc.Subscribed = true;
-                    if (root.TryGetProperty("format", out var f)) cc.Format = f.GetString() == "png" ? "png" : "jpeg";
+                    if (root.TryGetProperty("format", out var f))
+                    {
+                        var fs = f.GetString();
+                        cc.Format = (fs == "png" || fs == "jpeg" || fs == "svg") ? fs : "jpeg";
+                    }
                     if (root.TryGetProperty("quality", out var q)) cc.Quality = Math.Max(1, Math.Min(100, q.GetInt32()));
                     if (root.TryGetProperty("gray", out var ge)) cc.Gray = ge.GetBoolean();
                     if (root.TryGetProperty("full", out var fe) && fe.GetBoolean())
@@ -959,6 +971,32 @@ namespace System.Windows.Forms
         }
 
 
+        // Desktop SVG: every visible top-level in z-order; popups ride inside their
+        // owner's document instead of being emitted twice.
+        static string BuildDesktopSvg()
+        {
+            List<WinInfo> vis;
+            lock (Sync)
+                vis = zOrder
+                    .Select(h => topWindows.TryGetValue(h, out var w) ? w : null)
+                    .Where(w => w?.Hwnd != null && w.Hwnd.visible && !w.Hwnd.zombie)
+                    .ToList();
+
+            var sb = new StringBuilder();
+            sb.Append("<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" " +
+                      $"width=\"{screenW}\" height=\"{screenH}\" viewBox=\"0 0 {screenW} {screenH}\">");
+            sb.Append($"<rect x=\"0\" y=\"0\" width=\"{screenW}\" height=\"{screenH}\" fill=\"#3A3A40\"/>");
+            foreach (var w in vis)
+            {
+                bool ridesAlong = vis.Any(o => o != w && IsPopupOf(w, o));
+                if (ridesAlong) continue;
+                sb.Append(Nest(BuildTopFrameSvg(w), w.Hwnd.x, w.Hwnd.y, w.Hwnd.width, w.Hwnd.height));
+            }
+            sb.Append("</svg>");
+            return sb.ToString();
+        }
+
+
 
         void AddExpose(Hwnd hwnd, bool client, int x, int y, int w, int h)
         {
@@ -1307,27 +1345,44 @@ namespace System.Windows.Forms
             DrawCaretIfAny(top, frame);
             return frame;   // caller disposes
         }
-
-        static string BuildTopFrameSvg(WinInfo topWi)
+        // A window's own SVG: its buffer (vectors or embedded PNG) + every visible
+        // descendant's buffer as nested <svg>. No popup merging here.
+        static string WindowOwnSvg(WinInfo wi)
         {
-            var top = topWi.Hwnd;
+            var h = wi.Hwnd;
             var sb = new StringBuilder();
             sb.Append("<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" " +
-                      $"width=\"{top.width}\" height=\"{top.height}\" viewBox=\"0 0 {top.width} {top.height}\">");
-            lock (topWi.BufLock)
-                if (topWi.Buffer != null)
-                    sb.Append(Nest(topWi.Buffer.AsSvg(), 0, 0, top.width, top.height));
-            var c = Control.FromHandle(top.Handle);
+                      $"width=\"{h.width}\" height=\"{h.height}\" viewBox=\"0 0 {h.width} {h.height}\">");
+            lock (wi.BufLock)
+                if (wi.Buffer != null)
+                    sb.Append(Nest(wi.Buffer.AsSvg(), 0, 0, h.width, h.height));
+            var c = Control.FromHandle(h.Handle);
             if (c != null) SvgChildren(c, sb);
-            foreach (var p in PopupsFor(topWi))
-            {
-                var pf = RenderTopFrameSvg(p);
-                if (pf != null)
-                    sb.Append(Nest(pf, p.Hwnd.x - top.x, p.Hwnd.y - top.y, p.Hwnd.width, p.Hwnd.height));
-            }
             sb.Append("</svg>");
             return sb.ToString();
         }
+
+
+        // Frame SVG for one window: own SVG + visible popups merged on top.
+        static string BuildTopFrameSvg(WinInfo topWi)
+        {
+            var top = topWi.Hwnd;
+            var own = WindowOwnSvg(topWi);
+            var pops = PopupsFor(topWi);
+            if (pops.Count == 0) return own;
+
+            // inject popups before the closing tag of `own`
+            int close = own.LastIndexOf("</svg>", StringComparison.Ordinal);
+            var sb = new StringBuilder(close >= 0 ? own.Substring(0, close) : own);
+            foreach (var p in pops)
+                sb.Append(Nest(WindowOwnSvg(p),
+                               p.Hwnd.x - top.x, p.Hwnd.y - top.y,
+                               p.Hwnd.width, p.Hwnd.height));
+            sb.Append("</svg>");
+            return sb.ToString();
+        }
+
+
 
         static string RenderTopFrameSvg(WinInfo wi) =>
             wi.Buffer != null ? wi.Buffer.AsSvg() : null;   // popup chrome; children ride along via NestedSvg below

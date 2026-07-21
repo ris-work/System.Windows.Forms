@@ -1,12 +1,13 @@
 ﻿// SocketViewerWinForms.cs — WinForms viewer for XplatUISocket, with toolbar.
 // Single file, script-style. Deps: SkiaSharp + the Skia System.Drawing/WinForms stack.
 using SkiaSharp;
+using Svg.Skia;
 using System.Drawing;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Windows.Forms;
-using SKSvg = SkiaSharp.SKSvg;   // built into your SkiaSharp; swap to SkiaSharp.Extended.Svg.SKSvg if preferred
+//using SKSvg = SkiaSharp.SKSvg;   // built into your SkiaSharp; swap to SkiaSharp.Extended.Svg.SKSvg if preferred
 
 string sockDir = Environment.GetEnvironmentVariable("XPLAT_UI_SOCKET_DIR") ?? "windows";
 string listPath = Path.Combine(sockDir, "window-list");
