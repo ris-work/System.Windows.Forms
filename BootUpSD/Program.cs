@@ -1,4 +1,5 @@
-﻿using System;
+﻿using SkiaSharp;
+using System;
 using System.Data;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -60,14 +61,131 @@ using (var g = Graphics.FromImage(bitmap))
     
 }*/
 
-using var bmp = new Bitmap(1400, 1600);
+using var bmp = new Bitmap(1400, 6000);
 using var g = Graphics.FromImage(bmp);
 g.Clear(Color.White);
 
+
+// ── RVUtils parallelogram debug helpers ─────────────────────────────
+// 1:1 copy of RVUtils.CreateRoundedRectanglePath (insets = 0) so this
+// test doesn't need the WinForms assembly.
+System.Drawing.Drawing2D.GraphicsPath CreateRoundedRectanglePath(Rectangle rect, float cornerRadius)
+{
+    var path = new System.Drawing.Drawing2D.GraphicsPath();
+    float left = rect.Left, top = rect.Top, right = rect.Right, bottom = rect.Bottom;
+    float width = right - left, height = bottom - top;
+    float diameter = Math.Min(Math.Min(width, height), cornerRadius * 2);
+    if (diameter <= 0)
+    {
+        if (width > 0 && height > 0) path.AddRectangle(new RectangleF(left, top, width, height));
+        return path;
+    }
+    float radius = diameter / 2f;
+    path.AddArc(left, top, diameter, diameter, 180, 90);
+    path.AddLine(left + radius, top, right - radius, top);
+    path.AddArc(right - diameter, top, diameter, diameter, 270, 90);
+    path.AddLine(right, top + radius, right, bottom - radius);
+    path.AddArc(right - diameter, bottom - diameter, diameter, diameter, 0, 90);
+    path.AddLine(right - radius, bottom, left + radius, bottom);
+    path.AddArc(left, bottom - diameter, diameter, diameter, 90, 90);
+    path.AddLine(left, bottom - radius, left, top + radius);
+    path.CloseFigure();
+    return path;
+}
+
+SkiaSharp.SKPath BuildDirectRounded(Rectangle rect, float cornerRadius)
+{
+    var p = new SkiaSharp.SKPath();
+    float left = rect.Left, top = rect.Top, right = rect.Right, bottom = rect.Bottom;
+    float width = right - left, height = bottom - top;
+    float diameter = Math.Min(Math.Min(width, height), cornerRadius * 2);
+    if (diameter <= 0) { p.AddRect(new SkiaSharp.SKRect(left, top, right, bottom)); return p; }
+    float radius = diameter / 2f;
+    p.AddArc(new SkiaSharp.SKRect(left, top, left + diameter, top + diameter), 180, 90);
+    p.LineTo(right - radius, top);
+    p.AddArc(new SkiaSharp.SKRect(right - diameter, top, right, top + diameter), 270, 90);
+    p.LineTo(right, bottom - radius);
+    p.AddArc(new SkiaSharp.SKRect(right - diameter, bottom - diameter, right, bottom), 0, 90);
+    p.LineTo(left + radius, bottom);
+    p.AddArc(new SkiaSharp.SKRect(left, bottom - diameter, left + diameter, bottom), 90, 90);
+    p.LineTo(left, top + radius);
+    p.Close();
+    return p;
+}
+
+
+
+string Px(Bitmap b, int x, int y)
+{
+    var c = b.GetPixel(x, y);
+    return $"({x},{y})=A{c.A:X2} R{c.R:X2} G{c.G:X2} B{c.B:X2}";
+}
+
+int FindEdgeColumn(Bitmap b, int row, int x0, int x1)
+{
+    int prev = b.GetPixel(x0, row).R;
+    int bestX = -1, bestDelta = 0;
+    for (int x = x0 + 1; x < x1; x++)
+    {
+        int cur = b.GetPixel(x, row).R;
+        int d = prev - cur;
+        if (d > bestDelta) { bestDelta = d; bestX = x; }
+        prev = cur;
+    }
+    return bestDelta > 80 ? bestX : -1;
+}
 void DrawHeader(string text, int x, int y)
 {
     using var f = new Font(FontFamily.GenericSansSerif, 10, FontStyle.Bold);
     g.DrawString(text, f, Brushes.Blue, x, y);
+}
+
+
+void AddArcConic(System.Drawing.Drawing2D.GraphicsPath path, float x, float y, float w, float h, float startAngle, float sweepAngle)
+{
+    // Test-local mirror of the proposed GraphicsPath.AddArc fix.
+    // NOTE: only safe to call on a FRESH path here, because _skPath is only
+    // re-synced by GraphicsPath's own methods (CloseFigure at the end does it).
+    if (!(w > 0f && h > 0f) || sweepAngle == 0f) return;
+    float cx = x + w * 0.5f, cy = y + h * 0.5f, rx = w * 0.5f, ry = h * 0.5f;
+    int segments = Math.Max(1, (int)Math.Ceiling(Math.Abs(sweepAngle) / 90f));
+    float segSweep = sweepAngle / segments;
+    const float DEG = (float)(Math.PI / 180.0);
+    for (int i = 0; i < segments; i++)
+    {
+        float t0 = (startAngle + i * segSweep) * DEG;
+        float t1 = (startAngle + (i + 1) * segSweep) * DEG;
+        float tm = (t0 + t1) * 0.5f;
+        float cosHalf = (float)Math.Cos((t1 - t0) * 0.5f);
+        float p0x = cx + rx * (float)Math.Cos(t0), p0y = cy + ry * (float)Math.Sin(t0);
+        float p1x = cx + rx * (float)Math.Cos(tm) / cosHalf, p1y = cy + ry * (float)Math.Sin(tm) / cosHalf;
+        float p2x = cx + rx * (float)Math.Cos(t1), p2y = cy + ry * (float)Math.Sin(t1);
+        if (i == 0)
+        {
+            if (path._skPath.PointCount == 0) path._builder.MoveTo(p0x, p0y);
+            else
+            {
+                var last = path._skPath.LastPoint;
+                if (Math.Abs(last.X - p0x) > 1e-4f || Math.Abs(last.Y - p0y) > 1e-4f)
+                    path._builder.LineTo(p0x, p0y);
+            }
+        }
+        path._builder.ConicTo(p1x, p1y, p2x, p2y, cosHalf);
+    }
+}
+
+System.Drawing.Drawing2D.GraphicsPath CreateRoundedRectConic(Rectangle rect, float cornerRadius)
+{
+    var path = new System.Drawing.Drawing2D.GraphicsPath();
+    float left = rect.Left, top = rect.Top, right = rect.Right, bottom = rect.Bottom;
+    float diameter = Math.Min(Math.Min(right - left, bottom - top), cornerRadius * 2);
+    if (diameter <= 0) { path.AddRectangle(new RectangleF(left, top, right - left, bottom - top)); return path; }
+    AddArcConic(path, left, top, diameter, diameter, 180, 90);
+    AddArcConic(path, right - diameter, top, diameter, diameter, 270, 90);
+    AddArcConic(path, right - diameter, bottom - diameter, diameter, diameter, 0, 90);
+    AddArcConic(path, left, bottom - diameter, diameter, diameter, 90, 90);
+    path.CloseFigure();   // also Syncs builder -> _skPath
+    return path;
 }
 
 int y = 20;
@@ -315,11 +433,478 @@ for (int col = 0; col < 4; col++)
 
 y += 250;
 
+// ═══════════ RVUTILS PARALLELOGRAM DEBUG SECTIONS ═══════════
+// NOTE: pixel reads via GetPixel assume the CPU backend. Check the first
+// console line says "[SkiaDrawing] Backend=CPU" — that's the bug path.
+
+// TEST 12: Are new Bitmaps zero-initialized, or recycled (parallelogram source)?
+DrawHeader("Test 12: Virgin SKBitmap audit — zero-init vs recycled heap", 20, y);
+y += 25;
+using (var virgin = new Bitmap(64, 64))
+{
+    Console.WriteLine("[T12] virgin 64x64: " + Px(virgin, 0, 0) + "  " + Px(virgin, 32, 32) + "  " + Px(virgin, 63, 63));
+    Console.WriteLine($"[T12] virgin RowBytes={virgin._skBitmap.RowBytes} (width*4={64 * 4})");
+    virgin.Save("dbg_t12_virgin.png", System.Drawing.Imaging.ImageFormat.Png);
+}
+using (var a = new Bitmap(120, 60))
+using (var ga = Graphics.FromImage(a))
+{
+    using var p = new Pen(Color.Black, 4);
+    for (int x = 0; x < a.Width; x += 8) ga.DrawLine(p, x, 0, x, a.Height);
+    ga.Flush();
+}
+GC.Collect();
+GC.WaitForPendingFinalizers();
+using (var b = new Bitmap(77, 91))
+{
+    Console.WriteLine("[T12] recycled-size virgin: " + Px(b, 10, 10) + "  " + Px(b, 40, 45) + $"  RowBytes={b._skBitmap.RowBytes} (width*4={77 * 4})");
+    b.Save("dbg_t12_recycled.png", System.Drawing.Imaging.ImageFormat.Png);
+}
+using var fdbg = new Font(FontFamily.GenericSansSerif, 9);
+g.DrawString("Open dbg_t12_recycled.png: blank = zeroed (corners would be BLACK); sheared stripes = recycled heap = THE parallelogram.", fdbg, Brushes.Black, 30, y);
+y += 40;
+
+// TEST 13: Rounded clip leaves corner pixels UNWRITTEN (stale-garbage proof)
+DrawHeader("Test 13: Rounded clip leaves corners unwritten", 20, y);
+y += 25;
+var t13 = new Rectangle(30, y, 300, 140);
+g.FillRectangle(Brushes.Red, t13);   // stand-in for "stale previous-frame pixels"
+using (var rr = CreateRoundedRectanglePath(t13, 24))
+{
+    g.SetClip(rr);                   // == RVUtils.UseRoundedClip
+    g.FillPath(Brushes.Green, rr);
+    g.ResetClip();
+}
+g.DrawRectangle(Pens.Black, t13);
+g.Flush();
+Console.WriteLine("[T13] TL " + Px(bmp, t13.X + 3, t13.Y + 3) + "  TR " + Px(bmp, t13.Right - 4, t13.Y + 3));
+Console.WriteLine("[T13] BL " + Px(bmp, t13.X + 3, t13.Bottom - 4) + "  BR " + Px(bmp, t13.Right - 4, t13.Bottom - 4));
+Console.WriteLine("[T13] C  " + Px(bmp, t13.X + t13.Width / 2, t13.Y + t13.Height / 2) + "   (EXPECT corners=RED/stale, center=GREEN)");
+g.DrawString("corners stay RED = untouched. In-app those bytes are stale/foreign memory (the parallelogram).", fdbg, Brushes.Black, 30, y + 145);
+y += 175;
+
+// TEST 14: Exact RVUtils.FillRoundedRectangle replica vs "clear-first" fix variant
+DrawHeader("Test 14: FillRoundedRectangle replica (RED corners) vs clear-first fix (YELLOW)", 20, y);
+y += 25;
+void RoundedReplica(Rectangle rect, bool clearFirst)
+{
+    g.FillRectangle(clearFirst ? Brushes.Yellow : Brushes.Red, rect);
+    using (var path = CreateRoundedRectanglePath(rect, 20))
+    {
+        var old = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.SetClip(CreateRoundedRectanglePath(rect, 20));   // leaked path, exactly like RVUtils
+        g.FillPath(Brushes.Blue, path);
+        g.ResetClip();
+        g.SmoothingMode = old;
+    }
+}
+var t14a = new Rectangle(30, y, 200, 100);
+var t14b = new Rectangle(260, y, 200, 100);
+RoundedReplica(t14a, false);
+RoundedReplica(t14b, true);
+g.DrawRectangle(Pens.Black, t14a); g.DrawRectangle(Pens.Black, t14b);
+g.Flush();
+Console.WriteLine("[T14] replica corner " + Px(bmp, t14a.X + 2, t14a.Y + 2) + "   clear-first corner " + Px(bmp, t14b.X + 2, t14b.Y + 2));
+g.DrawString("RED corners = stale bytes kept (bug)", fdbg, Brushes.Black, 30, y + 104);
+g.DrawString("YELLOW corners = defined bytes (fix)", fdbg, Brushes.Black, 260, y + 104);
+y += 130;
+
+// TEST 15: BlitFromOffscreen replica (double-buffer composite, incl. magenta debug fill)
+DrawHeader("Test 15: BlitFromOffscreen replica — full-rect vs sub-rect DrawImage", 20, y);
+y += 25;
+Bitmap off = new Bitmap(220, 110);
+using (Graphics goff = Graphics.FromImage(off))
+{
+    using var sp = new Pen(Color.Red, 3);
+    for (int x = -off.Height; x < off.Width + off.Height; x += 10)
+        goff.DrawLine(sp, x, 0, x + off.Height, off.Height);   // diagonal "stale" stripes
+    var full = new Rectangle(0, 0, off.Width, off.Height);
+    using (var rr = CreateRoundedRectanglePath(full, 20))
+    {
+        goff.SetClip(rr);
+        goff.FillPath(Brushes.Blue, rr);
+        goff.ResetClip();
+    }
+    goff.Flush();
+}
+off.Save("dbg_t15_offscreen.png", System.Drawing.Imaging.ImageFormat.Png);
+Console.WriteLine("[T15] offscreen corner " + Px(off, 2, 2) + $"  RowBytes={off._skBitmap.RowBytes}");
+var r15 = new Rectangle(30, y, off.Width, off.Height);
+using (Bitmap temp = new Bitmap(r15.Width, r15.Height))
+{
+    temp.SetResolution(off.HorizontalResolution, off.VerticalResolution);
+    using (Graphics gt = Graphics.FromImage(temp))
+    {
+        using (var magenta = new SolidBrush(Color.Magenta))
+            gt.FillRectangle(magenta, 0, 0, temp.Width, temp.Height);   // DEBUG FILL still in shipping code
+        gt.DrawImage(off, new Rectangle(0, 0, r15.Width, r15.Height), 0, 0, off.Width, off.Height, GraphicsUnit.Pixel); // full-rect => Skia path
+        using (var blue = new SolidBrush(Color.Blue))
+            gt.DrawRectangle(new Pen(blue), new Rectangle(0, 0, r15.Width - 1, r15.Height - 1)); // DEBUG BORDER
+        gt.Flush();
+    }
+    temp.Save("dbg_t15_temp_fullrect.png", System.Drawing.Imaging.ImageFormat.Png);
+    g.DrawImage(temp, r15, 0, 0, temp.Width, temp.Height, GraphicsUnit.Pixel);
+    Console.WriteLine("[T15] temp(full) corner " + Px(temp, 2, 2) + "  mid " + Px(temp, temp.Width / 2, temp.Height / 2));
+}
+var r15b = new Rectangle(30, y + 120, 140, 70);
+using (Bitmap temp = new Bitmap(r15b.Width, r15b.Height))
+{
+    using (Graphics gt = Graphics.FromImage(temp))
+    {
+        using (var magenta = new SolidBrush(Color.Magenta))
+            gt.FillRectangle(magenta, 0, 0, temp.Width, temp.Height);
+        gt.DrawImage(off, new Rectangle(0, 0, r15b.Width, r15b.Height), 40, 20, r15b.Width, r15b.Height, GraphicsUnit.Pixel); // sub-rect => memcpy path
+        gt.Flush();
+    }
+    temp.Save("dbg_t15_temp_subrect.png", System.Drawing.Imaging.ImageFormat.Png);
+    g.DrawImage(temp, r15b, 0, 0, temp.Width, temp.Height, GraphicsUnit.Pixel);
+    Console.WriteLine("[T15] temp(sub) corner " + Px(temp, 2, 2));
+}
+g.DrawString("top: full-rect blit (Skia drawImageRect)  |  bottom: sub-rect blit (manual memcpy).  Any magenta = content draw failed.", fdbg, Brushes.Black, 270, y + 40);
+y += 210;
+
+// TEST 16: NUMERIC shear detector — a vertical edge must stay vertical after DrawImage
+DrawHeader("Test 16: Numeric shear detector (drift in px, 0 = OK)", 20, y);
+y += 25;
+Bitmap edge = new Bitmap(200, 120);
+using (Graphics ge = Graphics.FromImage(edge))
+{
+    ge.Clear(Color.White);
+    ge.FillRectangle(Brushes.Black, 100, 0, 100, 120);   // sharp vertical edge at x=100
+    using var rp = new Pen(Color.Red, 1);
+    for (int yy = 0; yy < 120; yy += 20) ge.DrawLine(rp, 0, yy, 199, yy);
+    ge.Flush();
+}
+int EdgeDrift(Bitmap src, Rectangle srcRect, string tag)
+{
+    using var probe = new Bitmap(srcRect.Width, srcRect.Height);
+    using (var gp = Graphics.FromImage(probe))
+    {
+        gp.DrawImage(src, new Rectangle(0, 0, srcRect.Width, srcRect.Height), srcRect.X, srcRect.Y, srcRect.Width, srcRect.Height, GraphicsUnit.Pixel);
+        gp.Flush();
+    }
+    probe.Save($"dbg_t16_{tag}.png", System.Drawing.Imaging.ImageFormat.Png);
+    int e10 = FindEdgeColumn(probe, probe.Height / 10, 0, probe.Width);
+    int e50 = FindEdgeColumn(probe, probe.Height / 2, 0, probe.Width);
+    int e90 = FindEdgeColumn(probe, probe.Height * 9 / 10, 0, probe.Width);
+    Console.WriteLine($"[T16:{tag}] edge column at rows 10/50/90% = {e10}/{e50}/{e90}  (drift {e90 - e10} px)");
+    return e90 - e10;
+}
+int driftFull = EdgeDrift(edge, new Rectangle(0, 0, 200, 120), "full");
+int driftSub = EdgeDrift(edge, new Rectangle(37, 11, 120, 90), "sub");
+Console.WriteLine($"[T16] VERDICT: drift full={driftFull}, sub={driftSub}. Nonzero = that DrawImage path shears (parallelogram).");
+g.DrawImage(edge, 30, y + 20, 200, 120);
+g.DrawString("source (edge at x=100)", fdbg, Brushes.Black, 30, y + 145);
+y += 180;
+
+// TEST 17: RVUtils.DrawBorderInteractive X/Y swap (rect.Top/rect.Left passed as X/Y)
+DrawHeader("Test 17: DrawBorderInteractive swap — ghost borders at (Top,Left)", 20, y);
+y += 25;
+var t17 = new Rectangle(150, y + 60, 180, 60);
+g.DrawRectangle(Pens.Gray, t17);
+Rectangle R2 = new Rectangle(t17.Top + 1, t17.Left + 1, t17.Width - 1, t17.Height - 1);   // swapped, as in RVUtils
+Rectangle R3 = new Rectangle(t17.Top - 1, t17.Left - 1, t17.Width + 1, t17.Height + 1);   // swapped, as in RVUtils
+using (var bp = new Pen(Color.FromArgb(255, 40, 40, 40), 2))
+{
+    using (var p1 = CreateRoundedRectanglePath(t17, 20)) g.DrawPath(bp, p1);
+    using (var p2 = CreateRoundedRectanglePath(R2, 20)) g.DrawPath(bp, p2);
+    using (var p3 = CreateRoundedRectanglePath(R3, 20)) g.DrawPath(bp, p3);
+}
+Console.WriteLine($"[T17] target {t17}  R2(swapped) {R2}  R3(swapped) {R3}");
+Console.WriteLine("[T17] Two of the three 'borders' land nowhere near the control => ghost rounded-rects.");
+y += 150;
+
+// TEST 18: LinearGradientBrush.InterpolationColors is ignored (Aero overlays collapse)
+DrawHeader("Test 18: InterpolationColors ignored — gloss renders nothing", 20, y);
+y += 25;
+var t18a = new Rectangle(30, y, 200, 40);
+var t18b = new Rectangle(260, y, 200, 40);
+g.FillRectangle(Brushes.Black, t18a);
+g.FillRectangle(Brushes.Black, t18b);
+using (var gloss = new LinearGradientBrush(t18a, Color.Transparent, Color.Transparent, LinearGradientMode.Vertical))
+{
+    gloss.InterpolationColors = new ColorBlend
+    {
+        Positions = new[] { 0f, .5f, 1f },
+        Colors = new[] { Color.FromArgb(220, 255, 255, 255), Color.FromArgb(120, 255, 255, 255), Color.FromArgb(0, 255, 255, 255) }
+    };
+    g.FillRectangle(gloss, t18a);   // backend only uses _c1/_c2 (both Transparent) => draws nothing
+}
+for (int i = 0; i < t18b.Height; i++)
+{
+    float t = i / (float)(t18b.Height - 1);
+    using var bb = new SolidBrush(Color.FromArgb((int)(220 * (1 - t)), 255, 255, 255));
+    g.FillRectangle(bb, t18b.X, t18b.Y + i, t18b.Width, 1);
+}
+g.DrawString("ours (collapsed)", fdbg, Brushes.Black, 30, y + 44);
+g.DrawString("expected (multi-stop)", fdbg, Brushes.Black, 260, y + 44);
+Console.WriteLine("[T18] left bar uses InterpolationColors; GetSKPaint uses only _c1/_c2 => flat/invisible. All Aero overlays rely on this.");
+y += 80;
+
+// TEST 19: ClipScope.Dispose applies previous clip at BASE level with no Save => ResetClip can't remove it
+DrawHeader("Test 19: ClipScope.Dispose base-level clip leak (uses throwaway Graphics g19)", 20, y);
+y += 25;
+g.ResetClip();
+using (var g19 = Graphics.FromImage(bmp))
+{
+    Console.WriteLine($"[T19] SaveCount start = {g19._canvas.SaveCount}");
+    g19.SetClip(new Rectangle(30, y, 120, 60));         // previous clip = rect over the orange zone
+    using (var p19 = CreateRoundedRectanglePath(new Rectangle(30, y, 120, 60), 16))
+    {
+        var scope = g19.SetClip(p19);                   // previous = rect
+        Console.WriteLine($"[T19] SaveCount in scope = {g19._canvas.SaveCount}");
+        g19.FillRectangle(Brushes.Orange, 30, y, 120, 60);
+        scope.Dispose();                                // re-applies rect clip AT BASE, no Save
+        Console.WriteLine($"[T19] SaveCount after Dispose = {g19._canvas.SaveCount}");
+    }
+    g19.ResetClip();                                    // RestoreToCount(base) = no-op vs base-level clip
+    g19.FillRectangle(Brushes.Green, 170, y, 120, 60);  // OUTSIDE the leaked rect clip
+    g19.Flush();
+}
+Console.WriteLine("[T19] green marker " + Px(bmp, 175, y + 5) + "  (if NOT green: ClipScope.Dispose leaked the clip and ResetClip can't clear it)");
+g.DrawString("orange (rounded clip)", fdbg, Brushes.Black, 30, y + 65);
+g.DrawString("green marker — missing if clip leaked", fdbg, Brushes.Black, 170, y + 65);
+y += 95;
+
+// TEST 20: PaintEventEnd stride math replica with a PADDED source (RowBytes > width*4)
+DrawHeader("Test 20: GDI-blit stride math — padded source must not shear", 20, y);
+y += 25;
+int w20 = 90, h20 = 60, padStride = w20 * 4 + 32;
+IntPtr scan0 = System.Runtime.InteropServices.Marshal.AllocHGlobal(padStride * h20);
+try
+{
+    using (var padded = new Bitmap(w20, h20, padStride, System.Drawing.Imaging.PixelFormat.Format32bppArgb, scan0))
+    {
+        using (var gp = Graphics.FromImage(padded))
+        {
+            gp.Clear(Color.White);
+            gp.FillRectangle(Brushes.Black, 45, 0, 45, h20);
+            gp.Flush();
+        }
+        Console.WriteLine($"[T20] padded RowBytes={padded._skBitmap.RowBytes} (width*4={w20 * 4}, padStride={padStride})");
+        using (var compact = new Bitmap(w20, h20))
+        {
+            unsafe
+            {
+                byte* src = (byte*)padded._skBitmap.GetPixels().ToPointer();
+                byte* dst = (byte*)compact._skBitmap.GetPixels().ToPointer();
+                int srcStride = padded._skBitmap.RowBytes, dstStride = w20 * 4;
+                if (srcStride == dstStride)
+                    Buffer.MemoryCopy(src, dst, dstStride * h20, dstStride * h20);
+                else
+                    for (int row = 0; row < h20; row++)
+                    {
+                        Buffer.MemoryCopy(src, dst, dstStride, dstStride);
+                        src += srcStride; dst += dstStride;
+                    }
+            }
+            compact.Save("dbg_t20_compact.png", System.Drawing.Imaging.ImageFormat.Png);
+            int e10 = FindEdgeColumn(compact, 6, 0, w20);
+            int e90 = FindEdgeColumn(compact, h20 - 6, 0, w20);
+            Console.WriteLine($"[T20] edge after stride copy: top={e10} bottom={e90} drift={e90 - e10} (0 = blit math OK)");
+            g.DrawImage(compact, 30, y, w20, h20);
+        }
+    }
+}
+finally { System.Runtime.InteropServices.Marshal.FreeHGlobal(scan0); }
+y += 90;
+
+// TEST 21: VERB AUTOPSY — dump actual SKPath verbs/points at each stage
+DrawHeader("Test 21: VERB AUTOPSY — builder path vs copy vs direct SKPath", 20, y);
+y += 25;
+using (var gp = CreateRoundedRectanglePath(new Rectangle(0, 0, 120, 60), 16))
+using (var copy = new SKPath(gp._skPath))
+using (var direct = BuildDirectRounded(new Rectangle(0, 0, 120, 60), 16))
+{
+    void DumpPath(string tag, SKPath p)
+    {
+        Console.WriteLine($"[T21:{tag}] Points={p.Points.Length} Verbs={p.VerbCount} FillType={p.FillType}");
+        Console.WriteLine($"[T21:{tag}] verbs: {string.Join(" ", p.VerbCount)}");
+        var pts = p.Points;
+        for (int i = 0; i < pts.Length; i++)
+            Console.WriteLine($"[T21:{tag}] pt{i} = ({pts[i].X:0.0},{pts[i].Y:0.0})");
+    }
+    DumpPath("builder", gp._skPath);
+    DumpPath("copy", copy);
+    DumpPath("direct", direct);
+    Console.WriteLine("[T21] EXPECT 'direct': Move + Conic segments (arcs) + Lines + Close.");
+    Console.WriteLine("[T21] If 'builder' or 'copy' lacks Conic verbs => that stage drops the arcs => rotated-rectangle clip.");
+}
+y += 30;
+
+// TEST 22: STROKE A/B — builder path vs direct SKPath
+DrawHeader("Test 22: STROKE A/B — builder path (red, left) vs direct SKPath (blue, right)", 20, y);
+y += 25;
+var t22a = new Rectangle(30, y, 200, 100);
+var t22b = new Rectangle(260, y, 200, 100);
+g.DrawRectangle(Pens.Gray, t22a);
+g.DrawRectangle(Pens.Gray, t22b);
+using (var gp = CreateRoundedRectanglePath(t22a, 20))
+using (var redPen = new Pen(Color.Red, 2))
+    g.DrawPath(redPen, gp);
+using (var direct = BuildDirectRounded(t22b, 20))
+using (var paint = new SkiaSharp.SKPaint { Color = SkiaSharp.SKColors.Blue, Style = SkiaSharp.SKPaintStyle.Stroke, StrokeWidth = 2, IsAntialias = true })
+    g._canvas.DrawPath(direct, paint);
+Console.WriteLine("[T22] left=builder stroke (slanted chord?), right=direct stroke (clean?).");
+y += 130;
+
+// TEST 23: CLIP A/B — SetClip(GraphicsPath) vs ClipPath(direct SKPath)
+DrawHeader("Test 23: CLIP A/B — SetClip(builder) (left) vs ClipPath(direct) (right)", 20, y);
+y += 25;
+var t23a = new Rectangle(30, y, 200, 100);
+var t23b = new Rectangle(260, y, 200, 100);
+g.FillRectangle(Brushes.Red, t23a);
+using (var gp = CreateRoundedRectanglePath(t23a, 20))
+{
+    g.SetClip(gp);
+    g.FillRectangle(Brushes.Green, t23a);
+    g.ResetClip();
+}
+g.DrawRectangle(Pens.Black, t23a);
+g.FillRectangle(Brushes.Red, t23b);
+using (var direct = BuildDirectRounded(t23b, 20))
+using (var greenPaint = new SkiaSharp.SKPaint { Color = SkiaSharp.SKColors.Green, Style = SkiaSharp.SKPaintStyle.Fill, IsAntialias = true })
+{
+    int sc = g._canvas.Save();
+    g._canvas.ClipPath(direct, SkiaSharp.SKClipOperation.Intersect);
+    g._canvas.DrawRect(new SkiaSharp.SKRect(t23b.X, t23b.Y, t23b.Right, t23b.Bottom), greenPaint);
+    g._canvas.RestoreToCount(sc);
+}
+g.DrawRectangle(Pens.Black, t23b);
+Console.WriteLine("[T23] left = current clip result (rotated rectangle = bug), right = direct reference (clean rounded rect).");
+y += 130;
+
+// TEST 24: FIX PREVIEW — GraphicsPath with _skPath swapped to a direct-built SKPath
+DrawHeader("Test 24: FIX PREVIEW — GraphicsPath carrying a direct-built SKPath", 20, y);
+y += 25;
+var t24 = new Rectangle(30, y, 200, 100);
+g.FillRectangle(Brushes.Red, t24);
+using (var gp = new GraphicsPath())
+{
+    gp._skPath.Dispose();
+    gp._skPath = BuildDirectRounded(t24, 20);
+    g.SetClip(gp);
+    g.FillRectangle(Brushes.Green, t24);
+    g.ResetClip();
+    using (var pen = new Pen(Color.Black, 2))
+        g.DrawPath(pen, gp);
+}
+g.Flush();
+Console.WriteLine("[T24] corner " + Px(bmp, t24.X + 3, t24.Y + 3) + " (RED=stale OK), mid-edge " + Px(bmp, t24.X + 100, t24.Y) + " (should be on the path)");
+Console.WriteLine("[T24] If this is a clean rounded rect => direct SKPath in GraphicsPath fixes the bug.");
+y += 130;
+
+// TEST 25: SVG AUTOPSY — 'M' before every arc = new contour (bug); 'L' = connected (correct)
+DrawHeader("Test 25: SVG autopsy — contour breaks (M) vs connections (L)", 20, y);
+y += 25;
+using (var gp = CreateRoundedRectanglePath(new Rectangle(0, 0, 120, 60), 16))
+    Console.WriteLine("[T25] builder-rounded: " + gp._skPath.ToSvgPathData());
+using (var direct = BuildDirectRounded(new Rectangle(0, 0, 120, 60), 16))
+    Console.WriteLine("[T25] direct-rounded : " + direct.ToSvgPathData());
+using (var oval = new GraphicsPath())
+{
+    oval.AddEllipse(0, 0, 120, 60);
+    Console.WriteLine("[T25] oval           : " + oval._skPath.ToSvgPathData());
+}
+using (var oneArc = new GraphicsPath())
+{
+    oneArc.AddArc(0, 0, 32, 32, 180, 90);
+    Console.WriteLine("[T25] single-arc     : " + oneArc._skPath.ToSvgPathData());
+}
+using (var twoArc = new GraphicsPath())
+{
+    twoArc.AddArc(0, 0, 32, 32, 180, 90);
+    twoArc.AddArc(88, 0, 32, 32, 270, 90);
+    Console.WriteLine("[T25] two-arcs       : " + twoArc._skPath.ToSvgPathData());
+}
+Console.WriteLine("[T25] KEY: 'M' before arcs 2..4 => each arc starts a NEW CONTOUR (the bug).");
+y += 30;
+
+// TEST 26: FIX PREVIEW — conic-tessellated rounded rect (single connected contour)
+DrawHeader("Test 26: FIX PREVIEW — conic-built rounded rect (stroke + clip + fill)", 20, y);
+y += 25;
+var t26 = new Rectangle(30, y, 220, 110);
+g.FillRectangle(Brushes.Red, t26);
+using (var gp = CreateRoundedRectConic(t26, 20))
+{
+    Console.WriteLine("[T26] conic SVG: " + gp._skPath.ToSvgPathData());
+    Console.WriteLine($"[T26] conic path: Points={gp._skPath.Points.Length} VerbCount={gp._skPath.VerbCount}");
+    g.SetClip(gp);
+    g.FillRectangle(Brushes.Green, t26);
+    g.ResetClip();
+    using (var pen = new Pen(Color.Black, 2))
+        g.DrawPath(pen, gp);
+}
+g.DrawRectangle(Pens.Gray, t26);
+g.Flush();
+Console.WriteLine("[T26] corner " + Px(bmp, t26.X + 3, t26.Y + 3) + " (RED=stale OK)");
+Console.WriteLine("[T26] EXPECT: green fill = full rounded rect (NO parallelogram), black stroke = clean (NO chord).");
+g.DrawString("conic-built rounded rect — should be CLEAN", fdbg, Brushes.Black, 30, y + 115);
+y += 145;
+
+// TEST 27: standalone arc / pie — is the builder ArcTo/AddPie family also contour-broken?
+DrawHeader("Test 27: standalone DrawArc / FillPie / AddPie", 20, y);
+y += 25;
+g.DrawArc(Pens.Blue, 30, y, 120, 80, 180, 270);
+g.FillPie(Brushes.Orange, 200, y, 120, 80, 0, 270);
+using (var gp = new GraphicsPath())
+{
+    gp.AddPie(360, y, 120, 80, 0, 270);
+    Console.WriteLine("[T27] AddPie SVG   : " + gp._skPath.ToSvgPathData());
+    g.FillPath(Brushes.Green, gp);
+}
+using (var cp = new GraphicsPath())
+{
+    AddArcConic(cp, 520, y, 120, 80, 0, 270);
+    cp.CloseFigure();
+    Console.WriteLine("[T27] conic 270 SVG: " + cp._skPath.ToSvgPathData());
+    using var pen = new Pen(Color.Black, 2);
+    g.DrawPath(pen, cp);
+}
+Console.WriteLine("[T27] If AddPie SVG shows a second 'M' => pie also contour-breaks (renders as segment, not pie).");
+y += 110;
+
+// TEST 28: GDI+ connection semantics — line INTO an arc must stay one contour
+DrawHeader("Test 28: connection semantics — AddLine then AddArc", 20, y);
+y += 25;
+using (var gp = new GraphicsPath())
+{
+    gp.AddLine(30, y + 40, 80, y + 40);
+    gp.AddArc(80, y, 80, 80, 270, 180);
+    Console.WriteLine("[T28] line+arc SVG (current): " + gp._skPath.ToSvgPathData());
+    using var pen = new Pen(Color.Blue, 2);
+    g.DrawPath(pen, gp);
+}
+using (var gp2 = new GraphicsPath())
+{
+    gp2.AddLine(230, y + 40, 280, y + 40);
+    AddArcConic(gp2, 280, y, 80, 80, 270, 180);
+    gp2.CloseFigure();
+    Console.WriteLine("[T28] line+arc SVG (conic)  : " + gp2._skPath.ToSvgPathData());
+    using var pen = new Pen(Color.Black, 2);
+    g.DrawPath(pen, gp2);
+}
+Console.WriteLine("[T28] 'M' before the arc (current) = broken connection; 'L' (conic) = GDI+-correct.");
+y += 110;
+
 bmp.Save("clipping_test.png", System.Drawing.Imaging.ImageFormat.Png);
 Console.WriteLine("Wrote clipping_test.png");
+Console.WriteLine("── RVUtils parallelogram debug ──");
+Console.WriteLine("Report these console lines: [T12] [T13] [T14] [T15] [T16] [T19] [T20]");
+Console.WriteLine("And these files: dbg_t12_recycled.png, dbg_t15_temp_fullrect.png, dbg_t15_temp_subrect.png, dbg_t16_full.png, dbg_t16_sub.png, dbg_t20_compact.png");
+Console.WriteLine("Key questions:");
+Console.WriteLine("  T12: is dbg_t12_recycled.png blank, or a SHEARED stripe pattern? (recycled heap = the parallelogram)");
+Console.WriteLine("  T13/T14: are corner pixels stale (RED) while the center is painted?");
+Console.WriteLine("  T16: is drift nonzero for 'full' or 'sub'? The number identifies which DrawImage path shears.");
+Console.WriteLine("  T19: did the green marker survive ClipScope.Dispose + ResetClip?");
+Console.WriteLine("  T20: is the GDI-blit stride math clean (drift=0)?");
+Console.WriteLine("First console line must read [SkiaDrawing] Backend=CPU (the bug path).");
 Console.WriteLine("Open it. Where the test rectangles have a green strip but no 'should NOT appear' red, the Graphics class is correct.");
 Console.WriteLine("Where the test rectangles are missing the yellow highlight on Test 8, the text is fine and selection works.");
 Console.WriteLine("Where the test rectangles on Test 5/6/7 show NO text, Document.Draw's per-line DrawString is the issue.");
+
+
 
 // ==========================================
 // 2. WinForms Application with Multiple Controls

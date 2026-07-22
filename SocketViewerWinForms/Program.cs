@@ -14,6 +14,22 @@ string listPath = Path.Combine(sockDir, "window-list");
 string shotDir = Path.Combine(Directory.GetCurrentDirectory(), "screenshots");
 Directory.CreateDirectory(shotDir);
 
+// ── SVG view state (SVG frames only; JPEG/PNG keep pb.Image behavior) ──
+int svgSrcW = 0, svgSrcH = 0;      // frame-declared natural size
+float svgZoom = 1.0f;              // 1 = fit-to-box
+PointF svgPan = PointF.Empty;      // device-px offset from centered fit
+bool svgPanning = false;
+Point svgPanLast = Point.Empty;
+Image? svgCacheBmp = null;         // cached re-render at display size
+string? svgCacheText = null;
+int svgCacheW = 0, svgCacheH = 0;
+bool lastFrameWasSvg = false;
+long winOut = 0; long totalOut = 0;
+long winIn = 0; long totalIn = 0;
+//Image? svgCacheBmp = null;         // ← was: Bitmap? svgCacheBmp;
+
+
+
 Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
 
 // ──────────────────────────────── UI ────────────────────────────────
@@ -27,9 +43,8 @@ var form = new Form
 
 // next to the other state vars:
 string? lastSvg = null;
-bool lastFrameWasSvg = false;
-long totalIn=0, totalOut=0;      // cumulative bytes since viewer start
-long winIn=0, winOut=0;          // bytes in the current 1-second window (for rate)
+// ── SVG view state (SVG frames only; JPEG/PNG keep pb.Image behavior) ──
+
 
 // --- toolbar ---
 var toolbar = new Panel { Dock = DockStyle.Top, Height = 34, BackColor = SystemColors.Control };
@@ -302,6 +317,65 @@ Image RenderSvgToImage(string svgText, int w, int h)
     return bmp;
 }
 
+float SvgFitScale()
+{
+    if (svgSrcW <= 0 || svgSrcH <= 0 || pb.ClientSize.Width <= 0 || pb.ClientSize.Height <= 0) return 1f;
+    return Math.Min((float)pb.ClientSize.Width / svgSrcW, (float)pb.ClientSize.Height / svgSrcH);
+}
+
+Rectangle SvgDestRect()
+{
+    float scale = SvgFitScale() * svgZoom;
+    int dw = Math.Max(1, (int)(svgSrcW * scale));
+    int dh = Math.Max(1, (int)(svgSrcH * scale));
+    int ox = (pb.ClientSize.Width - dw) / 2 + (int)svgPan.X;
+    int oy = (pb.ClientSize.Height - dh) / 2 + (int)svgPan.Y;
+    return new Rectangle(ox, oy, dw, dh);
+}
+
+Image? GetSvgRender(string svg, int w, int h)
+{
+    if (svgCacheBmp != null && svgCacheText == svg && svgCacheW == w && svgCacheH == h)
+        return svgCacheBmp;                          // same svg + same size: 1:1 blit
+    var old = svgCacheBmp;
+    svgCacheBmp = RenderSvgToImage(svg, w, h);       // REAL re-render at display size
+    old?.Dispose();
+    svgCacheText = svg; svgCacheW = w; svgCacheH = h;
+    return svgCacheBmp;
+}
+
+void SvgZoomAt(Point anchor, float factor)
+{
+    if (!lastFrameWasSvg || lastSvg == null) return;
+    float old = svgZoom;
+    float nz = Math.Clamp(svgZoom * factor, 0.1f, 16f);
+    if (nz == old) return;
+
+    // keep the image point under the anchor stable
+    var d0 = SvgDestRect();
+    float fx = d0.Width > 0 ? (anchor.X - d0.X) / (float)d0.Width : 0.5f;
+    float fy = d0.Height > 0 ? (anchor.Y - d0.Y) / (float)d0.Height : 0.5f;
+    svgZoom = nz;
+
+    float scale1 = SvgFitScale() * svgZoom;
+    int dw1 = Math.Max(1, (int)(svgSrcW * scale1));
+    int dh1 = Math.Max(1, (int)(svgSrcH * scale1));
+    svgPan = new PointF(
+        anchor.X - fx * dw1 - (pb.ClientSize.Width - dw1) / 2,
+        anchor.Y - fy * dh1 - (pb.ClientSize.Height - dh1) / 2);
+
+    pb.Invalidate();
+    stFrame.Text = $"  frames: {frameCount} (svg {svgSrcW}x{svgSrcH} · {svgZoom:0.##}x)";
+}
+
+void SvgResetView()
+{
+    svgZoom = 1f;
+    svgPan = PointF.Empty;
+    svgPanning = false;
+    pb.Invalidate();
+}
+
 
 
 // ──────────────────────────────── window socket ────────────────────────────────
@@ -319,6 +393,10 @@ void ConnectTo((string handle, string title, string socket, int w, int h) e)
 {
     CloseCurrentWindow();
     cur = e;
+    // fresh window: reset SVG view + cache
+    lastSvg = null; lastFrameWasSvg = false; svgSrcW = svgSrcH = 0;
+    svgZoom = 1f; svgPan = PointF.Empty; svgPanning = false;
+    svgCacheText = null; svgCacheBmp?.Dispose(); svgCacheBmp = null;
     dead = false;
     stWin.Text = $"  window: {e.title} {e.w}x{e.h}";
     form.Text = "SocketViewerWinForms — " + e.title;
@@ -368,17 +446,33 @@ void WindowReader(int myConn, Socket sock, StreamReader rd)
                         {
                             lastSvg = data;
                             lastFrameWasSvg = true;
-                            img = RenderSvgToImage(data,
-                                r.GetProperty("width").GetInt32(),
-                                r.GetProperty("height").GetInt32());
-                            if (lastSvgError != null) Log("[svg] " + lastSvgError);
+                            svgSrcW = r.GetProperty("width").GetInt32();
+                            svgSrcH = r.GetProperty("height").GetInt32();
+                            svgCacheText = null;                     // force re-render at display size
+                            int fcSvg = ++frameCount;
+                            UI(() =>
+                            {
+                                var old = pb.Image;                  // SVG is drawn by pb.Paint, not pb.Image
+                                pb.Image = null;
+                                old?.Dispose();
+                                pb.Invalidate();
+                                stFrame.Text = $"  frames: {fcSvg} (svg {svgSrcW}x{svgSrcH} · {svgZoom:0.##}x)";
+                            });
+                            if ((DateTime.Now - lastFrameLog).TotalMilliseconds > 1000)
+                            {
+                                lastFrameLog = DateTime.Now;
+                                Log($"<< frame svg {svgSrcW}x{svgSrcH} {data.Length / 1024.0:F1}KB");
+                            }
+                            break;
                         }
+
                         else
                         {
                             lastFrameWasSvg = false;
                             using var ms = new MemoryStream(Convert.FromBase64String(data));
                             img = Image.FromStream(ms);
                         }
+                        
 
                         int fc = ++frameCount;
                         UI(() =>
@@ -602,6 +696,15 @@ chkLive.CheckedChanged += (_, __) =>
 // ──────────────────────────────── input plumbing ────────────────────────────────
 Point? MapToImage(Point p)
 {
+    if (lastFrameWasSvg && lastSvg != null)
+    {
+        var d = SvgDestRect();
+        if (!d.Contains(p)) return null;
+        return new Point(
+            Math.Clamp((int)((p.X - d.X) * svgSrcW / (float)d.Width), 0, svgSrcW - 1),
+            Math.Clamp((int)((p.Y - d.Y) * svgSrcH / (float)d.Height), 0, svgSrcH - 1));
+    }
+
     if (pb.Image == null) return null;
     if (pb.SizeMode == PictureBoxSizeMode.Normal)
         return new Point(p.X, p.Y);
@@ -634,6 +737,54 @@ pb.MouseMove += (_, e) =>
         SendMouse("mousemove", p.Value, "left");
     }
 };
+pb.Paint += (_, e) =>
+{
+    if (!lastFrameWasSvg || lastSvg == null) return;   // raster: pb.Image draws itself
+    var dest = SvgDestRect();
+    var bmp = GetSvgRender(lastSvg, dest.Width, dest.Height);
+    if (bmp != null)
+        e.Graphics.DrawImage(bmp, dest.X, dest.Y);     // 1:1 — no raster upscale loop
+};
+
+pb.Resize += (_, __) => { if (lastFrameWasSvg) pb.Invalidate(); };
+pb.MouseDown += (_, e) =>
+{
+    if (lastFrameWasSvg && e.Button == MouseButtons.Left && (Control.ModifierKeys & Keys.Control) != 0)
+    {
+        svgPanning = true;
+        svgPanLast = e.Location;
+        pb.Cursor = Cursors.SizeAll;
+        return;                                   // panning, not a window click
+    }
+    var p = MapToImage(e.Location); if (p.HasValue) SendMouse("mousedown", p.Value, Btn(e.Button));
+};
+
+pb.MouseUp += (_, e) =>
+{
+    if (svgPanning) { svgPanning = false; pb.Cursor = Cursors.Default; return; }
+    var p = MapToImage(e.Location); if (p.HasValue) SendMouse("mouseup", p.Value, Btn(e.Button));
+};
+
+pb.MouseMove += (_, e) =>
+{
+    if (svgPanning)
+    {
+        svgPan = new PointF(svgPan.X + e.X - svgPanLast.X, svgPan.Y + e.Y - svgPanLast.Y);
+        svgPanLast = e.Location;
+        pb.Invalidate();
+        return;
+    }
+    var p = MapToImage(e.Location);
+    if (p.HasValue && (DateTime.Now - lastMoveSend).TotalMilliseconds > 15)
+    {
+        lastMoveSend = DateTime.Now;
+        SendMouse("mousemove", p.Value, "left");
+    }
+};
+
+pb.MouseCaptureChanged += (_, __) => { svgPanning = false; pb.Cursor = Cursors.Default; };
+
+
 
 form.MouseWheel += (_, e) =>
 {
@@ -650,6 +801,13 @@ form.KeyDown += (_, e) =>
         e.Handled = true;
         return;
     }
+    if (lastFrameWasSvg && e.Control)
+    {
+        var center = new Point(pb.ClientSize.Width / 2, pb.ClientSize.Height / 2);
+        if (e.KeyCode == Keys.Oemplus || e.KeyCode == Keys.Add) { SvgZoomAt(center, 1.25f); e.Handled = true; return; }
+        if (e.KeyCode == Keys.OemMinus || e.KeyCode == Keys.Subtract) { SvgZoomAt(center, 1f / 1.25f); e.Handled = true; return; }
+        if (e.KeyCode == Keys.D0 || e.KeyCode == Keys.NumPad0) { SvgResetView(); e.Handled = true; return; }
+    }
     SendRaw($"{{\"type\":\"keydown\",\"key\":\"{e.KeyCode}\"}}", true);
 };
 form.KeyUp += (_, e) => SendRaw($"{{\"type\":\"keyup\",\"key\":\"{e.KeyCode}\"}}", true);
@@ -657,6 +815,30 @@ form.KeyPress += (_, e) =>
 {
     if (!char.IsControl(e.KeyChar))
         SendRaw($"{{\"type\":\"text\",\"text\":\"{JEsc(e.KeyChar.ToString())}\"}}", true);
+};
+form.MouseWheel += (_, e) =>
+{
+    if (lastFrameWasSvg && (Control.ModifierKeys & Keys.Control) != 0)
+    {
+        SvgZoomAt(pb.PointToClient(Control.MousePosition), e.Delta > 0 ? 1.2f : 1f / 1.2f);
+        return;                                   // SVG zoom: don't forward to server
+    }
+    var p = MapToImage(pb.PointToClient(Control.MousePosition));
+    if (p.HasValue)
+        SendRaw($"{{\"type\":\"wheel\",\"x\":{p.Value.X},\"y\":{p.Value.Y},\"delta\":{e.Delta}}}", true);
+};
+
+btnZoom.Click += (_, __) =>
+{
+    if (lastFrameWasSvg)
+    {
+        SvgResetView();                          // SVG: "Fit" = reset zoom + pan
+        Log("[view] SVG view reset (fit)");
+        return;
+    }
+    pb.SizeMode = pb.SizeMode == PictureBoxSizeMode.Zoom ? PictureBoxSizeMode.Normal : PictureBoxSizeMode.Zoom;
+    btnZoom.Text = pb.SizeMode == PictureBoxSizeMode.Zoom ? "Fit" : "1:1";
+    Log("[view] SizeMode = " + pb.SizeMode);
 };
 
 listBox.SelectedIndexChanged += (_, __) =>

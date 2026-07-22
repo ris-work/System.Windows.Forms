@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
-VisualStudioVersion = 18.8.11912.234 insiders
+VisualStudioVersion = 18.8.11912.234
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "System.Windows.Forms", "System.Windows.Forms\System.Windows.Forms.csproj", "{A0901720-DC8F-42EA-A80A-FA4725F11147}"
 EndProject
@@ -18,6 +18,10 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "System.Windows.Forms.DataVisualization", "System.Windows.Forms.DataVisualization\System.Windows.Forms.DataVisualization.csproj", "{7811B778-0F63-473E-BCA9-88B82D509B40}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BootUpSD", "BootUpSD\BootUpSD.csproj", "{10BA208C-2E58-4341-9E38-6722D52332CB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SocketViewer", "SocketViewer\SocketViewer.csproj", "{A8B904AA-96C8-14AF-774E-3A8A02004EA1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SocketViewerWinForms", "SocketViewerWinForms\SocketViewerWinForms.csproj", "{66024F5E-6EFD-149B-2537-608964B17DD8}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -57,6 +61,14 @@ Global
 		{10BA208C-2E58-4341-9E38-6722D52332CB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{10BA208C-2E58-4341-9E38-6722D52332CB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{10BA208C-2E58-4341-9E38-6722D52332CB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A8B904AA-96C8-14AF-774E-3A8A02004EA1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A8B904AA-96C8-14AF-774E-3A8A02004EA1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A8B904AA-96C8-14AF-774E-3A8A02004EA1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A8B904AA-96C8-14AF-774E-3A8A02004EA1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{66024F5E-6EFD-149B-2537-608964B17DD8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{66024F5E-6EFD-149B-2537-608964B17DD8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{66024F5E-6EFD-149B-2537-608964B17DD8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{66024F5E-6EFD-149B-2537-608964B17DD8}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

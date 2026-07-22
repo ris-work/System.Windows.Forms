@@ -16,6 +16,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 
+
 namespace System.Windows.Forms
 {
     internal class XplatUISocket : XplatUIDriver
@@ -48,6 +49,9 @@ namespace System.Windows.Forms
         static readonly Dictionary<IntPtr, WinInfo> topWindows = new Dictionary<IntPtr, WinInfo>();     // socketed toplevels
         static readonly Dictionary<IntPtr, Thread> handleThread = new Dictionary<IntPtr, Thread>();
         static readonly Dictionary<Thread, SocketQueue> queues = new Dictionary<Thread, SocketQueue>();
+        // ── Double-buffer blit: mirror the X11 clipped-DrawImage workaround ──
+        readonly Dictionary<object, IntPtr> offscreenOwner = new Dictionary<object, IntPtr>();
+
         static SocketQueue mainQueue;
         static readonly List<Timer> timers = new List<Timer>();
 
@@ -450,33 +454,28 @@ namespace System.Windows.Forms
         static byte[] EncodeFrame(Bitmap bmp, string fmt, int quality, bool gray)
         {
             var src = bmp._skBitmap;
-            SKBitmap use = src;
-            if (gray)
-            {
-                use = new SKBitmap(src.Width, src.Height, SKColorType.Gray8, SKAlphaType.Opaque);
-                unsafe
-                {
-                    byte* s = (byte*)src.GetPixels(); byte *d = (byte*)use.GetPixels();
-                    for (int y = 0; y < src.Height; y++)
-                    {
-                        byte* sr = s + y * src.RowBytes; byte *dr = d + y * use.RowBytes;
-                        for (int x = 0; x < src.Width; x++)
-                        {
-                            int b = sr[x * 4], g = sr[x * 4 + 1], r = sr[x * 4 + 2];
-                            dr[x] = (byte)((r * 77 + g * 150 + b * 29) >> 8);
-                        }
-                    }
-                }
-            }
-            byte[] result = null;
-            using (var img = SKImage.FromBitmap(use))
-            using (var data = img.Encode(fmt == "jpeg" ? SKEncodedImageFormat.Jpeg : SKEncodedImageFormat.Png, quality))
-                result = data?.ToArray();
+            if (src == null) return null;
+            var skfmt = fmt == "jpeg" ? SKEncodedImageFormat.Jpeg : SKEncodedImageFormat.Png;
+
+            // The client's "gray" switch is the authority: convert + encode directly,
+            // no monochrome detection pass. When it's off, encode as-is — zero scanning.
+            SKBitmap use = gray ? (Bitmap.ToGray8(src) ?? src) : src;
+            byte[] result = EncodeToBytes(use, skfmt, quality);
             if (use != src) use.Dispose();
-            if (result == null && gray)   // encoder rejected Gray8 (older Skia JPEG)
-                return EncodeFrame(bmp, fmt, quality, false);
+
+            if (result == null && use != src)                    // encoder rejected Gray8 (older Skia JPEG)
+                result = EncodeToBytes(src, skfmt, quality);     // fall back to color
             return result;
         }
+
+
+        static byte[] EncodeToBytes(SKBitmap bmp, SKEncodedImageFormat fmt, int quality)
+        {
+            using var img = SKImage.FromBitmap(bmp);
+            using var data = img.Encode(fmt, quality);
+            return data?.ToArray();
+        }
+
         static byte[] EncodeWindowFrame(WinInfo wi, string fmt, int q, bool gray)
         {
             Bitmap frame = BuildTopFrame(wi);
@@ -1020,7 +1019,10 @@ namespace System.Windows.Forms
                 wi.Buffer?.Dispose();
                 wi.Buffer = new Bitmap(w, h);
                 var c = Control.FromHandle(wi.Handle);
-                var bg = c != null ? c.BackColor : SystemColors.Control;
+                
+                // Regioned controls need see-through corners, not BackColor corners
+                var bg = c != null && c.Region != null && MwfEnv.AllowClip ? Color.Transparent
+                       : c != null ? c.BackColor : SystemColors.Control;
                 using (var g = Graphics.FromImage(wi.Buffer)) g.Clear(bg);
             }
             return wi.Buffer;
@@ -1325,6 +1327,10 @@ namespace System.Windows.Forms
                 if (client && !hwnd.Invalid.IsEmpty) clip = Rectangle.Intersect(bounds, hwnd.Invalid);
                 else if (!client && !hwnd.nc_invalid.IsEmpty) clip = Rectangle.Intersect(bounds, hwnd.nc_invalid);
                 if (!clip.IsEmpty) dc.SetClip(clip);
+                // Honor Control.Region (MWF_ALLOW_CLIP): out-of-region pixels stay
+                // transparent so RenderChildren's SrcOver blit shows what's behind.
+                if (client && hwnd.UserClip != null && MwfEnv.AllowClip)
+                    dc.SetClip(hwnd.UserClip, System.Drawing.Drawing2D.CombineMode.Intersect);
 
                 // Plain-control borders — the X11 driver draws these itself.
                 if (!client)
@@ -1418,7 +1424,13 @@ namespace System.Windows.Forms
             {
                 lock (topWi.BufLock)
                     if (topWi.Buffer != null)
-                        g.DrawImage(topWi.Buffer, 0, 0);
+                    {
+                        var fc = Control.FromHandle(top.Handle);
+                        if (fc != null && NeedsRoundMask(fc))
+                            DrawRounded(g, topWi.Buffer, 0, 0, fc);
+                        else
+                            g.DrawImage(topWi.Buffer, 0, 0);
+                    }
 
                 var c = Control.FromHandle(top.Handle);
                 if (c != null) RenderChildren(c, g);
@@ -1548,7 +1560,12 @@ namespace System.Windows.Forms
                     var off = OffsetInToplevel(h, false);
                     lock (wi.BufLock)
                         if (wi.Buffer != null)
-                            g.DrawImage(wi.Buffer, off.X, off.Y);   // SrcOver: alpha just works
+                        {
+                            if (NeedsRoundMask(c))
+                                DrawRounded(g, wi.Buffer, off.X, off.Y, c);
+                            else
+                                g.DrawImage(wi.Buffer, off.X, off.Y);
+                        }
                 }
                 RenderChildren(c, g);
             }
@@ -2392,5 +2409,79 @@ namespace System.Windows.Forms
 
         internal override void RaiseIdle(EventArgs e) => Idle?.Invoke(this, e);
         internal override event EventHandler Idle;
+
+        internal override void CreateOffscreenDrawable(IntPtr handle, int width, int height, out object offscreen_drawable)
+        {
+            base.CreateOffscreenDrawable(handle, width, height, out offscreen_drawable);
+            lock (Sync) offscreenOwner[offscreen_drawable] = handle;
+        }
+
+        internal override void DestroyOffscreenDrawable(object offscreen_drawable)
+        {
+            lock (Sync) offscreenOwner.Remove(offscreen_drawable);
+            base.DestroyOffscreenDrawable(offscreen_drawable);
+        }
+
+        internal override Graphics GetOffscreenGraphics(object offscreen_drawable)
+        {
+            var g = base.GetOffscreenGraphics(offscreen_drawable);
+            IntPtr handle;
+            lock (Sync) offscreenOwner.TryGetValue(offscreen_drawable, out handle);
+            var hwnd = handle != IntPtr.Zero ? Hwnd.ObjectFromHandle(handle) : null;
+            // DoubleBuffer.Start swaps this Graphics in for painting, so the region
+            // clip must live HERE — clipping the offscreen paint keeps the corners
+            // cut even though the final blit below is done without a clip.
+            if (hwnd?.UserClip != null && MwfEnv.AllowClip)
+                g.SetClip(hwnd.UserClip, System.Drawing.Drawing2D.CombineMode.Intersect);
+            return g;
+        }
+
+        internal override void BlitFromOffscreen(IntPtr dest_handle, Graphics dest_dc, object offscreen_drawable, Graphics offscreen_dc, Rectangle r)
+        {
+            if (r.Width <= 0 || r.Height <= 0) return;
+            if (offscreen_drawable is not Image img) return;
+
+            // Same workaround as XplatUIX11.BlitFromOffscreen: SkiaSharp's DrawImage
+            // corrupts when the destination canvas has a clip installed — controls
+            // with a Region (MWF_ALLOW_CLIP / MWF_ALWAYS_ROUND) blitted to garbage
+            // or nothing. The offscreen buffer was already painted under the region
+            // clip (GetOffscreenGraphics above), so an unclipped blit is both safe
+            // and correct.
+            var savedClip = dest_dc.Clip;
+            dest_dc.ResetClip();
+            dest_dc.DrawImage(img, r, r, GraphicsUnit.Pixel);
+            dest_dc.Clip = savedClip;
+        }
+
+        // ── MWF_ALWAYS_ROUND: composite-time rounded corners ──
+        // No Control.Region, no canvas clip in the paint path — the control paints a
+        // normal full buffer, and we cut the corners with a DstIn mask when drawing
+        // the buffer into the frame. Exactly the Tran-button philosophy: rounding is
+        // a drawing effect, not a window-shape effect.
+        static bool NeedsRoundMask(Control c)
+        {
+            if (!MwfEnv.AlwaysRound || c.rv_region_set) return false;
+            RVUtils.Initialize();
+            return Control.ShouldAutoRound(c);
+        }
+
+        static void DrawRounded(Graphics g, Bitmap buf, int x, int y, Control c)
+        {
+            int w = buf.Width, h = buf.Height;
+            if (w < 4 || h < 4) { g.DrawImage(buf, x, y); return; }
+
+            float radius = Math.Min(c is Form ? 12f : (float)RVUtils.cornerRadius, Math.Min(w, h) / 2f);
+            using (var tmp = new Bitmap(w, h))
+            {
+                using (var tg = Graphics.FromImage(tmp))
+                {
+                    tg.DrawImage(buf, 0, 0);                       // unclipped — always safe
+                    using (var path = RVUtils.CreateRoundedRectanglePath(new Rectangle(0, 0, w, h), radius))
+                    using (var mask = new SKPaint { IsAntialias = true, Color = SKColors.Black, BlendMode = SKBlendMode.DstIn })
+                        tg._canvas.DrawPath(path._skPath, mask);   // erase outside rounded rect (AA edge)
+                }
+                g.DrawImage(tmp, x, y);                            // SrcOver: corners show what's beneath
+            }
+        }
     }
 }

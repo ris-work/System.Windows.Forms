@@ -43,7 +43,7 @@ namespace System.Windows.Forms
         public static int FrutigerAeroBorderInset = 2;
         public static int FrutigerAeroBorderThickness = 2;
         public static double Opacity = 1;
-        public static double BorderWidth = 0;
+        public static double BorderWidth = 1;
         public static bool FakeAA = false;
 
         public static bool SetRegion = true;
@@ -51,6 +51,12 @@ namespace System.Windows.Forms
         public static int UniversalAlpha = 250;
 
         internal static SystemResPool ResPool = new SystemResPool();
+
+        /// <summary>
+        /// App hook for MWF_ALWAYS_ROUND: decide which controls get rounded.
+        /// Null = use the default set (ButtonBase/TextBoxBase/ComboBox/Form).
+        /// </summary>
+        public static Func<Control, bool>? AutoRoundPredicate = null;
 
         public static void Initialize() { 
             if (!Initialized)
