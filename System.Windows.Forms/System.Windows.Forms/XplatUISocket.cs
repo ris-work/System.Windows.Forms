@@ -2460,9 +2460,10 @@ namespace System.Windows.Forms
         // a drawing effect, not a window-shape effect.
         static bool NeedsRoundMask(Control c)
         {
-            if (!MwfEnv.AlwaysRound || c.rv_region_set) return false;
+            /*if (!MwfEnv.AlwaysRound || c.rv_region_set) return false;
             RVUtils.Initialize();
-            return Control.ShouldAutoRound(c);
+            return Control.ShouldAutoRound(c);*/
+            return true;
         }
 
         static void DrawRounded(Graphics g, Bitmap buf, int x, int y, Control c)
@@ -2470,18 +2471,44 @@ namespace System.Windows.Forms
             int w = buf.Width, h = buf.Height;
             if (w < 4 || h < 4) { g.DrawImage(buf, x, y); return; }
 
-            float radius = Math.Min(c is Form ? 12f : (float)RVUtils.cornerRadius, Math.Min(w, h) / 2f);
+            int r = 20;   // TEST: big, unmistakable
+            r = Math.Min(r, Math.Min(w, h) / 2);
+
             using (var tmp = new Bitmap(w, h))
             {
                 using (var tg = Graphics.FromImage(tmp))
+                    tg.DrawImage(buf, 0, 0);
+
+                var skb = tmp._skBitmap;
+                using (var pix = skb.PeekPixels())
                 {
-                    tg.DrawImage(buf, 0, 0);                       // unclipped — always safe
-                    using (var path = RVUtils.CreateRoundedRectanglePath(new Rectangle(0, 0, w, h), radius))
-                    using (var mask = new SKPaint { IsAntialias = true, Color = SKColors.Black, BlendMode = SKBlendMode.DstIn })
-                        tg._canvas.DrawPath(path._skPath, mask);   // erase outside rounded rect (AA edge)
+                    Span<byte> px = pix.GetPixelSpan<byte>();
+                    int stride = skb.RowBytes;
+                    for (int yy = 0; yy < h; yy++)
+                    {
+                        int row = yy * stride;
+                        for (int xx = 0; xx < w; xx++)
+                        {
+                            if (!InsideRounded(xx, yy, w, h, r))
+                            {
+                                int i = row + xx * 4;
+                                px[i] = 0; px[i + 1] = 0; px[i + 2] = 0; px[i + 3] = 0;  // premul: zero all
+                            }
+                        }
+                    }
                 }
-                g.DrawImage(tmp, x, y);                            // SrcOver: corners show what's beneath
+                g.DrawImage(tmp, x, y);
             }
+        }
+
+        static bool InsideRounded(int x, int y, int w, int h, int r)
+        {
+            bool cornerZone = (x < r || x >= w - r) && (y < r || y >= h - r);
+            if (!cornerZone) return true;
+            int cx = x < w / 2 ? r : w - 1 - r;
+            int cy = y < h / 2 ? r : h - 1 - r;
+            int dx = x - cx, dy = y - cy;
+            return dx * dx + dy * dy <= r * r;
         }
     }
 }
