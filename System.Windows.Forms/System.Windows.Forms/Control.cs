@@ -1398,13 +1398,16 @@ namespace System.Windows.Forms
 
 						parent_pe.Graphics.TranslateTransform(-Left, -Top);
 						parent.OnPaintBackground(parent_pe);
-						parent_pe.Graphics.Restore(state);
+                        parent.OnPaint(parent_pe);
+                        parent_pe.Graphics.Restore(state);
+                        parent_pe.Graphics.ResetClip();
+                        parent_pe.Graphics.ResetTransform();
 
-						state = parent_pe.Graphics.Save();
+                        state = parent_pe.Graphics.Save();
 						parent_pe.Graphics.Clip = region;
 
 						//parent_pe.Graphics.TranslateTransform(-Left, -Top);
-						parent.OnPaint(parent_pe);
+						//parent.OnPaint(parent_pe);
 						//parent_pe.Graphics.Restore(state);
 						//parent_pe.SetGraphics(null);
 
