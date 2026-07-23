@@ -98,11 +98,8 @@ namespace System.Windows.Forms
 		internal bool			allow_drop;		// true if the control accepts droping objects on it   
 		Region                  clip_region; // User-specified clip region for the window
 
-        bool auto_round_active;      // current Region was auto-applied by MWF_ALWAYS_ROUND
-        bool applying_auto_round;    // reentrancy marker for the Region setter
-
-        // Visuals
-        internal Color			foreground_color;	// foreground color for control
+		// Visuals
+		internal Color			foreground_color;	// foreground color for control
 		internal Color			background_color;	// background color for control
 		Image                   background_image; // background image for control
 		internal Font			font;			// font for control
@@ -162,11 +159,19 @@ namespace System.Windows.Forms
 
 		public bool rv_region_set = false;
 
-		#endregion	// Local Variables
+        // On this driver nothing shapes the native window, so a user clip WILL
+        // expose the parent. Returning false keeps stock PaintControlBackground
+        // from repainting the parent into the child and, more importantly, from
+        // installing a canvas clip in the paint path (the source of the
+        // corrupt/invisible colored buttons and textboxes). Rounding is applied
+        // at presentation time by ApplyRegionMask instead.
+        internal bool UserClipWontExposeParent = false;
 
-		#region Private Classes
-		// This helper class allows us to dispatch messages to Control.WndProc
-		internal class ControlNativeWindow : NativeWindow {
+        #endregion // Local Variables                    
+
+        #region Private Classes
+        // This helper class allows us to dispatch messages to Control.WndProc
+        internal class ControlNativeWindow : NativeWindow {
 			private Control owner;
 
 			public ControlNativeWindow(Control control) : base() {
@@ -1398,14 +1403,15 @@ namespace System.Windows.Forms
 						state = parent_pe.Graphics.Save();
 						parent_pe.Graphics.Clip = region;
 
-						parent_pe.Graphics.TranslateTransform(-Left, -Top);
+						//parent_pe.Graphics.TranslateTransform(-Left, -Top);
 						parent.OnPaint(parent_pe);
-						parent_pe.Graphics.Restore(state);
-						parent_pe.SetGraphics(null);
+						//parent_pe.Graphics.Restore(state);
+						//parent_pe.SetGraphics(null);
 
-						region.Intersect(clip_region);
-						pevent.Graphics.Clip = region;
-					}
+						//region.Intersect(clip_region);
+						//pevent.Graphics.Clip = region;
+                        pevent.Graphics.Clip = clip_region;
+                    }
 				}
 			}
 
@@ -3015,12 +3021,10 @@ namespace System.Windows.Forms
 		[EditorBrowsable(EditorBrowsableState.Advanced)]
 		[Browsable(false)]
 		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public Region Region
-        {
-            get
-            {
-                return clip_region;
-            }
+		public Region Region {
+			get {
+				return clip_region;
+			}
 
             set
             {
@@ -3038,7 +3042,7 @@ namespace System.Windows.Forms
             }
         }
 
-        [EditorBrowsable(EditorBrowsableState.Advanced)]
+		[EditorBrowsable(EditorBrowsableState.Advanced)]
 		[Browsable(false)]
 		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
 		public int Right {
@@ -4162,55 +4166,6 @@ namespace System.Windows.Forms
 			Select(false, false);	
 		}
 
-        // ── MWF_ALWAYS_ROUND: automatic rounded corners for modern-looking controls ──
-        internal static bool ShouldAutoRound(Control c)
-        {
-            return c is ButtonBase      // was: Button — covers custom button classes too
-                || c is TextBoxBase
-                || c is ComboBox
-                || c is Form;
-        }
-
-        static GraphicsPath RoundedRectPath(Rectangle r, int radius)
-        {
-            var p = new GraphicsPath();
-            int d = Math.Min(radius * 2, Math.Min(r.Width, r.Height));
-            if (d <= 0) { p.AddRectangle(r); return p; }
-            p.AddArc(r.X, r.Y, d, d, 180, 90);
-            p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
-            p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-            p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
-            p.CloseFigure();
-            return p;
-        }
-
-        Size last_auto_round_size;
-
-        internal void MaybeApplyAutoRound()
-        {
-            /*if (!MwfEnv.AlwaysRound || is_disposed || rv_region_set) return;
-            if (!ShouldAutoRound(this)) return;
-            if (!IsHandleCreated) return;
-            if (clip_region != null && !auto_round_active) return;   // respect user-set Region
-
-            int w = Width, h = Height;
-            if (w < 4 || h < 4) return;
-            if (auto_round_active && last_auto_round_size.Width == w && last_auto_round_size.Height == h)
-                return;                                              // already rounded at this size
-
-            RVUtils.Initialize();                                   // picks up RV_CORNER_RADIUS etc.
-            float radius = Math.Min(this is Form ? 12f : (float)RVUtils.cornerRadius, Math.Min(w, h) / 2f);
-
-            applying_auto_round = true;
-            // RVUtils' path: explicit line segments between arcs + 1/2px insets —
-            // the same topology the app already uses successfully for rv_region_set controls.
-            using (var path = RVUtils.CreateRoundedRectanglePath(new Rectangle(0, 0, w, h), radius))
-                Region = new Region(path);
-            applying_auto_round = false;
-            auto_round_active = true;
-            last_auto_round_size = new Size(w, h);*/
-        }
-
 #if DebugFocus
 		private void printTree(Control c, string t) {
 			foreach(Control i in c.child_controls) {
@@ -4219,7 +4174,7 @@ namespace System.Windows.Forms
 			}
 		}
 #endif
-        public bool SelectNextControl(Control ctl, bool forward, bool tabStopOnly, bool nested, bool wrap)
+		public bool SelectNextControl(Control ctl, bool forward, bool tabStopOnly, bool nested, bool wrap)
 		{
 #if DebugFocus
 			Console.WriteLine("{0}", this.FindForm());
@@ -4379,7 +4334,6 @@ namespace System.Windows.Forms
 				explicit_bounds = save_bounds;
                 MaybeApplyAutoRound();
             }
-
 		}
 
 		[EditorBrowsable(EditorBrowsableState.Advanced)]
@@ -5334,7 +5288,8 @@ namespace System.Windows.Forms
 		// can be found here: http://pluralsight.com/wiki/default.aspx/Craig/FlickerFreeControlDrawing.html
 		// and here http://msdn.microsoft.com/msdnmag/issues/06/03/WindowsFormsPerformance/
 		private void WmPaint (ref Message m) {
-			IntPtr handle = Handle;
+            MaybeApplyAutoRound();
+            IntPtr handle = Handle;
 
 			PaintEventArgs paint_event = XplatUI.PaintEventStart (ref m, handle, true);
 
@@ -6865,12 +6820,35 @@ namespace System.Windows.Forms
 
         #endregion // Events           
 
-        static bool NeedsRoundMask(Control c)
+        bool auto_round_active;      // current Region was auto-applied by MWF_ALWAYS_ROUND
+        bool applying_auto_round;    // reentrancy marker for the Region setter
+        Size last_auto_round_size;   // size the current auto-Region was built for
+        internal void MaybeApplyAutoRound()
         {
-            if (!MwfEnv.AlwaysRound || c.rv_region_set) return false;
-            RVUtils.Initialize();
-            if (RVUtils.AutoRoundPredicate != null) return RVUtils.AutoRoundPredicate(c);
-            return Control.ShouldAutoRound(c);
+            if (!MwfEnv.AlwaysRound || is_disposed || rv_region_set) return;
+            if (!ShouldAutoRound(this)) return;
+            if (!IsHandleCreated) return;
+            if (clip_region != null && !auto_round_active) return;   // user's Region wins
+
+            int w = Width, h = Height;
+            if (w < 4 || h < 4) return;
+            if (auto_round_active && last_auto_round_size.Width == w && last_auto_round_size.Height == h)
+                return;
+
+            float radius = Math.Min(RVUtils.cornerRadius > 0 ? (float)RVUtils.cornerRadius : 8f,
+                                     Math.Min(w, h) / 2f);
+            applying_auto_round = true;
+            using (var path = RVUtils.CreateRoundedRectanglePath(new Rectangle(0, 0, w, h), radius))
+                Region = new Region(path);
+            applying_auto_round = false;
+            auto_round_active = true;
+            last_auto_round_size = new Size(w, h);
         }
+
+        // ── MWF_ALWAYS_ROUND: which controls get an automatic rounded Region ──
+        internal static bool ShouldAutoRound(Control c)
+            => c is ButtonBase || c is TextBoxBase || c is ComboBox;
+
+        
     }
 }
