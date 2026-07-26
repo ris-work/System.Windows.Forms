@@ -7,8 +7,8 @@
 
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Copyright>(c) Rishikeshan Sulochana/Lavakumar 2025, Various Mono authors, Daniel Van Noord 2019</Copyright>
-    <Description>A .Net Core implementation of the Mono System.Windows.Forms library with rounding experiments, Linux/BSD-compatible with libgdiplus. This is built on top of System.Drawing.Common.</Description>
+    <Copyright>(c) Eng. Rishikeshan Sulochana/Lavakumar 2026, Various Mono authors, Daniel Van Noord 2019</Copyright>
+    <Description>A .Net implementation of the Mono System.Windows.Forms library that uses SkiaSharp instead of libgdiplus/cairo.</Description>
     <Authors>Various Mono authors, Daniel Van Noord, Rishikeshan Sulochana/Lavakumar</Authors>
     <PackageProjectUrl>https://github.com/ris-work/System.Windows.Forms</PackageProjectUrl>
     <RepositoryUrl>https://github.com/ris-work/System.Windows.Forms</RepositoryUrl>
@@ -17,10 +17,21 @@
     <PackageLicenseExpression></PackageLicenseExpression>
     <PackageReleaseNotes>Initial Release</PackageReleaseNotes>
     <PackageLicenseFile>License.txt</PackageLicenseFile>
-    <Version>1.0.6-alpha1</Version>
-    <PackageId>Rishi.Core.System.Windows.Forms</PackageId>
+    <Version>2.0.6</Version>
+    <PackageId>RishiVeenu.Core.System.Windows.Forms</PackageId>
 	<PackageReadmeFile>README.md</PackageReadmeFile>
 	  <DisableImplicitSystemDrawingCoreFrameworkReference>true</DisableImplicitSystemDrawingCoreFrameworkReference>
+	  <!--<DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>-->
+	  <EmbedAllSources>true</EmbedAllSources>
+	  <DebugType>Embedded</DebugType>
+	  <PackageTags>System.Windows.Forms;System.Drawing;Skia;Free</PackageTags>
+	  <Copyright>Copyright © 2026 Eng. Rishikeshan Sulochana/Lavakumar, Publicly available under Apache 2.0 License</Copyright>
+	  <PackageVersion>11.0.0.0</PackageVersion>
+	  <AssemblyVersion>30.0.0.0</AssemblyVersion>
+	  <Authors>Eng. Rishikeshan Sulochana/Lavakumar</Authors>
+	  <Company>SR Medicals, Trincomalee</Company>
+	  <RepositoryUrl>https://vz.al/repos/sd</RepositoryUrl>
+	  <RepositoryType>fossil</RepositoryType>
   </PropertyGroup>
 
   <ItemGroup>
