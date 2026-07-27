@@ -1005,12 +1005,13 @@ namespace System.Windows.Forms {
 			uint	result;
 
 			drop_target = ComIDropTarget.GetUnmanaged(Window);
-			result = Win32RegisterDragDrop(Window, drop_target);
+			//result = Win32RegisterDragDrop(Window, drop_target);
 
-			if (result != S_OK) {
+			//if (result != S_OK) {
 				return false;
-			}
-			return true;
+			//}
+			//return true;
+			return false;
 		}
 
 		// Thanks, Martin

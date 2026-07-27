@@ -906,6 +906,35 @@ Console.WriteLine("Where the test rectangles on Test 5/6/7 show NO text, Documen
 
 
 
+
+string text2 = "The quick brown fox jumps over the lazy dog.";
+Font font2 = new Font("Segoe UI", 12F);
+Size proposedSize = new Size(200, int.MaxValue);
+TextFormatFlags flags = TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix;
+
+using (var bmpx = new System.Drawing.Bitmap(1, 1))
+using (var gx = System.Drawing.Graphics.FromImage(bmpx))
+{
+    Console.WriteLine("--- Text Measurement Test ---");
+
+    // 1. MeasureText(string text, Font font)
+    var size1Old = TextRenderer.MeasureText(text2, font2);
+    var size1New = gx.MeasureString(text2, font2).ToSize();
+    Console.WriteLine($"1. Old: {size1Old}, New: {size1New}");
+
+    // 3. MeasureText(string text, Font font, Size proposedSize)
+    var size3Old = TextRenderer.MeasureText(text2, font2, proposedSize);
+    var size3New = gx.MeasureString(text2, font2, proposedSize).ToSize();
+    Console.WriteLine($"3. Old: {size3Old}, New: {size3New}");
+
+    // 5. MeasureText(string text, Font font, Size proposedSize, TextFormatFlags flags)
+    var size5Old = TextRenderer.MeasureText(text2, font2, proposedSize, flags);
+    var size5New = gx.MeasureString(text2, font2, proposedSize, StringFormat.GenericTypographic).ToSize();
+    Console.WriteLine($"5. Old: {size5Old}, New: {size5New}");
+}
+
+
+
 // ==========================================
 // 2. WinForms Application with Multiple Controls
 // ==========================================
@@ -1782,6 +1811,8 @@ picStar.Image = CreateStarBitmap(400, 350);
 
 // === Event Hookup ===
 btnTran1.Click += (_, __) => { txtMulti.Text = Logger.Log; };
+
+
 
 // === Run ===
 Application.Run(form);

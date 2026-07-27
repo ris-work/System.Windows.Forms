@@ -133,7 +133,7 @@ namespace System.Windows.Forms
                 return;
 
             // We use MS GDI API's unless told not to, or we aren't on Windows
-            if (!useDrawString && !XplatUI.RunningOnUnix)
+            if (!useDrawString && !XplatUI.RunningOnUnix && false)
             {
                 try
                 {
@@ -219,51 +219,51 @@ namespace System.Windows.Forms
                     // Fallback to DrawString below
                 }
             }
+			else
+			// Fallback: Use Graphics.DrawString (SkiaSharp backend)
+			{
+				Graphics g;
+				IntPtr hdcFallback = IntPtr.Zero;
 
-            // Fallback: Use Graphics.DrawString (SkiaSharp backend)
-            {
-                Graphics g;
-                IntPtr hdcFallback = IntPtr.Zero;
+				if (dc is Graphics)
+				{
+					g = (Graphics)dc;
+				}
+				else
+				{
+					try
+					{
+						hdcFallback = dc.GetHdc();
+						if (hdcFallback == IntPtr.Zero) return; // Cannot draw without HDC or Graphics
+						g = Graphics.FromHdc(hdcFallback);
+					}
+					catch (PlatformNotSupportedException)
+					{
+						return; // Cannot draw without HDC or Graphics
+					}
+				}
 
-                if (dc is Graphics)
-                {
-                    g = (Graphics)dc;
-                }
-                else
-                {
-                    try
-                    {
-                        hdcFallback = dc.GetHdc();
-                        if (hdcFallback == IntPtr.Zero) return; // Cannot draw without HDC or Graphics
-                        g = Graphics.FromHdc(hdcFallback);
-                    }
-                    catch (PlatformNotSupportedException)
-                    {
-                        return; // Cannot draw without HDC or Graphics
-                    }
-                }
+				StringFormat sf = FlagsToStringFormat(flags);
+				Rectangle new_bounds_fallback = bounds;
 
-                StringFormat sf = FlagsToStringFormat(flags);
-                Rectangle new_bounds_fallback = bounds;
+				// FILL BACKGROUND to prevent ghosting - TextRenderer in GDI usually draws opaque backgrounds
+				if (backColor != Color.Transparent && backColor != Color.Empty)
+				{
+					using (var bgBrush = new SolidBrush(backColor))
+						g.FillRectangle(bgBrush, new_bounds_fallback);
+				}
 
-                // FILL BACKGROUND to prevent ghosting - TextRenderer in GDI usually draws opaque backgrounds
-                if (backColor != Color.Transparent && backColor != Color.Empty)
-                {
-                    using (var bgBrush = new SolidBrush(backColor))
-                        g.FillRectangle(bgBrush, new_bounds_fallback);
-                }
+				if (font != null)
+				{
+					g.DrawString(text, font, ThemeEngine.Current.ResPool.GetSolidBrush(foreColor), new_bounds_fallback, sf);
+				}
 
-                if (font != null)
-                {
-                    g.DrawString(text, font, ThemeEngine.Current.ResPool.GetSolidBrush(foreColor), new_bounds_fallback, sf);
-                }
-
-                if (!(dc is Graphics))
-                {
-                    g.Dispose();
-                    try { dc.ReleaseHdc(); } catch { }
-                }
-            }
+				if (!(dc is Graphics))
+				{
+					g.Dispose();
+					try { dc.ReleaseHdc(); } catch { }
+				}
+			}
         }
 
         internal static Size MeasureTextInternal(IDeviceContext dc, string text, Font font, Size proposedSize, TextFormatFlags flags, bool useMeasureString)
@@ -274,7 +274,7 @@ namespace System.Windows.Forms
                 return Size.Empty;
 
             // Try GDI if requested and on Windows
-            if (!useMeasureString && !XplatUI.RunningOnUnix)
+            if (!useMeasureString && !XplatUI.RunningOnUnix && false)
             {
                 try
                 {
