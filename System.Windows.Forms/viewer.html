@@ -1,0 +1,318 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <title>XplatUI WebSocket Viewer</title>
+    <style>
+        body {
+            margin: 0;
+            background: #1e1e22;
+            color: #ddd;
+            font: 13px sans-serif;
+            display: flex;
+            height: 100vh;
+        }
+
+        #sidebar {
+            width: 240px;
+            background: #26262c;
+            padding: 8px;
+            overflow: auto;
+            box-sizing: border-box;
+        }
+
+            #sidebar h2 {
+                font-size: 14px;
+                margin: 0 0 8px;
+            }
+
+            #sidebar div.win {
+                padding: 6px;
+                margin: 2px 0;
+                cursor: pointer;
+                border-radius: 4px;
+            }
+
+                #sidebar div.win:hover {
+                    background: #3a3a44;
+                }
+
+                #sidebar div.win.active {
+                    background: #4a6fa5;
+                    color: #fff;
+                }
+
+            #sidebar label {
+                display: block;
+                margin: 6px 0;
+            }
+
+        #stage {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+            background: #18181c;
+        }
+
+        #frame {
+            max-width: 100%;
+            max-height: 100%;
+            image-rendering: pixelated;
+        }
+
+        #svgwrap {
+            width: 100%;
+            height: 100%;
+        }
+
+            #svgwrap svg {
+                width: 100%;
+                height: 100%;
+            }
+
+        #bar {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(0,0,0,0.5);
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 11px;
+        }
+
+        #log {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            max-height: 120px;
+            overflow: auto;
+            background: rgba(0,0,0,0.7);
+            padding: 6px;
+            font: 11px monospace;
+            display: none;
+            color: #9fd0ff;
+        }
+    </style>
+</head>
+<body>
+    <div id='sidebar'>
+        <h2>Windows</h2>
+        <div id='winlist'></div>
+        <hr>
+        <label>Format <select id='fmt'><option>jpeg</option><option>png</option><option>svg</option></select></label>
+        <label><input type='checkbox' id='gray'> Gray</label>
+        <label>Quality <input type='range' id='q' min='1' max='100' value='75'></label>
+        <label><input type='checkbox' id='live' checked> Live</label>
+        <button id='refresh'>Refresh</button>
+        <button id='save'>Save frame</button>
+    </div>
+    <div id='stage'>
+        <div id='bar'>not connected</div>
+        <img id='frame' style='display:none'>
+        <div id='svgwrap' style='display:none'></div>
+        <div id='log'></div>
+    </div>
+    <script>const $ = s => document.querySelector(s);
+const log = (...a) => { const el = $('#log'); el.style.display='block'; el.innerHTML += a.join(' ') + '<br>'; el.scrollTop = el.scrollHeight; };
+
+let listWs = null, winWs = null, curHandle = null, frameCount = 0, lastSvg = null;
+
+function setBar(t) { $('#bar').textContent = t; }
+function sendWin(obj) { if (winWs && winWs.readyState === 1) winWs.send(JSON.stringify(obj)); }
+function resub() {
+  if ($('#live').checked) sendWin({type:'subscribe', format:$('#fmt').value, quality:+$('#q').value, gray:$('#gray').checked});
+  sendWin({type:'refresh', format:$('#fmt').value, quality:+$('#q').value, gray:$('#gray').checked, full:true});
+}
+
+function connectList() {
+  try { if (listWs) listWs.close(); } catch {}
+  listWs = new WebSocket((location.protocol==='https:'?'wss:':'ws:') + '//' + location.host + '/list');
+  listWs.onopen = () => setBar('list: connected');
+  listWs.onmessage = ev => {
+    let m; try { m = JSON.parse(ev.data); } catch { return; }
+    if (m.type === 'list') renderList(m.windows);
+    else if (m.type === 'window-added') addWin(m.window);
+    else if (m.type === 'window-removed') removeWin(m.window.handle);
+    else if (m.type === 'window-updated') updateWin(m.window);
+  };
+  listWs.onclose = () => { setBar('list: disconnected (retrying)'); setTimeout(connectList, 1500); };
+  listWs.onerror = () => log('list error');
+}
+
+let windows = [];
+function renderList(ws) { windows = ws.slice(); redrawList(); }
+function addWin(w) { windows = windows.filter(x => x.handle !== w.handle); windows.push(w); redrawList(); }
+        let winEpoch = 0;
+
+        function clearWinUI() {
+            $('#frame').src = '';
+            $('#frame').style.display = 'none';
+            $('#svgwrap').style.display = 'none';
+            $('#svgwrap').innerHTML = '';
+        }
+
+        function removeWin(h) {
+            windows = windows.filter(x => x.handle !== h);
+            if (curHandle === h) {
+                winEpoch++;
+                if (winWs) { try { winWs.close(); } catch { } winWs = null; }
+                curHandle = null;
+                clearWinUI();
+            }
+            redrawList();
+        }
+function updateWin(w) { windows = windows.map(x => x.handle === w.handle ? w : x); redrawList(); }
+function redrawList() {
+  const c = $('#winlist'); c.innerHTML = '';
+  windows.forEach(w => {
+    const d = document.createElement('div');
+    d.className = 'win' + (w.handle === curHandle ? ' active' : '');
+    d.textContent = w.title + '  [' + w.handle + ']  ' + w.width + 'x' + w.height;
+    d.onclick = () => connectWin(w);
+    c.appendChild(d);
+  });
+}
+
+        function connectWin(w) {
+            winEpoch++;
+            if (winWs) { try { winWs.close(); } catch { } winWs = null; }
+            const myEpoch = winEpoch;
+            curHandle = w.handle;
+            clearWinUI();
+            redrawList();
+            setBar('window: ' + w.title + ' ' + w.width + 'x' + w.height);
+            const url = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/window/' + encodeURIComponent(w.handle);
+            winWs = new WebSocket(url);
+            winWs.onopen = () => { if (myEpoch === winEpoch) resub(); };
+            winWs.onmessage = ev => {
+                if (myEpoch !== winEpoch) return; // Drop stale messages from old connections
+                let m; try { m = JSON.parse(ev.data); } catch { return; }
+                if (m.type === 'frame') handleFrame(m);
+                else if (m.type === 'hello' || m.type === 'info') {
+                    if (m.window) setBar('window: ' + m.window.title + ' ' + m.window.width + 'x' + m.window.height);
+                }
+                else if (m.type === 'bye') {
+                    setBar('window: closed by server');
+                    try { winWs.close(); } catch { }
+                }
+                else if (m.type === 'pong') { }
+            };
+            winWs.onclose = () => {
+                if (myEpoch !== winEpoch) return; // Ignore close from invalidated connections
+                setBar('window: closed');
+                if (curHandle) { const w2 = windows.find(x => x.handle === curHandle); if (w2) setTimeout(() => { if (myEpoch === winEpoch) connectWin(w2); }, 2000); }
+            };
+            winWs.onerror = () => { if (myEpoch === winEpoch) log('win error'); };
+        }
+
+function handleFrame(m) {
+  frameCount++;
+  if (m.format === 'svg') {
+    lastSvg = m.data;
+    $('#frame').style.display = 'none';
+    $('#svgwrap').style.display = 'block';
+    $('#svgwrap').innerHTML = m.data;
+    setBar('frame #' + frameCount + ' svg ' + m.width + 'x' + m.height);
+  } else {
+    $('#svgwrap').style.display = 'none';
+    $('#svgwrap').innerHTML = '';
+    const img = $('#frame');
+    img.style.display = 'block';
+    img.src = 'data:image/' + m.format + ';base64,' + m.data;
+    setBar('frame #' + frameCount + ' ' + m.format + ' ' + m.width + 'x' + m.height);
+  }
+}
+
+function imgPos(e) {
+  const img = $('#frame');
+  if (img.style.display === 'none' || !img.naturalWidth) return null;
+  const r = img.getBoundingClientRect();
+  const scale = Math.min(r.width / img.naturalWidth, r.height / img.naturalHeight);
+  const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
+  const ox = r.left + (r.width - dw) / 2, oy = r.top + (r.height - dh) / 2;
+  const x = Math.floor((e.clientX - ox) / scale);
+  const y = Math.floor((e.clientY - oy) / scale);
+  if (x < 0 || y < 0 || x >= img.naturalWidth || y >= img.naturalHeight) return null;
+  return {x, y};
+}
+function svgPos(e) {
+  const svg = $('#svgwrap').querySelector('svg');
+  if (!svg) return null;
+  const r = svg.getBoundingClientRect();
+  const vb = svg.viewBox && svg.viewBox.baseVal;
+  const w = (vb && vb.width) || svg.width.baseVal.value;
+  const h = (vb && vb.height) || svg.height.baseVal.value;
+  const x = Math.floor((e.clientX - r.left) / r.width * w);
+  const y = Math.floor((e.clientY - r.top) / r.height * h);
+  if (x < 0 || y < 0 || x >= w || y >= h) return null;
+  return {x, y};
+}
+function pos(e) { return $('#frame').style.display !== 'none' ? imgPos(e) : svgPos(e); }
+function btnName(b) { return b === 2 ? 'right' : b === 1 ? 'middle' : 'left'; }
+
+$('#stage').addEventListener('mousedown', e => { const p = pos(e); if (p) sendWin({type:'mousedown', x:p.x, y:p.y, button:btnName(e.button)}); });
+$('#stage').addEventListener('mouseup',   e => { const p = pos(e); if (p) sendWin({type:'mouseup',   x:p.x, y:p.y, button:btnName(e.button)}); });
+$('#stage').addEventListener('mousemove', e => { const p = pos(e); if (p) sendWin({type:'mousemove', x:p.x, y:p.y, button:'left'}); });
+$('#stage').addEventListener('wheel',     e => { const p = pos(e); if (p) { sendWin({type:'wheel', x:p.x, y:p.y, delta:e.deltaY}); e.preventDefault(); } }, {passive:false});
+$('#stage').addEventListener('contextmenu', e => e.preventDefault());
+
+const codeToKey = {
+  Enter:'Return', Backspace:'Back', Tab:'Tab', Escape:'Escape', Space:'Space',
+  ShiftLeft:'LShiftKey', ShiftRight:'RShiftKey',
+  ControlLeft:'LControlKey', ControlRight:'RControlKey',
+  AltLeft:'LMenu', AltRight:'RMenu',
+  MetaLeft:'LWin', MetaRight:'RWin',
+  CapsLock:'CapitalLock', ScrollLock:'Scroll', NumLock:'NumLock', Pause:'Pause',
+  Home:'Home', End:'End', PageUp:'PageUp', PageDown:'PageDown',
+  Insert:'Insert', Delete:'Delete', ContextMenu:'Apps',
+  Semicolon:'Oem1', Equal:'Oemplus', Comma:'Oemcomma', Minus:'OemMinus',
+  Period:'OemPeriod', Slash:'OemQuestion', Backquote:'Oem8',
+  BracketLeft:'OemOpenBrackets', BracketRight:'OemCloseBrackets',
+  Backslash:'Oem5', Quote:'Oem7'
+};
+function keyName(e) {
+  const c = e.code || '';
+  if (c.startsWith('Key')) return c.slice(3);
+  if (c.startsWith('Digit')) return c.slice(5);
+  if (c.startsWith('Arrow')) return c.slice(5);
+  if (c.startsWith('Numpad')) return 'NumPad' + c.slice(6);
+  if (/^F\d$/.test(c)) return c;
+  return codeToKey[c] || (e.key && e.key.length === 1 ? e.key.toUpperCase() : (e.key || ''));
+}
+
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '0')) return;
+  sendWin({type:'keydown', key:keyName(e)});
+  if (e.key && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey)
+    sendWin({type:'text', text:e.key});
+  if (['Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Backspace',' '].includes(e.key)) e.preventDefault();
+});
+document.addEventListener('keyup', e => { sendWin({type:'keyup', key:keyName(e)}); });
+
+$('#refresh').onclick = () => resub();
+$('#save').onclick = () => {
+  if (lastSvg) {
+    const blob = new Blob([lastSvg], {type:'image/svg+xml'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'frame.svg'; a.click();
+  } else {
+    const img = $('#frame'); if (!img.src) return;
+    const a = document.createElement('a'); a.href = img.src; a.download = 'frame.png'; a.click();
+  }
+};
+$('#fmt').onchange = () => resub();
+$('#q').onchange = () => resub();
+$('#gray').onchange = () => resub();
+$('#live').onchange = () => {
+  if ($('#live').checked) sendWin({type:'subscribe', format:$('#fmt').value, quality:+$('#q').value, gray:$('#gray').checked});
+  else sendWin({type:'unsubscribe'});
+};
+
+connectList();</script>
+</body>
+</html>

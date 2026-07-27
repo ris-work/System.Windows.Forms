@@ -93,10 +93,23 @@ namespace System.Windows.Forms {
 //			default_class_name = "SWFClass" + System.Threading.Thread.GetDomainID ().ToString ();
 			LibraryResolver.EnsureRegistered();
 
-            if (Environment.GetEnvironmentVariable("MONO_MWF_USE_SOCKET") != null && Environment.GetEnvironmentVariable("MONO_MWF_USE_SOCKET").ToLowerInvariant() == "yes")
+            var useSocket = Environment.GetEnvironmentVariable("MONO_MWF_USE_SOCKET")?.ToLowerInvariant() == "yes";
+            var useWebSocket = Environment.GetEnvironmentVariable("MONO_MWF_USE_WEBSOCKET")?.ToLowerInvariant() == "yes";
+
+            if (useSocket || useWebSocket)
             {
                 driver = XplatUISocket.GetInstance();
+
+                // If WebSocket mode is explicitly requested, ensure the ASP.NET Core 
+                // bridge is started immediately. (It's also safely started inside 
+                // XplatUISocket.EnsureServer, but this guarantees it runs even if 
+                // the driver init is delayed).
+                if (useWebSocket)
+                {
+                    XplatUIWebSocket.EnsureStarted();
+                }
             }
+
             else if (RunningOnUnix) {
 				//if (Environment.GetEnvironmentVariable ("not_supported_MONO_MWF_USE_NEW_X11_BACKEND") != null) {
 				//        driver=XplatUIX11_new.GetInstance ();
