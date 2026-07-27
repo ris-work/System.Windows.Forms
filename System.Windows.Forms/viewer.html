@@ -312,6 +312,9 @@ $('#live').onchange = () => {
   if ($('#live').checked) sendWin({type:'subscribe', format:$('#fmt').value, quality:+$('#q').value, gray:$('#gray').checked});
   else sendWin({type:'unsubscribe'});
 };
+        $('#stage').addEventListener('contextmenu', e => e.preventDefault());
+        $('#stage').addEventListener('dragstart', e => e.preventDefault());
+        document.addEventListener('dragstart', e => e.preventDefault());
 
 connectList();</script>
 </body>

@@ -1299,11 +1299,14 @@ form.Controls.Add(datePicker);
 Application.Run(form);*/
 
 // === Form ===
+string BootUpSD_BACKGROUND = (Environment.GetEnvironmentVariable("BACKGROUND") ?? "true").ToLowerInvariant();
+bool BACKGROUND = true;
+if (BootUpSD_BACKGROUND == "false" || BootUpSD_BACKGROUND == "no" || BootUpSD_BACKGROUND == "no" || BootUpSD_BACKGROUND == "0") BACKGROUND = false;
 var form = new Form
 {
     AllowTransparency = true,
     //BackColor = Color.Transparent,
-    BackgroundImage = Image.FromFile("328551_openclipart_transparent_cube_jarda.png"),
+    
     BackgroundImageLayout = ImageLayout.None,
     ClientSize = new Size(1800, 950),
     BackColor = Color.FromArgb(45, 48, 45),
@@ -1311,6 +1314,7 @@ var form = new Form
     WindowState = FormWindowState.Maximized,
     //DoubleBuffered = true
 };
+if (BACKGROUND) form.BackgroundImage = Image.FromFile("328551_openclipart_transparent_cube_jarda.png");
 
 // === Global Strips ===
 var menuStrip1 = new MenuStrip();

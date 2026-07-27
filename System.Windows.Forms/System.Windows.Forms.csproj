@@ -34,6 +34,28 @@
 	  <RepositoryType>fossil</RepositoryType>
   </PropertyGroup>
 
+	<ItemGroup>
+		<PackageReference Include="Microsoft.AspNetCore.Mvc.Razor.RuntimeCompilation" Version="10.0.5" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.5">
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+			<PrivateAssets>all</PrivateAssets>
+		</PackageReference>
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.5" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.5" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.5" />
+		<PackageReference Include="SQLitePCLRaw.provider.dynamic_cdecl" Version="3.0.2" />
+		<PackageReference Include="SQLitePCLRaw.provider.e_sqlite3" Version="3.0.2" />
+		<PackageReference Include="SQLitePCLRaw.provider.sqlite3" Version="3.0.2" />
+		<PackageReference Include="Tomlyn" Version="2.3.0" />
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+		<!--
+		<FrameworkReference Include="Microsoft.NET.Sdk.Web" />
+		<FrameworkReference Include="Microsoft.NET.Sdk.Razor" />
+		-->
+
+
+	</ItemGroup>
+
   <ItemGroup>
 	<None Include="README.md" Pack="true" PackagePath="\" />
     <None Remove="resources\1-up.png" />
@@ -93,6 +115,7 @@
     <None Remove="resources\text-x-generic.png" />
     <None Remove="resources\user-desktop.png" />
     <None Remove="resources\user-home.png" />
+    <None Remove="viewer.html" />
     <None Include="..\License.txt">
       <Pack>True</Pack>
       <PackagePath></PackagePath>
@@ -286,6 +309,10 @@
     </EmbeddedResource>
     <EmbeddedResource Include="resources/user-home.png">
       <LogicalName>user-home.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="viewer.html">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		<LogicalName>viewer.html</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 	

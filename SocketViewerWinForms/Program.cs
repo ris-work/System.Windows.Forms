@@ -7,6 +7,9 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Windows.Forms;
+using System.Net.WebSockets;
+using System.Threading;
+using System.Threading.Tasks;
 //using SKSvg = SkiaSharp.SKSvg;   // built into your SkiaSharp; swap to SkiaSharp.Extended.Svg.SKSvg if preferred
 
 string sockDir = Environment.GetEnvironmentVariable("XPLAT_UI_SOCKET_DIR") ?? "windows";
@@ -49,6 +52,8 @@ string? lastSvg = null;
 // --- toolbar ---
 var toolbar = new Panel { Dock = DockStyle.Top, Height = 34, BackColor = SystemColors.Control };
 var btnRefresh = new Button { Text = "⟳ Full", Width = 70, Dock = DockStyle.Left };
+var btnWs = new Button { Text = "🌐 WebSocket", Width = 110, Dock = DockStyle.Left };
+var sepWs = new Label { Text = "", Width = 8, Dock = DockStyle.Left };
 var btnSave = new Button { Text = "💾 Save", Width = 70, Dock = DockStyle.Left };
 var sep1 = new Label { Text = "", Width = 8, Dock = DockStyle.Left };
 var btnFmt = new Button { Text = "JPEG", Width = 60, Dock = DockStyle.Left };
@@ -62,8 +67,8 @@ var btnZoom = new Button { Text = "Fit", Width = 50, Dock = DockStyle.Left };
 var chkLive = new CheckBox { Text = "Live", Checked = true, Dock = DockStyle.Left, Width = 55, TextAlign = ContentAlignment.MiddleCenter };
 toolbar.Controls.AddRange(new Control[]
 {
-    // reverse order: Dock.Left stacks from the right of the previous
-    chkLive, btnZoom, sep3, btnQPlus, lblQ, btnQMinus, sep2, btnGray, btnFmt, sep1, btnSave, btnRefresh
+    chkLive, btnZoom, sep3, btnQPlus, lblQ, btnQMinus, sep2, btnGray, btnFmt, sep1, btnSave, btnRefresh,
+    sepWs, btnWs
 });
 
 var pb = new PictureBox
@@ -134,6 +139,12 @@ DateTime lastReconnectTry = DateTime.MinValue;
 string format = "jpeg";
 int quality = 75;
 bool gray = false;
+string? wsRoot = null;
+ClientWebSocket? curWs = null;
+CancellationTokenSource? curCts = null;
+Action<string>? wsSendFn = null;
+int listEpoch = 0;
+Thread? listThread = null;
 
 Socket? curSock = null;
 NetworkStream? curNs = null;
@@ -175,13 +186,24 @@ string JEsc(string s)
 
 void SendRaw(string json, bool logIt)
 {
-    if (curNs == null || dead) return;
+    if (dead) return;
+    if (wsSendFn == null && curNs == null) return;
     try
     {
-        var b = Encoding.UTF8.GetBytes(json + "\n");
-        lock (writeLock) { curNs.Write(b, 0, b.Length); curNs.Flush(); Interlocked.Add(ref totalOut, b.Length);
-            Interlocked.Add(ref winOut, b.Length);
+        int n;
+        if (wsSendFn != null)
+        {
+            wsSendFn(json);
+            n = Encoding.UTF8.GetByteCount(json);
         }
+        else
+        {
+            var b = Encoding.UTF8.GetBytes(json + "\n");
+            lock (writeLock) { curNs.Write(b, 0, b.Length); curNs.Flush(); }
+            n = b.Length;
+        }
+        Interlocked.Add(ref totalOut, n);
+        Interlocked.Add(ref winOut, n);
         if (logIt) Log(">> " + json);
     }
     catch (Exception ex) { Log("[send] failed: " + ex.Message); dead = true; }
@@ -386,20 +408,57 @@ void CloseCurrentWindow()
     connSeq++;
     dead = true;
     try { curSock?.Close(); } catch { }
+    try { if (curWs != null) curWs.CloseAsync(WebSocketCloseStatus.NormalClosure, "closing", CancellationToken.None).Wait(200); } catch { }
+    try { curWs?.Dispose(); } catch { }
+    try { curCts?.Cancel(); } catch { }
+    curCts?.Dispose();
     curSock = null; curNs = null; curRd = null;
+    curWs = null; curCts = null;
+    wsSendFn = null;
 }
 
 void ConnectTo((string handle, string title, string socket, int w, int h) e)
 {
     CloseCurrentWindow();
     cur = e;
-    // fresh window: reset SVG view + cache
     lastSvg = null; lastFrameWasSvg = false; svgSrcW = svgSrcH = 0;
     svgZoom = 1f; svgPan = PointF.Empty; svgPanning = false;
     svgCacheText = null; svgCacheBmp?.Dispose(); svgCacheBmp = null;
     dead = false;
     stWin.Text = $"  window: {e.title} {e.w}x{e.h}";
     form.Text = "SocketViewerWinForms — " + e.title;
+
+    if (wsRoot != null)
+    {
+        string wsUrl = wsRoot.TrimEnd('/') + "/window/" + e.handle;
+        Log($"[win-ws] connecting {wsUrl} ({e.title})");
+        try
+        {
+            curCts = new CancellationTokenSource();
+            var ws = new ClientWebSocket();
+            ws.ConnectAsync(new Uri(wsUrl), curCts.Token).GetAwaiter().GetResult();
+            curWs = ws;
+            int myConn = ++connSeq;
+            wsSendFn = json =>
+            {
+                if (curWs == null || curWs.State != WebSocketState.Open) { dead = true; return; }
+                var bytes = Encoding.UTF8.GetBytes(json);
+                try { curWs.SendAsync(bytes, WebSocketMessageType.Text, true, curCts.Token).GetAwaiter().GetResult(); }
+                catch (Exception ex) { Log("[ws-send] " + ex.Message); dead = true; }
+            };
+            Task.Run(() => WindowReaderWS(myConn, ws, curCts.Token));
+            if (chkLive.Checked)
+                SendRaw("{\"type\":\"subscribe\"," + ParamsJson() + "}", true);
+            SendRaw("{\"type\":\"refresh\"," + ParamsJson() + ",\"full\":true}", true);
+        }
+        catch (Exception ex)
+        {
+            Log("[win-ws] connect failed: " + ex.Message);
+            dead = true;
+        }
+        return;
+    }
+
     Log($"[win] connecting {e.socket} ({e.title})");
     try
     {
@@ -421,6 +480,89 @@ void ConnectTo((string handle, string title, string socket, int w, int h) e)
     }
 }
 
+void HandleWindowLine(int myConn, string line)
+{
+    try
+    {
+        using var doc = JsonDocument.Parse(line);
+        var r = doc.RootElement;
+        var t = r.GetProperty("type").GetString();
+        switch (t)
+        {
+            case "frame":
+                {
+                    var data = r.GetProperty("data").GetString();
+                    if (string.IsNullOrEmpty(data)) break;
+                    var ffmt = r.TryGetProperty("format", out var fe) ? fe.GetString() : "jpeg";
+
+                    Image? img = null;
+                    if (ffmt == "svg")
+                    {
+                        lastSvg = data;
+                        lastFrameWasSvg = true;
+                        svgSrcW = r.GetProperty("width").GetInt32();
+                        svgSrcH = r.GetProperty("height").GetInt32();
+                        svgCacheText = null;
+                        int fcSvg = ++frameCount;
+                        UI(() =>
+                        {
+                            var old = pb.Image;
+                            pb.Image = null;
+                            old?.Dispose();
+                            pb.Invalidate();
+                            stFrame.Text = $"  frames: {fcSvg} (svg {svgSrcW}x{svgSrcH} · {svgZoom:0.##}x)";
+                        });
+                        if ((DateTime.Now - lastFrameLog).TotalMilliseconds > 1000)
+                        {
+                            lastFrameLog = DateTime.Now;
+                            Log($"<< frame svg {svgSrcW}x{svgSrcH} {data.Length / 1024.0:F1}KB");
+                        }
+                        break;
+                    }
+                    else
+                    {
+                        lastFrameWasSvg = false;
+                        using var ms = new MemoryStream(Convert.FromBase64String(data));
+                        img = Image.FromStream(ms);
+                    }
+
+                    int fc = ++frameCount;
+                    UI(() =>
+                    {
+                        var old = pb.Image;
+                        pb.Image = img;
+                        old?.Dispose();
+                        stFrame.Text = $"  frames: {fc} ({ffmt} {img.Width}x{img.Height})";
+                    });
+                    if ((DateTime.Now - lastFrameLog).TotalMilliseconds > 1000)
+                    {
+                        lastFrameLog = DateTime.Now;
+                        Log($"<< frame {ffmt} {img.Width}x{img.Height} {data.Length / 1024.0:F1}KB");
+                    }
+                    break;
+                }
+
+            case "hello":
+            case "info":
+                if (r.TryGetProperty("window", out var we) && we.TryGetProperty("title", out var tt))
+                    UI(() => form.Text = "SocketViewerWinForms — " + tt.GetString());
+                Log("<< " + (line.Length > 300 ? line.Substring(0, 300) + "..." : line));
+                break;
+            case "pong":
+                Log("<< pong");
+                break;
+            case "bye":
+                Log("<< bye (window closed)");
+                if (myConn == connSeq) dead = true;
+                break;
+        }
+    }
+    catch (Exception lineEx)
+    {
+        Log("[win] bad line skipped: " + lineEx.Message);
+    }
+}
+
 void WindowReader(int myConn, Socket sock, StreamReader rd)
 {
     try
@@ -428,91 +570,38 @@ void WindowReader(int myConn, Socket sock, StreamReader rd)
         string? line;
         while (running && myConn == connSeq && (line = rd.ReadLine()) != null)
         {
-            Interlocked.Add(ref totalIn, line.Length + 1);   // +1 for the newline
+            Interlocked.Add(ref totalIn, line.Length + 1);
             Interlocked.Add(ref winIn, line.Length + 1);
-            using var doc = JsonDocument.Parse(line);
-            var r = doc.RootElement;
-            var t = r.GetProperty("type").GetString();
-            switch (t)
-            {
-                case "frame":
-                    {
-                        var data = r.GetProperty("data").GetString();
-                        if (string.IsNullOrEmpty(data)) break;
-                        var ffmt = r.TryGetProperty("format", out var fe) ? fe.GetString() : "jpeg";
-
-                        Image? img = null;
-                        if (ffmt == "svg")
-                        {
-                            lastSvg = data;
-                            lastFrameWasSvg = true;
-                            svgSrcW = r.GetProperty("width").GetInt32();
-                            svgSrcH = r.GetProperty("height").GetInt32();
-                            svgCacheText = null;                     // force re-render at display size
-                            int fcSvg = ++frameCount;
-                            UI(() =>
-                            {
-                                var old = pb.Image;                  // SVG is drawn by pb.Paint, not pb.Image
-                                pb.Image = null;
-                                old?.Dispose();
-                                pb.Invalidate();
-                                stFrame.Text = $"  frames: {fcSvg} (svg {svgSrcW}x{svgSrcH} · {svgZoom:0.##}x)";
-                            });
-                            if ((DateTime.Now - lastFrameLog).TotalMilliseconds > 1000)
-                            {
-                                lastFrameLog = DateTime.Now;
-                                Log($"<< frame svg {svgSrcW}x{svgSrcH} {data.Length / 1024.0:F1}KB");
-                            }
-                            break;
-                        }
-
-                        else
-                        {
-                            lastFrameWasSvg = false;
-                            using var ms = new MemoryStream(Convert.FromBase64String(data));
-                            img = Image.FromStream(ms);
-                        }
-                        
-
-                        int fc = ++frameCount;
-                        UI(() =>
-                        {
-                            var old = pb.Image;
-                            pb.Image = img;
-                            old?.Dispose();
-                            stFrame.Text = $"  frames: {fc} ({ffmt} {img.Width}x{img.Height})";
-                        });
-                        if ((DateTime.Now - lastFrameLog).TotalMilliseconds > 1000)
-                        {
-                            lastFrameLog = DateTime.Now;
-                            Log($"<< frame {ffmt} {img.Width}x{img.Height} {data.Length / 1024.0:F1}KB");
-                        }
-                        break;
-                    }
-
-                case "hello":
-                case "info":
-                    if (r.TryGetProperty("window", out var we) && we.TryGetProperty("title", out var tt))
-                        UI(() => form.Text = "SocketViewerWinForms — " + tt.GetString());
-                    Log("<< " + (line.Length > 300 ? line.Substring(0, 300) + "..." : line));
-                    break;
-                case "pong":
-                    Log("<< pong");
-                    break;
-                case "bye":
-                    Log("<< bye (window closed)");
-                    if (myConn == connSeq) dead = true;
-                    break;
-            }
+            HandleWindowLine(myConn, line);
         }
     }
-    catch (Exception lineEx)
-    {
-        // one malformed line must not kill the connection
-        Log("[win] bad line skipped: " + lineEx.Message);
-    }
+    catch (Exception ex) { if (running && myConn == connSeq) Log("[win] read error: " + ex.Message); }
+    if (myConn == connSeq) dead = true;
+}
 
-    //catch (Exception ex) { if (running && myConn == connSeq) Log("[win] read error: " + ex.Message); }
+async Task WindowReaderWS(int myConn, ClientWebSocket ws, CancellationToken ct)
+{
+    try
+    {
+        var buf = new byte[64 * 1024];
+        var sb = new StringBuilder();
+        while (running && myConn == connSeq && ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
+        {
+            WebSocketReceiveResult r;
+            try { r = await ws.ReceiveAsync(buf, ct); }
+            catch { break; }
+            if (r.MessageType == WebSocketMessageType.Close) break;
+            if (r.Count > 0) sb.Append(Encoding.UTF8.GetString(buf, 0, r.Count));
+            if (!r.EndOfMessage) continue;
+            var line = sb.ToString();
+            sb.Clear();
+            if (string.IsNullOrEmpty(line)) continue;
+            Interlocked.Add(ref totalIn, line.Length + 1);
+            Interlocked.Add(ref winIn, line.Length + 1);
+            HandleWindowLine(myConn, line);
+        }
+    }
+    catch (Exception ex) { if (running && myConn == connSeq) Log("[win-ws] " + ex.Message); }
     if (myConn == connSeq) dead = true;
 }
 
@@ -602,9 +691,18 @@ void HandleListLine(string line)
     }
 }
 
-void ListWorker()
+void RestartListWorker()
 {
-    while (running)
+    Interlocked.Increment(ref listEpoch);
+    int myEpoch = listEpoch;
+    listThread = new Thread(() => ListWorker(myEpoch)) { IsBackground = true, Name = "window-list" };
+    listThread.Start();
+}
+
+void ListWorker(int myEpoch)
+{
+    if (wsRoot != null) { _ = ListWorkerWS(myEpoch); return; }
+    while (running && myEpoch == Volatile.Read(ref listEpoch))
     {
         Socket? s = null;
         try
@@ -617,7 +715,7 @@ void ListWorker()
             using (var rd = new StreamReader(ns, Encoding.UTF8))
             {
                 string? line;
-                while (running && (line = rd.ReadLine()) != null)
+                while (running && myEpoch == Volatile.Read(ref listEpoch) && (line = rd.ReadLine()) != null)
                     HandleListLine(line);
             }
         }
@@ -627,7 +725,38 @@ void ListWorker()
         }
         UI(() => stConn.Text = "list: disconnected (retrying)");
         try { s?.Close(); } catch { }
-        for (int i = 0; i < 15 && running; i++) Thread.Sleep(100);
+        for (int i = 0; i < 15 && running && myEpoch == Volatile.Read(ref listEpoch); i++) Thread.Sleep(100);
+    }
+}
+
+async Task ListWorkerWS(int myEpoch)
+{
+    while (running && myEpoch == Volatile.Read(ref listEpoch))
+    {
+        try
+        {
+            using var ws = new ClientWebSocket();
+            await ws.ConnectAsync(new Uri(wsRoot.TrimEnd('/') + "/list"), CancellationToken.None);
+            UI(() => stConn.Text = "list: connected (ws)");
+            Log("[list-ws] connected " + wsRoot + "/list");
+            var buf = new byte[32 * 1024];
+            var sb = new StringBuilder();
+            while (running && myEpoch == Volatile.Read(ref listEpoch) && ws.State == WebSocketState.Open)
+            {
+                WebSocketReceiveResult r;
+                try { r = await ws.ReceiveAsync(buf, CancellationToken.None); }
+                catch { break; }
+                if (r.MessageType == WebSocketMessageType.Close) break;
+                if (r.Count > 0) sb.Append(Encoding.UTF8.GetString(buf, 0, r.Count));
+                if (!r.EndOfMessage) continue;
+                var line = sb.ToString();
+                sb.Clear();
+                if (!string.IsNullOrEmpty(line)) HandleListLine(line);
+            }
+        }
+        catch (Exception ex) { if (running) Log("[list-ws] " + ex.GetType().Name + ": " + ex.Message); }
+        UI(() => stConn.Text = "list: disconnected (ws, retrying)");
+        for (int i = 0; i < 15 && running && myEpoch == Volatile.Read(ref listEpoch); i++) Thread.Sleep(100);
     }
 }
 
@@ -691,6 +820,62 @@ chkLive.CheckedChanged += (_, __) =>
     if (curNs == null || dead) return;
     if (chkLive.Checked) SendRaw("{\"type\":\"subscribe\"," + ParamsJson() + "}", true);
     else SendRaw("{\"type\":\"unsubscribe\"}", true);
+};
+
+string? PromptForWsRoot()
+{
+    string? result = null;
+    using var dlg = new Form
+    {
+        Text = "Open WebSocket",
+        FormBorderStyle = FormBorderStyle.FixedDialog,
+        StartPosition = FormStartPosition.CenterParent,
+        ClientSize = new Size(440, 130),
+        MaximizeBox = false,
+        MinimizeBox = false
+    };
+    var lbl = new Label { Text = "WebSocket root URL (empty = use Unix sockets):", Left = 12, Top = 12, Width = 416 };
+    var tb = new TextBox { Left = 12, Top = 34, Width = 416, Text = wsRoot ?? "http://127.0.0.1:5140" };
+    var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Left = 250, Top = 72, Width = 80 };
+    var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Left = 348, Top = 72, Width = 80 };
+    dlg.Controls.AddRange(new Control[] { lbl, tb, ok, cancel });
+    dlg.AcceptButton = ok;
+    dlg.CancelButton = cancel;
+    if (dlg.ShowDialog(form) == DialogResult.OK)
+        result = tb.Text.Trim();
+
+    static string NormalizeWsUrl(string root)
+    {
+        if (string.IsNullOrEmpty(root)) return null;
+        if (root.StartsWith("ws://", StringComparison.OrdinalIgnoreCase) ||
+            root.StartsWith("wss://", StringComparison.OrdinalIgnoreCase))
+            return root.TrimEnd('/');
+        if (root.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return "wss://" + root.Substring(8).TrimEnd('/');
+        if (root.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            return "ws://" + root.Substring(7).TrimEnd('/');
+        return "ws://" + root.TrimEnd('/');
+    }
+
+    return NormalizeWsUrl(result);
+}
+
+btnWs.Click += (_, __) =>
+{
+    var url = PromptForWsRoot();
+    if (url == null) return;
+    wsRoot = string.IsNullOrEmpty(url) ? null : url.TrimEnd('/');
+    Log("[ws] root set to: " + (wsRoot ?? "(null — using Unix sockets)"));
+    RestartListWorker();
+    if (entries.Count > 0)
+    {
+        int i = entries.FindIndex(x => x.handle == cur.handle);
+        if (i >= 0) ConnectTo(entries[i]);
+        else if (listBox.SelectedIndex >= 0 && listBox.SelectedIndex < entries.Count)
+            ConnectTo(entries[listBox.SelectedIndex]);
+        else
+            Reselect(null);
+    }
 };
 
 // ──────────────────────────────── input plumbing ────────────────────────────────
@@ -891,8 +1076,7 @@ form.FormClosed += (_, __) =>
 // ──────────────────────────────── go ────────────────────────────────
 UpdateToolbar();
 Log("SocketViewerWinForms starting, dir = " + Path.GetFullPath(sockDir));
-var listThread = new Thread(ListWorker) { IsBackground = true, Name = "window-list" };
-listThread.Start();
+RestartListWorker();
 
 try { Application.Run(form); }
 catch (Exception ex) { Console.Error.WriteLine("Fatal: " + ex); }
