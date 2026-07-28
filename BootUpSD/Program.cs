@@ -1816,6 +1816,77 @@ picStar.Image = CreateStarBitmap(400, 350);
 // === Event Hookup ===
 btnTran1.Click += (_, __) => { txtMulti.Text = Logger.Log; };
 
+// === Exception Dumping (does NOT catch — exceptions still propagate / terminate) ===
+AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+{
+    var ex = e.ExceptionObject as Exception;
+    Console.WriteLine("===== UNHANDLED EXCEPTION (AppDomain.UnhandledException) =====");
+    Console.WriteLine("IsTerminating    : " + e.IsTerminating);
+    Console.WriteLine("ExceptionObject  : " + (e.ExceptionObject == null ? "(null)" : e.ExceptionObject.ToString()));
+    Console.WriteLine("AppDomain        : " + AppDomain.CurrentDomain.FriendlyName);
+    Console.WriteLine("Timestamp (UTC)  : " + DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.fff"));
+    if (ex != null)
+    {
+        Console.WriteLine("Type             : " + ex.GetType().FullName);
+        Console.WriteLine("Message          : " + ex.Message);
+        Console.WriteLine("Source           : " + (ex.Source ?? "(null)"));
+        Console.WriteLine("TargetSite       : " + (ex.TargetSite == null ? "(null)" : ex.TargetSite.ToString()));
+        Console.WriteLine("HelpLink         : " + (ex.HelpLink ?? "(null)"));
+        Console.WriteLine("HResult          : 0x" + ex.HResult.ToString("X8"));
+        Console.WriteLine("StackTrace:");
+        Console.WriteLine(ex.StackTrace ?? "(no stack trace)");
+        Exception inner = ex.InnerException;
+        int depth = 0;
+        while (inner != null)
+        {
+            depth++;
+            Console.WriteLine("----- Inner Exception #" + depth + " -----");
+            Console.WriteLine("Type             : " + inner.GetType().FullName);
+            Console.WriteLine("Message          : " + inner.Message);
+            Console.WriteLine("Source           : " + (inner.Source ?? "(null)"));
+            Console.WriteLine("StackTrace:");
+            Console.WriteLine(inner.StackTrace ?? "(no stack trace)");
+            inner = inner.InnerException;
+        }
+    }
+    Console.WriteLine("===== END UNHANDLED EXCEPTION =====");
+    Console.Out.Flush();
+};
+
+Application.ThreadException += (s, e) =>
+{
+    var ex = e.Exception;
+    Console.WriteLine("===== UNHANDLED UI THREAD EXCEPTION (Application.ThreadException) =====");
+    Console.WriteLine("Timestamp (UTC)  : " + DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.fff"));
+    Console.WriteLine("Type             : " + ex.GetType().FullName);
+    Console.WriteLine("Message          : " + ex.Message);
+    Console.WriteLine("Source           : " + (ex.Source ?? "(null)"));
+    Console.WriteLine("TargetSite       : " + (ex.TargetSite == null ? "(null)" : ex.TargetSite.ToString()));
+    Console.WriteLine("HelpLink         : " + (ex.HelpLink ?? "(null)"));
+    Console.WriteLine("HResult          : 0x" + ex.HResult.ToString("X8"));
+    Console.WriteLine("StackTrace:");
+    Console.WriteLine(ex.StackTrace ?? "(no stack trace)");
+    Exception inner = ex.InnerException;
+    int depth = 0;
+    while (inner != null)
+    {
+        depth++;
+        Console.WriteLine("----- Inner Exception #" + depth + " -----");
+        Console.WriteLine("Type             : " + inner.GetType().FullName);
+        Console.WriteLine("Message          : " + inner.Message);
+        Console.WriteLine("Source           : " + (inner.Source ?? "(null)"));
+        Console.WriteLine("StackTrace:");
+        Console.WriteLine(inner.StackTrace ?? "(no stack trace)");
+        inner = inner.InnerException;
+    }
+    Console.WriteLine("===== END UNHANDLED UI THREAD EXCEPTION =====");
+    Console.Out.Flush();
+};
+
+// Make UI-thread exceptions propagate to AppDomain.UnhandledException instead of
+// being swallowed by the default WinForms dialog (we still do NOT catch them).
+Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
+
 
 
 // === Run ===

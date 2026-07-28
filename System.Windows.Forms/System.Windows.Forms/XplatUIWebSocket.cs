@@ -22,6 +22,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Threading.Channels;
 
 namespace System.Windows.Forms
 {
@@ -185,6 +186,8 @@ namespace System.Windows.Forms
         }
 
         // Each WS text message ↔ one newline-delimited JSON line on the Unix side.
+        // Each WS text message ↔ one newline-delimited JSON line on the Unix side.
+        // Uses bounded channels for explicit backpressure (max 2 items in flight per direction).
         static async Task ProxyToUnix(WebSocket ws, string unixPath, CancellationToken ct)
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -210,8 +213,11 @@ namespace System.Windows.Forms
             using (var ns = new NetworkStream(sock, true))
             using (var rd = new StreamReader(ns, Encoding.UTF8))
             {
-                // WS → Unix
-                var wsToUnix = Task.Run(async () =>
+                var wsToUnixChan = Channel.CreateBounded<string>(2);
+                var unixToWsChan = Channel.CreateBounded<string>(2);
+
+                // WS → Channel (read from browser)
+                var wsToChan = Task.Run(async () =>
                 {
                     var buf = new byte[16 * 1024];
                     var sb = new StringBuilder();
@@ -221,26 +227,38 @@ namespace System.Windows.Forms
                         {
                             var r = await ws.ReceiveAsync(buf, cts.Token);
                             if (r.MessageType == WebSocketMessageType.Close) break;
-                            if (r.Count > 0)
-                                sb.Append(Encoding.UTF8.GetString(buf, 0, r.Count));
+                            if (r.Count > 0) sb.Append(Encoding.UTF8.GetString(buf, 0, r.Count));
                             if (!r.EndOfMessage) continue;
                             var text = sb.ToString();
                             sb.Clear();
                             if (!string.IsNullOrEmpty(text))
-                            {
-                                var bytes = Encoding.UTF8.GetBytes(text + "\n");
-                                await ns.WriteAsync(bytes, cts.Token);
-                                await ns.FlushAsync(cts.Token);
-                            }
+                                await wsToUnixChan.Writer.WriteAsync(text, cts.Token);
+                        }
+                    }
+                    catch { }
+                    wsToUnixChan.Writer.TryComplete();
+                }, cts.Token);
+
+                // Channel → Unix (write to XplatUISocket)
+                var chanToUnix = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await foreach (var text in wsToUnixChan.Reader.ReadAllAsync(cts.Token))
+                        {
+                            var bytes = Encoding.UTF8.GetBytes(text + "\n");
+                            await ns.WriteAsync(bytes, cts.Token);
+                            await ns.FlushAsync(cts.Token);
                         }
                     }
                     catch { }
                     try { sock.Shutdown(SocketShutdown.Both); } catch { }
                     try { sock.Close(); } catch { }
+                    cts.Cancel();
                 }, cts.Token);
 
-                // Unix → WS (line-buffered)
-                var unixToWs = Task.Run(async () =>
+                // Unix → Channel (read from XplatUISocket)
+                var unixToChan = Task.Run(async () =>
                 {
                     try
                     {
@@ -250,19 +268,37 @@ namespace System.Windows.Forms
                             line = await rd.ReadLineAsync();
                             if (line == null) break;
                             if (line.Length == 0) continue;
+                            await unixToWsChan.Writer.WriteAsync(line, cts.Token);
+                        }
+                    }
+                    catch { }
+                    unixToWsChan.Writer.TryComplete();
+                }, cts.Token);
+
+                // Channel → WS (write to browser)
+                var chanToWs = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await foreach (var line in unixToWsChan.Reader.ReadAllAsync(cts.Token))
+                        {
                             var bytes = Encoding.UTF8.GetBytes(line);
                             await ws.SendAsync(bytes, WebSocketMessageType.Text, true, cts.Token);
                         }
                     }
                     catch { }
-                    cts.Cancel();
                     try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None); } catch { }
+                    cts.Cancel();
                 }, cts.Token);
 
-                await Task.WhenAny(wsToUnix, unixToWs);
+                await Task.WhenAny(wsToChan, chanToUnix, unixToChan, chanToWs);
                 cts.Cancel();
-                try { await wsToUnix; } catch { }
-                try { await unixToWs; } catch { }
+                wsToUnixChan.Writer.TryComplete();
+                unixToWsChan.Writer.TryComplete();
+                try { await wsToChan; } catch { }
+                try { await chanToUnix; } catch { }
+                try { await unixToChan; } catch { }
+                try { await chanToWs; } catch { }
             }
         }
 
