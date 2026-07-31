@@ -496,6 +496,7 @@ namespace System.Windows.Forms
                 comp = new Bitmap(frame.Width, frame.Height);
                 using (var g = Graphics.FromImage(comp))
                 {
+                    g._suppressSvg = true;
                     g.DrawImage(frame, 0, 0);
                     foreach (var p in pops)
                         using (var pf = BuildTopFrame(p))
@@ -1044,6 +1045,7 @@ namespace System.Windows.Forms
             var bmp = new Bitmap(screenW, screenH);
             using (var g = Graphics.FromImage(bmp))
             {
+                g._suppressSvg = true;
                 g.Clear(Color.FromArgb(58, 58, 64));
                 foreach (var w in vis)
                     using (var f = BuildTopFrame(w))
@@ -1388,11 +1390,9 @@ namespace System.Windows.Forms
 
                 using (var g = Graphics.FromImage(topWi.Buffer))
                 {
+                    g._suppressSvg = true;
                     g.SetClip(dest);
 
-                    // Compositor stencil: never blit over a visible child region.
-                    // Do NOT gate this on WS_CLIPCHILDREN — the child's own buffer
-                    // is authoritative for its pixels in every case.
                     var ctrl = Control.FromHandle(hwnd.Handle);
                     if (ctrl != null)
                     {
@@ -1423,6 +1423,7 @@ namespace System.Windows.Forms
             var frame = new Bitmap(Math.Max(1, top.width), Math.Max(1, top.height));
             using (var g = Graphics.FromImage(frame))
             {
+                g._suppressSvg = true;
                 lock (topWi.BufLock)
                     if (topWi.Buffer != null)
                         g.DrawImage(topWi.Buffer, 0, 0);
@@ -1642,6 +1643,7 @@ namespace System.Windows.Forms
                 {
                     if (wi.Buffer != null && area.Width > 0 && area.Height > 0)
                     {
+                        wi.Buffer.ClearSvg();
                         var r = Rectangle.Intersect(area,
                             new Rectangle(0, 0, wi.Buffer.Width, wi.Buffer.Height));
                         if (r.Width > 0 && r.Height > 0)
@@ -1649,7 +1651,10 @@ namespace System.Windows.Forms
                             using (var tmp = new Bitmap(r.Width, r.Height))
                             {
                                 using (var g = Graphics.FromImage(tmp))
+                                {
+                                    g._suppressSvg = true;
                                     g.DrawImage(wi.Buffer, 0, 0, r, GraphicsUnit.Pixel);
+                                }
                                 using (var g2 = Graphics.FromImage(wi.Buffer))
                                 {
                                     g2.SetClip(r);
@@ -1659,9 +1664,8 @@ namespace System.Windows.Forms
                         }
                     }
                 }
-                Composite(wi);   // uses the client-area variant of ScrollWindow's caller rect
+                Composite(wi);
             }
-            // Repaint the scrolled region (exposed strip included) — cheap and correct.
             Invalidate(handle, area, false);
         }
 
