@@ -1099,9 +1099,7 @@ namespace System.Windows.Forms
         static WinInfo RegisterWindow(Hwnd hwnd, CreateParams cp)
         {
             var wi = new WinInfo { Handle = hwnd.Handle, Hwnd = hwnd, Title = cp.Caption ?? "" };
-            bool isTop = (cp.Style & (int)WindowStyles.WS_CHILD) == 0 &&
-             (cp.Parent == IntPtr.Zero ||
-              (cp.Style & (int)WindowStyles.WS_POPUP) != 0);
+            bool isTop = cp.Parent == IntPtr.Zero && (cp.Style & (int)WindowStyles.WS_CHILD) == 0;
 
             wi.IsTop = isTop;
             lock (Sync)
@@ -1616,10 +1614,7 @@ namespace System.Windows.Forms
             foreach (var wi in children)
             {
                 var h = wi.Hwnd;
-                if (h == null || h.zombie) continue;
-                if (((int)h.initial_style & (int)WindowStyles.WS_POPUP) != 0 &&
-                    ((int)h.initial_style & (int)WindowStyles.WS_CHILD) == 0)
-                    continue;
+                if (h == null || h.zombie || !h.visible) continue;
                 var off = OffsetInToplevel(h, false);
                 lock (wi.BufLock)
                     if (wi.Buffer != null)
@@ -1686,18 +1681,8 @@ namespace System.Windows.Forms
                 for (int i = ctrl.Controls.Count - 1; i >= 0; i--)
                 {
                     var c = ctrl.Controls[i];
-                    if (!c.Visible || !c.IsHandleCreated) continue;
+                    if (!c.IsHandleCreated) continue;
                     explicitHandles.Add(c.Handle);
-                }
-            }
-
-            // Add explicit children in z-order (Controls[0] is top, so we iterate backwards)
-            if (ctrl != null)
-            {
-                for (int i = ctrl.Controls.Count - 1; i >= 0; i--)
-                {
-                    var c = ctrl.Controls[i];
-                    if (!c.Visible || !c.IsHandleCreated) continue;
                     WinInfo wi;
                     lock (Sync) windows.TryGetValue(c.Handle, out wi);
                     if (wi != null) list.Add(wi);
@@ -1711,10 +1696,6 @@ namespace System.Windows.Forms
                 {
                     if (kv.Value.Hwnd == null || kv.Value.Hwnd.parent != parent || kv.Value.Hwnd.zombie) continue;
                     if (explicitHandles.Contains(kv.Key)) continue;
-                    // Skip top-level popups (WS_POPUP): they are composited by PopupsFor
-                    if (((int)kv.Value.Hwnd.initial_style & (int)WindowStyles.WS_POPUP) != 0 &&
-                        ((int)kv.Value.Hwnd.initial_style & (int)WindowStyles.WS_CHILD) == 0)
-                        continue;
                     list.Add(kv.Value);
                 }
             }
@@ -1727,10 +1708,7 @@ namespace System.Windows.Forms
             foreach (var wi in children)
             {
                 var h = wi.Hwnd;
-                if (h == null || h.zombie) continue;
-                if (((int)h.initial_style & (int)WindowStyles.WS_POPUP) != 0 &&
-                    ((int)h.initial_style & (int)WindowStyles.WS_CHILD) == 0)
-                    continue;
+                if (h == null || h.zombie || !h.visible) continue;
                 var off = OffsetInToplevel(h, false);
                 lock (wi.BufLock)
                     if (wi.Buffer != null)
@@ -1746,8 +1724,19 @@ namespace System.Windows.Forms
             List<WinInfo> tops;
             lock (Sync) tops = topWindows.Values.ToList();
             foreach (var t in tops)
-                if (t != wi && (IsPopupOf(t, wi) || IsPopupOf(wi, t)))
-                    PushFrames(t);
+            {
+                if (t == wi || t.Hwnd == null || !t.Hwnd.visible || t.Hwnd.zombie) continue;
+                bool related = IsPopupOf(t, wi) || IsPopupOf(wi, t);
+                // Fallback: if wi is a top-level popup, it might be over t.
+                // Push a frame to t so the popup is composited on top of it.
+                if (!related && wi.IsTop && wi.Hwnd != null && wi.Hwnd.visible && !wi.Hwnd.zombie && LooksPopup(wi))
+                {
+                    var a = new Rectangle(wi.Hwnd.x, wi.Hwnd.y, wi.Hwnd.width, wi.Hwnd.height);
+                    var b = new Rectangle(t.Hwnd.x, t.Hwnd.y, t.Hwnd.width, t.Hwnd.height);
+                    related = a.IntersectsWith(b);
+                }
+                if (related) PushFrames(t);
+            }
         }
 
         static void Composite(WinInfo wi)
@@ -2122,9 +2111,21 @@ namespace System.Windows.Forms
             if (visible)
             {
                 AddExpose(hwnd, true, 0, 0, hwnd.width, hwnd.height);
+                UpdateWindow(hwnd.Handle);   // Force paint BEFORE pushing frames so buffer isn't empty
+
                 WinInfo wi;
                 lock (Sync) windows.TryGetValue(handle, out wi);
-                if (wi != null && wi.IsTop) { PushRelated(wi); BroadcastList("window-updated", wi); }
+                if (wi != null)
+                {
+                    if (wi.IsTop) { PushRelated(wi); BroadcastList("window-updated", wi); }
+                    else
+                    {
+                        var top = Toplevel(hwnd);
+                        WinInfo topWi;
+                        lock (Sync) windows.TryGetValue(top.Handle, out topWi);
+                        if (topWi != null) PushRelated(topWi);
+                    }
+                }
             }
             return true;
         }
