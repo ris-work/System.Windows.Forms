@@ -228,7 +228,8 @@ void UpdateToolbar()
 
 void SendMouse(string type, Point p, string button)
 {
-    SendRaw($"{{\"type\":\"{type}\",\"x\":{p.X},\"y\":{p.Y},\"button\":\"{button}\"}}",
+    long t = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    SendRaw($"{{\"type\":\"{type}\",\"x\":{p.X},\"y\":{p.Y},\"button\":\"{button}\",\"t\":{t}}}",
         logIt: type != "mousemove" || (DateTime.Now - lastMoveLog).TotalMilliseconds > 500);
     if (type == "mousemove") lastMoveLog = DateTime.Now;
 }
@@ -911,17 +912,7 @@ string Btn(MouseButtons b) =>
 var stNet = new ToolStripStatusLabel("  ↓ 0 ↑ 0");
 status.Items.AddRange(new ToolStripItem[] { stConn, stWin, stFrame, stNet });
 
-pb.MouseDown += (_, e) => { var p = MapToImage(e.Location); if (p.HasValue) SendMouse("mousedown", p.Value, Btn(e.Button)); };
-pb.MouseUp += (_, e) => { var p = MapToImage(e.Location); if (p.HasValue) SendMouse("mouseup", p.Value, Btn(e.Button)); };
-pb.MouseMove += (_, e) =>
-{
-    var p = MapToImage(e.Location);
-    if (p.HasValue && (DateTime.Now - lastMoveSend).TotalMilliseconds > 15)
-    {
-        lastMoveSend = DateTime.Now;
-        SendMouse("mousemove", p.Value, "left");
-    }
-};
+
 pb.Paint += (_, e) =>
 {
     if (!lastFrameWasSvg || lastSvg == null) return;   // raster: pb.Image draws itself

@@ -486,28 +486,10 @@ namespace System.Windows.Forms
         }
         static byte[] EncodeWindowFrame(WinInfo wi, string fmt, int q, bool gray)
         {
-            Bitmap frame = BuildTopFrame(wi);
-            if (frame == null) return null;
-
-            var pops = PopupsFor(wi);
-            Bitmap src = frame, comp = null;
-            if (pops.Count > 0)
-            {
-                comp = new Bitmap(frame.Width, frame.Height);
-                using (var g = Graphics.FromImage(comp))
-                {
-                    g._suppressSvg = true;
-                    g.DrawImage(frame, 0, 0);
-                    foreach (var p in pops)
-                        using (var pf = BuildTopFrame(p))
-                            if (pf != null)
-                                g.DrawImage(pf, p.Hwnd.x - wi.Hwnd.x, p.Hwnd.y - wi.Hwnd.y);
-                }
-                src = comp;
-            }
+            Bitmap src = BuildCompositedFrame(wi);
+            if (src == null) return null;
             var bytes = EncodeFrame(src, fmt, q, gray);
-            comp?.Dispose();
-            frame.Dispose();
+            src.Dispose();
             return bytes;
         }
 
@@ -641,8 +623,7 @@ namespace System.Windows.Forms
                 {
                     if (w == owner || w.Hwnd == null || !w.Hwnd.visible || w.Hwnd.zombie) continue;
                     bool yes = IsPopupOf(w, owner);
-                    // fallback for ownerless MWF menus/dropdowns: WS_POPUP over the active window
-                    if (!yes && LooksPopup(w) && ActiveWindow == owner.Handle)
+                    if (!yes && LooksPopup(w))
                     {
                         var a = new Rectangle(w.Hwnd.x, w.Hwnd.y, w.Hwnd.width, w.Hwnd.height);
                         var b = new Rectangle(owner.Hwnd.x, owner.Hwnd.y, owner.Hwnd.width, owner.Hwnd.height);
@@ -660,6 +641,7 @@ namespace System.Windows.Forms
         {
             var wi = cc.Win;
             string type = root.TryGetProperty("type", out var te) ? te.GetString() : "";
+            int t = (int)(root.TryGetProperty("t", out var timeEl) ? timeEl.GetInt64() : Environment.TickCount);
             switch (type)
             {
                 case "ping":
@@ -689,10 +671,10 @@ namespace System.Windows.Forms
                     cc.Subscribed = false;
                     break;
 
-                case "mousedown": RouteMouse(wi, root, down: true, up: false); break;
-                case "mouseup": RouteMouse(wi, root, down: false, up: true); break;
-                case "click": RouteMouse(wi, root, down: true, up: true); break;
-                case "mousemove": RouteMouseMove(wi, root); break;
+                case "mousedown": RouteMouse(wi, root, down: true, up: false, t: t); break;
+                case "mouseup": RouteMouse(wi, root, down: false, up: true, t: t); break;
+                case "click": RouteMouse(wi, root, down: true, up: true, t: t); break;
+                case "mousemove": RouteMouseMove(wi, root, t); break;
                 case "wheel": RouteWheel(wi, root); break;
                 case "keydown": RouteKey(root, down: true, up: false); break;
                 case "keyup": RouteKey(root, down: false, up: true); break;
@@ -808,6 +790,51 @@ namespace System.Windows.Forms
             }
         }
 
+        static void RouteMouseMove(WinInfo wi, JsonElement root, int t)
+        {
+            int fx = root.TryGetProperty("x", out var xe) ? xe.GetInt32() : 0;
+            int fy = root.TryGetProperty("y", out var ye) ? ye.GetInt32() : 0;
+            if (!Retarget(ref wi, ref fx, ref fy)) return;
+            var topHwnd = wi.Hwnd;
+            mouse_position = new Point(topHwnd.x + fx, topHwnd.y + fy);
+
+            int cx = fx - topHwnd.ClientRect.X;
+            int cy = fy - topHwnd.ClientRect.Y;
+            if (cx < 0 || cy < 0 || cx >= topHwnd.ClientRect.Width || cy >= topHwnd.ClientRect.Height)
+            {
+                EnqueueMsg(topHwnd.Handle, Msg.WM_NCMOUSEMOVE, (IntPtr)HitTest.HTCLIENT, PackLP(fx, fy));
+                return;
+            }
+
+            IntPtr target;
+            int tx, ty;
+            if (GrabHwnd != IntPtr.Zero)
+            {
+                target = GrabHwnd;
+                var gh = Hwnd.ObjectFromHandle(target);
+                var off = gh != null ? OffsetInToplevel(gh, true) : new Point(0, 0);
+                tx = fx - off.X; ty = fy - off.Y;
+            }
+            else
+            {
+                var topCtrl = Control.FromHandle(topHwnd.Handle);
+                Control hit = topCtrl != null ? HitTestDeep(topCtrl, new Point(cx, cy)) : null;
+                target = hit != null && hit.IsHandleCreated ? hit.Handle : topHwnd.Handle;
+                var hh = Hwnd.ObjectFromHandle(target);
+                var off = hh != null ? OffsetInToplevel(hh, true) : new Point(topHwnd.ClientRect.X, topHwnd.ClientRect.Y);
+                tx = fx - off.X; ty = fy - off.Y;
+            }
+
+            if (target != lastMouseHwnd)
+            {
+                if (lastMouseHwnd != IntPtr.Zero)
+                    EnqueueMsg(lastMouseHwnd, Msg.WM_MOUSELEAVE, IntPtr.Zero, IntPtr.Zero);
+                EnqueueMsg(target, Msg.WM_MOUSE_ENTER, IntPtr.Zero, IntPtr.Zero);
+                lastMouseHwnd = target;
+            }
+            EnqueueMsg(target, Msg.WM_MOUSEMOVE, MouseWParam(), PackLP(tx, ty));
+        }
+
         static void DoButton(WinInfo wi, int fx, int fy, MouseButtons button, bool isDown)
         {
             int sx = wi.IsDesktop ? fx : wi.Hwnd.x + fx;
@@ -883,48 +910,120 @@ namespace System.Windows.Forms
         }
 
 
-        static void RouteMouseMove(WinInfo wi, JsonElement root)
+        static void RouteMouse(WinInfo wi, JsonElement root, bool down, bool up, int t)
         {
-            int fx = root.TryGetProperty("x", out var xe) ? xe.GetInt32() : 0;
-            int fy = root.TryGetProperty("y", out var ye) ? ye.GetInt32() : 0;
-            if (!Retarget(ref wi, ref fx, ref fy)) return;
+            int x = root.TryGetProperty("x", out var xe) ? xe.GetInt32() : 0;
+            int y = root.TryGetProperty("y", out var ye) ? ye.GetInt32() : 0;
+            if (!Retarget(ref wi, ref x, ref y)) return;
+            string btn = root.TryGetProperty("button", out var be) ? be.GetString() : "left";
+            MouseButtons button = btn == "right" ? MouseButtons.Right : btn == "middle" ? MouseButtons.Middle : MouseButtons.Left;
+
+            ActivateInternal(wi.Handle);
+            mouse_position = new Point(wi.Hwnd.x + x, wi.Hwnd.y + y);
+
+            if (down)
+            {
+                mouse_state |= button;
+                DoButton(wi, x, y, button, true, t);
+            }
+            if (up)
+            {
+                DoButton(wi, x, y, button, false, t);
+                mouse_state &= ~button;
+            }
+        }
+
+        static void DoButton(WinInfo wi, int fx, int fy, MouseButtons button, bool isDown, int t)
+        {
+            int sx = wi.IsDesktop ? fx : wi.Hwnd.x + fx;
+            int sy = wi.IsDesktop ? fy : wi.Hwnd.y + fy;
+            mouse_position = new Point(sx, sy);
+
+            ButtonMsgs(button, isDown, out Msg msgClient, out Msg msgNC, out Msg msgDbl);
+
+            // (1) mouse capture: ALL buttons go to the grab window, in ITS space
+            if (GrabHwnd != IntPtr.Zero)
+            {
+                var gh = Hwnd.ObjectFromHandle(GrabHwnd);
+                if (gh != null)
+                {
+                    var gtop = Toplevel(gh);
+                    var goff = OffsetInToplevel(gh, true);          // grab client offset in its toplevel frame
+                    int tx = sx - gtop.x - goff.X;
+                    int ty = sy - gtop.y - goff.Y;
+
+                    Msg finalMsg = msgClient;
+                    if (isDown)
+                    {
+                        int now = t;
+                        if (clickPending && clickHwnd == GrabHwnd && clickMsg == msgClient &&
+                            Math.Abs((clickL.ToInt32() & 0xFFFF) - (tx & 0xFFFF)) <= 4 &&
+                            Math.Abs(((clickL.ToInt32() >> 16) & 0xFFFF) - (ty & 0xFFFF)) <= 4 &&
+                            unchecked((uint)(now - clickTime)) < DoubleClickInterval)
+                        {
+                            finalMsg = msgDbl;
+                            clickPending = false;
+                        }
+                        else
+                        {
+                            clickPending = true;
+                            clickHwnd = GrabHwnd; clickMsg = msgClient; clickL = PackLP(tx, ty); clickTime = now;
+                        }
+                    }
+
+                    EnqueueMsg(GrabHwnd, finalMsg, MouseWParam(), PackLP(tx, ty));
+                    EnqueueMsg(GrabHwnd, Msg.WM_MOUSEMOVE, MouseWParam(), PackLP(tx, ty));
+                    return;
+                }
+                GrabHwnd = IntPtr.Zero;
+            }
+
+            // (2) topmost window under the point (popups beat their owner)
+            var hit = TopmostAt(sx, sy);
+            if (hit == null) return;                                // bare desktop
+            DeliverButton(hit, sx - hit.Hwnd.x, sy - hit.Hwnd.y, msgClient, msgNC, msgDbl, isDown, t);
+        }
+
+        static void DeliverButton(WinInfo wi, int fx, int fy, Msg msgClient, Msg msgNC, Msg msgDbl, bool isDown, int t)
+        {
             var topHwnd = wi.Hwnd;
-            mouse_position = new Point(topHwnd.x + fx, topHwnd.y + fy);
+            ActivateInternal(wi.Handle);
 
             int cx = fx - topHwnd.ClientRect.X;
             int cy = fy - topHwnd.ClientRect.Y;
             if (cx < 0 || cy < 0 || cx >= topHwnd.ClientRect.Width || cy >= topHwnd.ClientRect.Height)
             {
-                EnqueueMsg(topHwnd.Handle, Msg.WM_NCMOUSEMOVE, (IntPtr)HitTest.HTCLIENT, PackLP(fx, fy));
+                EnqueueMsg(topHwnd.Handle, msgNC, (IntPtr)HitTest.HTCLIENT, PackLP(fx, fy));
                 return;
             }
 
-            IntPtr target;
-            int tx, ty;
-            if (GrabHwnd != IntPtr.Zero)
+            var topCtrl = Control.FromHandle(topHwnd.Handle);
+            Control hitCtrl = topCtrl != null ? HitTestDeep(topCtrl, new Point(cx, cy)) : null;
+            IntPtr target = hitCtrl != null && hitCtrl.IsHandleCreated ? hitCtrl.Handle : topHwnd.Handle;
+            var hh = Hwnd.ObjectFromHandle(target);
+            var off = hh != null ? OffsetInToplevel(hh, true) : new Point(topHwnd.ClientRect.X, topHwnd.ClientRect.Y);
+            int tx = fx - off.X, ty = fy - off.Y;
+
+            Msg finalMsg = msgClient;
+            if (isDown)
             {
-                target = GrabHwnd;
-                var gh = Hwnd.ObjectFromHandle(target);
-                var off = gh != null ? OffsetInToplevel(gh, true) : new Point(0, 0);
-                tx = fx - off.X; ty = fy - off.Y;
-            }
-            else
-            {
-                var topCtrl = Control.FromHandle(topHwnd.Handle);
-                Control hit = topCtrl != null ? HitTestDeep(topCtrl, new Point(cx, cy)) : null;
-                target = hit != null && hit.IsHandleCreated ? hit.Handle : topHwnd.Handle;
-                var hh = Hwnd.ObjectFromHandle(target);
-                var off = hh != null ? OffsetInToplevel(hh, true) : new Point(topHwnd.ClientRect.X, topHwnd.ClientRect.Y);
-                tx = fx - off.X; ty = fy - off.Y;
+                int now = t;
+                if (clickPending && clickHwnd == target && clickMsg == msgClient &&
+                    Math.Abs((clickL.ToInt32() & 0xFFFF) - (tx & 0xFFFF)) <= 4 &&
+                    Math.Abs(((clickL.ToInt32() >> 16) & 0xFFFF) - (ty & 0xFFFF)) <= 4 &&
+                    unchecked((uint)(now - clickTime)) < DoubleClickInterval)
+                {
+                    finalMsg = msgDbl;
+                    clickPending = false;
+                }
+                else
+                {
+                    clickPending = true;
+                    clickHwnd = target; clickMsg = msgClient; clickL = PackLP(tx, ty); clickTime = now;
+                }
             }
 
-            if (target != lastMouseHwnd)
-            {
-                if (lastMouseHwnd != IntPtr.Zero)
-                    EnqueueMsg(lastMouseHwnd, Msg.WM_MOUSELEAVE, IntPtr.Zero, IntPtr.Zero);
-                EnqueueMsg(target, Msg.WM_MOUSE_ENTER, IntPtr.Zero, IntPtr.Zero);
-                lastMouseHwnd = target;
-            }
+            EnqueueMsg(target, finalMsg, MouseWParam(), PackLP(tx, ty));
             EnqueueMsg(target, Msg.WM_MOUSEMOVE, MouseWParam(), PackLP(tx, ty));
         }
 
@@ -995,7 +1094,10 @@ namespace System.Windows.Forms
         static WinInfo RegisterWindow(Hwnd hwnd, CreateParams cp)
         {
             var wi = new WinInfo { Handle = hwnd.Handle, Hwnd = hwnd, Title = cp.Caption ?? "" };
-            bool isTop = cp.Parent == IntPtr.Zero && (cp.Style & (int)WindowStyles.WS_CHILD) == 0;
+            bool isTop = (cp.Style & (int)WindowStyles.WS_CHILD) == 0 &&
+             (cp.Parent == IntPtr.Zero ||
+              (cp.Style & (int)WindowStyles.WS_POPUP) != 0);
+
             wi.IsTop = isTop;
             lock (Sync)
             {
@@ -1048,8 +1150,12 @@ namespace System.Windows.Forms
                 g._suppressSvg = true;
                 g.Clear(Color.FromArgb(58, 58, 64));
                 foreach (var w in vis)
-                    using (var f = BuildTopFrame(w))
-                        g.DrawImage(f, w.Hwnd.x, w.Hwnd.y);
+                {
+                    bool ridesAlong = vis.Any(o => o != w && IsPopupOf(w, o));
+                    if (ridesAlong) continue;
+                    using (var f = BuildCompositedFrame(w))
+                        if (f != null) g.DrawImage(f, w.Hwnd.x, w.Hwnd.y);
+                }
             }
             return bmp;
         }
@@ -1411,6 +1517,29 @@ namespace System.Windows.Forms
                         GraphicsUnit.Pixel);
                 }
             }
+        }
+
+        // BuildTopFrame + popups composited on top.  Shared by the desktop
+        // compositor (BuildDesktopFrame) and individual window frame encoding
+        // (EncodeWindowFrame) so popup rendering is consistent.
+        static Bitmap BuildCompositedFrame(WinInfo wi)
+        {
+            Bitmap frame = BuildTopFrame(wi);
+            if (frame == null) return null;
+            var pops = PopupsFor(wi);
+            if (pops.Count == 0) return frame;
+            var comp = new Bitmap(frame.Width, frame.Height);
+            using (var g = Graphics.FromImage(comp))
+            {
+                g._suppressSvg = true;
+                g.DrawImage(frame, 0, 0);
+                foreach (var p in pops)
+                    using (var pf = BuildTopFrame(p))
+                        if (pf != null)
+                            g.DrawImage(pf, p.Hwnd.x - wi.Hwnd.x, p.Hwnd.y - wi.Hwnd.y);
+            }
+            frame.Dispose();
+            return comp;
         }
 
         // ── Frame rendering: full-tree painter's algorithm ──────────────

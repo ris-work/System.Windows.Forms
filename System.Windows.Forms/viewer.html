@@ -255,8 +255,8 @@ function svgPos(e) {
 function pos(e) { return $('#frame').style.display !== 'none' ? imgPos(e) : svgPos(e); }
 function btnName(b) { return b === 2 ? 'right' : b === 1 ? 'middle' : 'left'; }
 
-$('#stage').addEventListener('mousedown', e => { const p = pos(e); if (p) sendWin({type:'mousedown', x:p.x, y:p.y, button:btnName(e.button)}); });
-$('#stage').addEventListener('mouseup',   e => { const p = pos(e); if (p) sendWin({type:'mouseup',   x:p.x, y:p.y, button:btnName(e.button)}); });
+        $('#stage').addEventListener('mousedown', e => { const p = pos(e); if (p) sendWin({ type: 'mousedown', x: p.x, y: p.y, button: btnName(e.button), t: Date.now() }); });
+        $('#stage').addEventListener('mouseup', e => { const p = pos(e); if (p) sendWin({ type: 'mouseup', x: p.x, y: p.y, button: btnName(e.button), t: Date.now() }); });
 $('#stage').addEventListener('mousemove', e => { const p = pos(e); if (p) sendWin({type:'mousemove', x:p.x, y:p.y, button:'left'}); });
 $('#stage').addEventListener('wheel',     e => { const p = pos(e); if (p) { sendWin({type:'wheel', x:p.x, y:p.y, delta:e.deltaY}); e.preventDefault(); } }, {passive:false});
 $('#stage').addEventListener('contextmenu', e => e.preventDefault());
