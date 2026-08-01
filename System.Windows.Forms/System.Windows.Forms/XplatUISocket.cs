@@ -609,8 +609,13 @@ namespace System.Windows.Forms
 
         static bool IsPopupOf(WinInfo popup, WinInfo owner)
         {
-            for (var o = popup.Hwnd?.owner; o != null; o = o.owner)
+            if (popup?.Hwnd == null || owner?.Hwnd == null) return false;
+            // Check explicit owner
+            for (var o = popup.Hwnd.owner; o != null; o = o.owner)
                 if (o.Handle == owner.Handle) return true;
+            // Check parent (MWF sets this for implicit popups like ComboListBox)
+            for (var p = popup.Hwnd.parent; p != null; p = p.parent)
+                if (p.Handle == owner.Handle) return true;
             return false;
         }
 
@@ -1558,10 +1563,10 @@ namespace System.Windows.Forms
                         g.DrawImage(topWi.Buffer, 0, 0);
 
                 var c = Control.FromHandle(top.Handle);
-                if (c != null) RenderChildren(c, g);
+                if (c != null) RenderChildren(topWi, g);
             }
             DrawCaretIfAny(top, frame);
-            return frame;   // caller disposes
+            return frame;
         }
         // A window's own SVG: its buffer (vectors or embedded PNG) + every visible
         // descendant's buffer as nested <svg>. No popup merging here.
@@ -1575,7 +1580,7 @@ namespace System.Windows.Forms
                 if (wi.Buffer != null)
                     sb.Append(Nest(wi.Buffer.AsSvg(), 0, 0, h.width, h.height));
             var c = Control.FromHandle(h.Handle);
-            if (c != null) SvgChildren(c, sb);
+            if (c != null) SvgChildren(wi, sb);
             sb.Append("</svg>");
             return sb.ToString();
         }
@@ -1605,24 +1610,21 @@ namespace System.Windows.Forms
         static string RenderTopFrameSvg(WinInfo wi) =>
             wi.Buffer != null ? wi.Buffer.AsSvg() : null;   // popup chrome; children ride along via NestedSvg below
 
-        static void SvgChildren(Control parent, StringBuilder sb)
+        static void SvgChildren(WinInfo parentWi, StringBuilder sb)
         {
-            for (int i = parent.Controls.Count - 1; i >= 0; i--)
+            var children = GetChildWindows(parentWi);
+            foreach (var wi in children)
             {
-                var c = parent.Controls[i];
-                if (!c.Visible || !c.IsHandleCreated) continue;
-                var h = Hwnd.ObjectFromHandle(c.Handle);
+                var h = wi.Hwnd;
                 if (h == null || h.zombie) continue;
-                WinInfo wi;
-                lock (Sync) windows.TryGetValue(c.Handle, out wi);
-                if (wi != null)
-                {
-                    var off = OffsetInToplevel(h, false);
-                    lock (wi.BufLock)
-                        if (wi.Buffer != null)
-                            sb.Append(Nest(wi.Buffer.AsSvg(), off.X, off.Y, h.width, h.height));
-                }
-                SvgChildren(c, sb);
+                if (((int)h.initial_style & (int)WindowStyles.WS_POPUP) != 0 &&
+                    ((int)h.initial_style & (int)WindowStyles.WS_CHILD) == 0)
+                    continue;
+                var off = OffsetInToplevel(h, false);
+                lock (wi.BufLock)
+                    if (wi.Buffer != null)
+                        sb.Append(Nest(wi.Buffer.AsSvg(), off.X, off.Y, h.width, h.height));
+                SvgChildren(wi, sb);
             }
         }
 
@@ -1668,26 +1670,72 @@ namespace System.Windows.Forms
             }
         }
 
-        static void RenderChildren(Control parent, Graphics g)
+        static WinInfo GetWinInfo(IntPtr handle)
         {
-            // Controls[0] == TOP of z-order, so iterate backwards (bottom first).
-            for (int i = parent.Controls.Count - 1; i >= 0; i--)
-            {
-                var c = parent.Controls[i];
-                if (!c.Visible || !c.IsHandleCreated) continue;      // hidden subtrees never render
-                var h = Hwnd.ObjectFromHandle(c.Handle);
-                if (h == null || h.zombie) continue;
+            lock (Sync) return windows.TryGetValue(handle, out var wi) ? wi : null;
+        }
 
-                WinInfo wi;
-                lock (Sync) windows.TryGetValue(c.Handle, out wi);
-                if (wi != null)
+        static List<WinInfo> GetChildWindows(WinInfo parentWi)
+        {
+            var parent = parentWi.Hwnd;
+            var list = new List<WinInfo>();
+            var ctrl = Control.FromHandle(parent.Handle);
+            var explicitHandles = new HashSet<IntPtr>();
+            if (ctrl != null)
+            {
+                for (int i = ctrl.Controls.Count - 1; i >= 0; i--)
                 {
-                    var off = OffsetInToplevel(h, false);
-                    lock (wi.BufLock)
-                        if (wi.Buffer != null)
-                            g.DrawImage(wi.Buffer, off.X, off.Y);   // SrcOver: alpha just works
+                    var c = ctrl.Controls[i];
+                    if (!c.Visible || !c.IsHandleCreated) continue;
+                    explicitHandles.Add(c.Handle);
                 }
-                RenderChildren(c, g);
+            }
+
+            // Add explicit children in z-order (Controls[0] is top, so we iterate backwards)
+            if (ctrl != null)
+            {
+                for (int i = ctrl.Controls.Count - 1; i >= 0; i--)
+                {
+                    var c = ctrl.Controls[i];
+                    if (!c.Visible || !c.IsHandleCreated) continue;
+                    WinInfo wi;
+                    lock (Sync) windows.TryGetValue(c.Handle, out wi);
+                    if (wi != null) list.Add(wi);
+                }
+            }
+
+            // Add implicit children (whose Hwnd.parent is this Hwnd, but not in Controls)
+            lock (Sync)
+            {
+                foreach (var kv in windows)
+                {
+                    if (kv.Value.Hwnd == null || kv.Value.Hwnd.parent != parent || kv.Value.Hwnd.zombie) continue;
+                    if (explicitHandles.Contains(kv.Key)) continue;
+                    // Skip top-level popups (WS_POPUP): they are composited by PopupsFor
+                    if (((int)kv.Value.Hwnd.initial_style & (int)WindowStyles.WS_POPUP) != 0 &&
+                        ((int)kv.Value.Hwnd.initial_style & (int)WindowStyles.WS_CHILD) == 0)
+                        continue;
+                    list.Add(kv.Value);
+                }
+            }
+            return list;
+        }
+
+        static void RenderChildren(WinInfo parentWi, Graphics g)
+        {
+            var children = GetChildWindows(parentWi);
+            foreach (var wi in children)
+            {
+                var h = wi.Hwnd;
+                if (h == null || h.zombie) continue;
+                if (((int)h.initial_style & (int)WindowStyles.WS_POPUP) != 0 &&
+                    ((int)h.initial_style & (int)WindowStyles.WS_CHILD) == 0)
+                    continue;
+                var off = OffsetInToplevel(h, false);
+                lock (wi.BufLock)
+                    if (wi.Buffer != null)
+                        g.DrawImage(wi.Buffer, off.X, off.Y);
+                RenderChildren(wi, g);
             }
         }
 
