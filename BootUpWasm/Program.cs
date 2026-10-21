@@ -5,7 +5,9 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices.JavaScript;
 using System.Windows.Forms;
+using System.Runtime.InteropServices.JavaScript;
 
 // ==========================================
 // 1. System.Drawing Test: Output drawing.png
@@ -1932,4 +1934,19 @@ Bitmap CreateStarBitmap(int width, int height)
         }
     }
     return bmp;
+}
+
+
+// BootUpWasm — BootUpJs.cs
+
+
+public static partial class BootUpJs
+{
+    /// Forces WetAfunix to load so getAssemblyExports("WetAfunix") can see WetJs.
+    [JSExport]
+    public static void LoadWet() => _ = typeof(Wystem.Wet.WetSocket);
+
+    /// Drives the WinForms message loop from the browser event loop.
+    //[JSExport]
+    //public static void Pump() => System.Windows.Forms.XplatUISocketWasm.PumpMessages();
 }

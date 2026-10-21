@@ -75,7 +75,7 @@
 
 	</ItemGroup>
 	<ItemGroup Condition="'$(XplatBrowserWasm)' != 'true'">
-		<ProjectReference Include="..\Mono.WebBrowser\Mono.WebBrowser.csproj"  PrivateAssets="all"  />
+		<ProjectReference Include="..\Mono.WebBrowser\Mono.WebBrowser.csproj"  PrivateAssets="all" Private="false"  />
 		<FrameworkReference Include="Microsoft.AspNetCore.App" PrivateAssets="all" />
 		<PackageReference Include="Microsoft.AspNetCore.Mvc.Razor.RuntimeCompilation" Version="10.0.5"  PrivateAssets="all" />
 		<PackageReference Include="SQLitePCLRaw.provider.dynamic_cdecl" Version="3.0.2" />

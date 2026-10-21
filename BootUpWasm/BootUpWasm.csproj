@@ -5,7 +5,7 @@
 		<AssemblyName>BootUpWasm</AssemblyName>
 		<RootNamespace>BootUpWasm</RootNamespace>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-		<!--<OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>-->
+		<OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 
