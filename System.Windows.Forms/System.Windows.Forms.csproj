@@ -59,12 +59,10 @@
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 			<PrivateAssets>all</PrivateAssets>
 		</PackageReference>
-		<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.5" />
+
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.5" />
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.5" />
-		<PackageReference Include="SQLitePCLRaw.provider.dynamic_cdecl" Version="3.0.2" />
-		<PackageReference Include="SQLitePCLRaw.provider.e_sqlite3" Version="3.0.2" />
-		<PackageReference Include="SQLitePCLRaw.provider.sqlite3" Version="3.0.2" />
+
 		<PackageReference Include="Tomlyn" Version="2.3.0" />
 		
 		<!-- ASP.NET Core / Kestrel surface: desktop only. -->
@@ -80,6 +78,10 @@
 		<ProjectReference Include="..\Mono.WebBrowser\Mono.WebBrowser.csproj"  PrivateAssets="all"  />
 		<FrameworkReference Include="Microsoft.AspNetCore.App" PrivateAssets="all" />
 		<PackageReference Include="Microsoft.AspNetCore.Mvc.Razor.RuntimeCompilation" Version="10.0.5"  PrivateAssets="all" />
+		<PackageReference Include="SQLitePCLRaw.provider.dynamic_cdecl" Version="3.0.2" />
+		<PackageReference Include="SQLitePCLRaw.provider.e_sqlite3" Version="3.0.2" />
+		<PackageReference Include="SQLitePCLRaw.provider.sqlite3" Version="3.0.2" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.5" />
 	</ItemGroup>
 
   <ItemGroup>
