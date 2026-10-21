@@ -1,0 +1,18 @@
+{
+  "profiles": {
+    "bootup-wasm": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "launchUrl": "viewer.html",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "XPLAT_UI_SOCKET_DIR": "/ui",
+        "XPLAT_UI_SOCKET_SCREEN": "1920x1080",
+        "XPLAT_UI_SOCKET_LOG": "1",
+        "BACKGROUND": "false"
+      },
+      "applicationUrl": "https://localhost:7234;http://localhost:5174",
+      "inspectUri": "{wsProtocol}://{url.hostname}:{url.port}/_framework/debug/ws-proxy?browser={browserInspectUri}"
+    }
+  }
+}

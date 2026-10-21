@@ -1,0 +1,50 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+
+	<PropertyGroup>
+		<TargetFramework>net11.0</TargetFramework>
+		<AssemblyName>BootUpWasm</AssemblyName>
+		<RootNamespace>BootUpWasm</RootNamespace>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+
+		<!-- emits the manifest ManifestEmbeddedFileProvider reads -->
+		<GenerateEmbeddedFilesManifest>true</GenerateEmbeddedFilesManifest>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<StaticWebAssetFingerprintPattern Include="JS" Pattern="*.js" Expression="#[.{fingerprint}]!" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- nothing is embedded unless this is here; viewer.html is picked up by *.html -->
+		<EmbeddedResource Include="*.cs;*.html;*.csproj;Properties\**" />
+		<EmbeddedResource Include="assets\**" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.FileProviders.Embedded" Version="11.0.0-rc.2.*" />
+		<!-- only if your System.Drawing project does not bring Skia's wasm assets transitively -->
+		<!-- <PackageReference Include="SkiaSharp.NativeAssets.WebAssembly" Version="…" /> -->
+	</ItemGroup>
+
+	<!-- identical to BootUpSD: keep the framework's System.Drawing.* out of the way -->
+	<Target Name="AliasFrameworkDrawingReferences" AfterTargets="ResolveAssemblyReferences" BeforeTargets="CoreCompile">
+		<ItemGroup>
+			<ReferencePath Condition="'%(FileName)' == 'System.Drawing.Primitives'">
+				<Aliases>sysdrawing</Aliases>
+			</ReferencePath>
+			<ReferencePath Condition="'%(FileName)' == 'System.Drawing.Common'">
+				<Aliases>sysdrawingcommon</Aliases>
+			</ReferencePath>
+		</ItemGroup>
+	</Target>
+
+	<ItemGroup>
+		<ProjectReference Include="..\System.Drawing.Design\System.Drawing.Design.csproj" />
+		<ProjectReference Include="..\..\..\..\invnew\System.Drawing\System.Drawing.csproj" />
+		<ProjectReference Include="..\System.Windows.Forms\System.Windows.Forms.csproj" />
+	</ItemGroup>
+
+</Project>
