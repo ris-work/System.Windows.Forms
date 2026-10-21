@@ -11,6 +11,8 @@
                                   '$(TargetPlatformIdentifier)' == 'browser')">true</XplatBrowserWasm>
 		<XplatBrowserWasm Condition="'$(XplatBrowserWasm)' == ''">false</XplatBrowserWasm>
 	</PropertyGroup>
+	
+	
 
 	<PropertyGroup Condition="'$(XplatBrowserWasm)' == 'true'">
 		<!-- so shared sources can #if out anything Kestrel/sockets/threading -->
@@ -78,10 +80,10 @@
 		<ProjectReference Include="..\Mono.WebBrowser\Mono.WebBrowser.csproj"  PrivateAssets="all" Private="false"  />
 		<FrameworkReference Include="Microsoft.AspNetCore.App" PrivateAssets="all" />
 		<PackageReference Include="Microsoft.AspNetCore.Mvc.Razor.RuntimeCompilation" Version="10.0.5"  PrivateAssets="all" />
-		<PackageReference Include="SQLitePCLRaw.provider.dynamic_cdecl" Version="3.0.2" />
-		<PackageReference Include="SQLitePCLRaw.provider.e_sqlite3" Version="3.0.2" />
-		<PackageReference Include="SQLitePCLRaw.provider.sqlite3" Version="3.0.2" />
-		<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.5" />
+		<PackageReference Include="SQLitePCLRaw.provider.dynamic_cdecl" Version="3.0.2"  PrivateAssets="all"  />
+		<PackageReference Include="SQLitePCLRaw.provider.e_sqlite3" Version="3.0.2"  PrivateAssets="all"  />
+		<PackageReference Include="SQLitePCLRaw.provider.sqlite3" Version="3.0.2"  PrivateAssets="all"  />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.5"  PrivateAssets="all"  />
 	</ItemGroup>
 
   <ItemGroup>

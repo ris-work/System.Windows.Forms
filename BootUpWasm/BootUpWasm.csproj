@@ -47,4 +47,14 @@
 		<ProjectReference Include="..\System.Windows.Forms\System.Windows.Forms.csproj" />
 	</ItemGroup>
 
+	<PropertyGroup>
+		<!--<EmccExtraLDFlags>$(EmccExtraLDFlags) -sSUPPORT_LONGJMP=emscripten</EmccExtraLDFlags>-->
+		<EmccFlags>-sSUPPORT_LONGJMP=wasm</EmccFlags>
+	</PropertyGroup>
+
+	<ItemGroup>
+		
+		<!--<NativeFileReference Include="wasm_sjlj_shim.cpp" />-->
+	</ItemGroup>
+
 </Project>
