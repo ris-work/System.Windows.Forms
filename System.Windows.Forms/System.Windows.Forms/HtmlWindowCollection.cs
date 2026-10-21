@@ -23,6 +23,8 @@
 //	Andreia Gaita (avidigal@novell.com)
 //
 
+#if !BROWSER_WASM
+
 
 using System;
 using System.Collections;
@@ -85,3 +87,6 @@ namespace System.Windows.Forms
 		}
 	}
 }
+
+
+#endif

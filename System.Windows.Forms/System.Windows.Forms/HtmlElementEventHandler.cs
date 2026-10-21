@@ -22,8 +22,12 @@
 // Authors:
 //	Andreia Gaita	avidigal@novell.com
 //
+#if !BROWSER_WASM
+
 
 namespace System.Windows.Forms
 {
 	public delegate void HtmlElementEventHandler (object sender, HtmlElementEventArgs e);
 }
+
+#endif

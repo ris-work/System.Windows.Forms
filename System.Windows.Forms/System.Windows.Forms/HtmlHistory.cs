@@ -23,6 +23,8 @@
 //	Andreia Gaita (avidigal@novell.com)
 //
 
+#if !BROWSER_WASM
+
 
 using System;
 using Mono.WebBrowser.DOM;
@@ -97,3 +99,6 @@ namespace System.Windows.Forms
 		}
 	}
 }
+
+
+#endif

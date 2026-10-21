@@ -8,6 +8,8 @@
 //   XPLAT_UI_WS_UNIX      Unix socket path for the WS server (wins over TCP if set)
 //   XPLAT_UI_WS_HTML      path to a custom viewer HTML (optional; embedded default otherwise)
 
+#if !BROWSER_WASM
+
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -353,20 +355,20 @@ static string DefaultHtml() => @"<!doctype html>
 <html><head><meta charset='utf-8'>
 <title>XplatUI WebSocket Viewer</title>
 <style>
-body { margin:0; background:#1e1e22; color:#ddd; font:13px sans-serif; display:flex; height:100vh; }
-#sidebar { width:240px; background:#26262c; padding:8px; overflow:auto; box-sizing:border-box; }
-#sidebar h2 { font-size:14px; margin:0 0 8px; }
-#sidebar div.win { padding:6px; margin:2px 0; cursor:pointer; border-radius:4px; }
-#sidebar div.win:hover { background:#3a3a44; }
-#sidebar div.win.active { background:#4a6fa5; color:#fff; }
-#sidebar label { display:block; margin:6px 0; }
-#stage { flex:1; display:flex; align-items:center; justify-content:center; overflow:hidden; position:relative; background:#18181c; }
-#frame { max-width:100%; max-height:100%; image-rendering:pixelated; }
-#svgwrap { width:100%; height:100%; }
-#svgwrap svg { width:100%; height:100%; }
-#bar { position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.5); padding:6px 10px; border-radius:6px; font-family:monospace; font-size:11px; }
-#log { position:absolute; bottom:0; left:0; right:0; max-height:120px; overflow:auto; background:rgba(0,0,0,0.7); padding:6px; font:11px monospace; display:none; color:#9fd0ff; }
-</style></head><body>
+body { margin:0; background:#1e1e22; color:#ddd; font:13px sans-serif; display:flex; height:100vh; }"+
+ "# sidebar { width:240px; background:#26262c; padding:8px; overflow:auto; box-sizing:border-box; }"+
+ "# sidebar h2 { font-size:14px; margin:0 0 8px; }"+
+ "# sidebar div.win { padding:6px; margin:2px 0; cursor:pointer; border-radius:4px; }"+
+ "# sidebar div.win:hover { background:#3a3a44; }"+
+ "# sidebar div.win.active { background:#4a6fa5; color:#fff; }"+
+ "# sidebar label { display:block; margin:6px 0; }"+
+ "# stage { flex:1; display:flex; align-items:center; justify-content:center; overflow:hidden; position:relative; background:#18181c; }"+
+ "# frame { max-width:100%; max-height:100%; image-rendering:pixelated; }"+
+ "# svgwrap { width:100%; height:100%; }"+
+ "# svgwrap svg { width:100%; height:100%; }"+
+ "# bar { position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.5); padding:6px 10px; border-radius:6px; font-family:monospace; font-size:11px; }"+
+ "# log { position:absolute; bottom:0; left:0; right:0; max-height:120px; overflow:auto; background:rgba(0,0,0,0.7); padding:6px; font:11px monospace; display:none; color:#9fd0ff; }"+
+@"</style></head><body>
 <div id='sidebar'>
   <h2>Windows</h2>
   <div id='winlist'></div>
@@ -564,3 +566,5 @@ connectList();
 </script></body></html>";
     }
 }
+
+#endif

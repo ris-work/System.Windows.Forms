@@ -106,8 +106,10 @@ namespace System.Windows.Forms {
                 // the driver init is delayed).
                 if (useWebSocket)
                 {
+#if !BROWSER_WASM
                     XplatUIWebSocket.EnsureStarted();
-                }
+#endif
+				}
             }
 
             else if (RunningOnUnix) {

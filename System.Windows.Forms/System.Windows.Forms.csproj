@@ -1,4 +1,23 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+	
+
+	<!-- ══════════ BROWSER-WASM GATE ══════════
+       Set explicitly by the consumer (AdditionalProperties / -p: / Directory.Build.props),
+       otherwise auto-detect a browser-wasm build. -->
+	<PropertyGroup>
+		<XplatBrowserWasm Condition="'$(XplatBrowserWasm)' == '' and
+                                 ('$(RuntimeIdentifier)' == 'browser-wasm' or
+                                  $(RuntimeIdentifier.StartsWith('browser-')) or
+                                  '$(TargetPlatformIdentifier)' == 'browser')">true</XplatBrowserWasm>
+		<XplatBrowserWasm Condition="'$(XplatBrowserWasm)' == ''">false</XplatBrowserWasm>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(XplatBrowserWasm)' == 'true'">
+		<!-- so shared sources can #if out anything Kestrel/sockets/threading -->
+		<DefineConstants>$(DefineConstants);BROWSER_WASM</DefineConstants>
+		<!-- never produce the desktop nupkg from a wasm build -->
+		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+	</PropertyGroup>
 
   <PropertyGroup>
     <TargetFramework>net11.0</TargetFramework>
@@ -35,7 +54,7 @@
   </PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.AspNetCore.Mvc.Razor.RuntimeCompilation" Version="10.0.5" />
+		
 		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.5">
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 			<PrivateAssets>all</PrivateAssets>
@@ -47,13 +66,20 @@
 		<PackageReference Include="SQLitePCLRaw.provider.e_sqlite3" Version="3.0.2" />
 		<PackageReference Include="SQLitePCLRaw.provider.sqlite3" Version="3.0.2" />
 		<PackageReference Include="Tomlyn" Version="2.3.0" />
-		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+		
+		<!-- ASP.NET Core / Kestrel surface: desktop only. -->
+		
 		<!--
 		<FrameworkReference Include="Microsoft.NET.Sdk.Web" />
 		<FrameworkReference Include="Microsoft.NET.Sdk.Razor" />
 		-->
 
 
+	</ItemGroup>
+	<ItemGroup Condition="'$(XplatBrowserWasm)' != 'true'">
+		<ProjectReference Include="..\Mono.WebBrowser\Mono.WebBrowser.csproj"  PrivateAssets="all"  />
+		<FrameworkReference Include="Microsoft.AspNetCore.App" PrivateAssets="all" />
+		<PackageReference Include="Microsoft.AspNetCore.Mvc.Razor.RuntimeCompilation" Version="10.0.5"  PrivateAssets="all" />
 	</ItemGroup>
 
   <ItemGroup>
@@ -349,9 +375,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Mono.WebBrowser\Mono.WebBrowser.csproj" />
+    
     <ProjectReference Include="..\System.Drawing.Design\System.Drawing.Design.csproj" />
     <ProjectReference Include="..\..\..\..\invnew\System.Drawing\System.Drawing.csproj" />
+    <ProjectReference Include="..\..\wet-afunix\wet-afunix\wet-afunix.csproj" />
   </ItemGroup>
 	
 	

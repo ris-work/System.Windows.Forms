@@ -22,6 +22,7 @@
 // Authors:
 //	Andreia Gaita	<avidigal@novell.com>
 
+#if !BROWSER_WASM
 
 using System;
 using System.Drawing;
@@ -700,3 +701,6 @@ namespace System.Windows.Forms
 		#endregion
 	}
 }
+
+
+#endif

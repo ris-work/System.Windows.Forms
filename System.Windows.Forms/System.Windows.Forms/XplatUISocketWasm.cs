@@ -28,6 +28,8 @@
 // arrive from JS callbacks). The WinForms message queue is unchanged; see the
 // note on GetMessage/PumpMessages at the bottom of the message-loop section.
 
+#if BROWSER_WASM
+
 using SkiaSharp;
 using System;
 using System.Collections;
@@ -191,6 +193,7 @@ namespace System.Windows.Forms
             public int Quality = 80;
             public bool Gray;
             public int MinFrameMs;              // 0 = uncapped (fps throttle)
+            public int LastFrameTick;           // Environment.TickCount of the last frame we wrote
             public volatile bool Dead;
 
             public readonly object WLock = new object();
@@ -654,10 +657,12 @@ namespace System.Windows.Forms
             if (wi == null || cc.Dead) return;
 
             // live throttle (optional)
+            // live throttle (optional)
+            // live throttle (optional): pace the writer instead of dropping frames
             if (cc.MinFrameMs > 0)
             {
-                var now = Environment.TickCount;
-                var due = cc.MinFrameMs - unchecked((uint)(now - cc.lastFrameTick)).Equals(null!) ? 0 : 0; // (no-op guard)
+                int wait = cc.MinFrameMs - unchecked(Environment.TickCount - cc.LastFrameTick);
+                if (wait > 0) await Task.Delay(wait).ConfigureAwait(false);
             }
 
             // SVG requested but server-side SVG is off: negotiate down to PNG
@@ -700,6 +705,8 @@ namespace System.Windows.Forms
             await cc.WriteRawAsync("{\"type\":\"frame\",\"format\":\"" + cc.Format +
                                    "\",\"width\":" + w + ",\"height\":" + h +
                                    ",\"data\":\"" + (cc.Format == "svg" ? JEsc(payload) : payload) + "\"}").ConfigureAwait(false);
+
+            cc.LastFrameTick = Environment.TickCount;
             cc.FramesOut++;
         }
 
@@ -2612,3 +2619,5 @@ namespace System.Windows.Forms
         internal override event EventHandler Idle;
     }
 }
+
+#endif

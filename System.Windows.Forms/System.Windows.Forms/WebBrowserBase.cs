@@ -21,6 +21,7 @@
 //
 // Authors:
 //	Andreia Gaita	<avidigal@novell.com>
+#if !BROWSER_WASM
 
 #undef debug
 
@@ -753,3 +754,6 @@ namespace System.Windows.Forms
 		#endregion
 	}
 }
+
+
+#endif
