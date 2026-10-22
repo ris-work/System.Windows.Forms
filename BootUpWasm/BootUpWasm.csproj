@@ -8,9 +8,12 @@
 		<OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
+		<EnableDiagnostics>true</EnableDiagnostics>
 
 		<!-- emits the manifest ManifestEmbeddedFileProvider reads -->
-		<GenerateEmbeddedFilesManifest>true</GenerateEmbeddedFilesManifest>
+		<!--<GenerateEmbeddedFilesManifest>true</GenerateEmbeddedFilesManifest>-->
+
+		<!--<WasmEnableThreads>true</WasmEnableThreads>-->
 	</PropertyGroup>
 
 	<PropertyGroup>
@@ -135,10 +138,16 @@
 
 	<PropertyGroup>
 		<!--<EmccExtraLDFlags>$(EmccExtraLDFlags) -sSUPPORT_LONGJMP=emscripten</EmccExtraLDFlags>-->
-		<EmccFlags>-sSUPPORT_LONGJMP=wasm</EmccFlags>
+		<!--<EmccFlags>-sSUPPORT_LONGJMP=wasm</EmccFlags>-->
+
+			<!--<EmccExtraLDFlags>$(EmccExtraLDFlags) -pthread</EmccExtraLDFlags>
+			<EmccExtraLDFlags>$(EmccExtraLDFlags) -sINCOMING_MODULE_JS_API=ENVIRONMENT,arguments,canvas,dynamicLibraries,elementPointerLock,instantiateWasm,locateFile,monitorRunDependencies,noExitRuntime,noInitialRun,onAbort,onExit,onRuntimeInitialized,postRun,preInit,preRun,print,printErr,setStatus,statusMessage,stderr,stdin,stdout,thisProgram,wasm,websocket,wasmMemory,mainScriptUrlOrBlob</EmccExtraLDFlags>
+		<EmccExtraLDFlags>$(EmccExtraLDFlags) -sEXPORTED_FUNCTIONS+=_emscripten_stack_get_base,_emscripten_stack_get_end,_emscripten_stack_get_free</EmccExtraLDFlags>-->
+
 	</PropertyGroup>
 
 	<ItemGroup>
+		
 		
 		<!--<NativeFileReference Include="wasm_sjlj_shim.cpp" />-->
 	</ItemGroup>

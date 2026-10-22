@@ -53,6 +53,7 @@
 	  <Company>SR Medicals, Trincomalee</Company>
 	  <RepositoryUrl>https://vz.al/repos/sd</RepositoryUrl>
 	  <RepositoryType>fossil</RepositoryType>
+	  <!--<WasmEnableThreads>true</WasmEnableThreads>-->
   </PropertyGroup>
 
 	<ItemGroup>
