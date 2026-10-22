@@ -17,6 +17,38 @@
 		<OurDrawingVersion>30.0.0.0</OurDrawingVersion>
 	</PropertyGroup>
 
+	<!-- ══════════ BROWSER-WASM GATE ══════════
+       Set explicitly by the consumer (AdditionalProperties / -p: / Directory.Build.props),
+       otherwise auto-detect a browser-wasm build. -->
+	<PropertyGroup>
+		<XplatBrowserWasm Condition="'$(XplatBrowserWasm)' == '' and
+                                 ('$(RuntimeIdentifier)' == 'browser-wasm' or
+                                  $(RuntimeIdentifier.StartsWith('browser-')) or
+                                  '$(TargetPlatformIdentifier)' == 'browser')">true</XplatBrowserWasm>
+		<XplatBrowserWasm Condition="'$(XplatBrowserWasm)' == ''">false</XplatBrowserWasm>
+	</PropertyGroup>
+
+
+
+	<PropertyGroup Condition="'$(XplatBrowserWasm)' == 'true'">
+		<!-- so shared sources can #if out anything Kestrel/sockets/threading -->
+		<DefineConstants>$(DefineConstants);BROWSER_WASM</DefineConstants>
+		<!-- never produce the desktop nupkg from a wasm build -->
+		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+	</PropertyGroup>
+
+	<Target Name="EvictPackSystemDrawing" AfterTargets="ResolveAssemblyReferences"
+		BeforeTargets="WasmBuildProduce;_BrowserWasmWriteRspForLinking">
+		<ItemGroup>
+			<WasmAssembliesToBundle Remove="@(WasmAssembliesToBundle)"
+			  Condition="'%(FileName)' == 'System.Drawing' and $([System.String]::Copy('%(FullPath)').Contains('dotnet\packs'))" />
+			<_WasmAssembliesToBundle Remove="@(_WasmAssembliesToBundle)"
+			  Condition="'%(FileName)' == 'System.Drawing' and $([System.String]::Copy('%(FullPath)').Contains('dotnet\packs'))" />
+			<ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)"
+			  Condition="'%(FileName)' == 'System.Drawing' and $([System.String]::Copy('%(FullPath)').Contains('dotnet\packs'))" />
+		</ItemGroup>
+	</Target>
+
 	<Target Name="AuditAndDropSystemDrawing" AfterTargets="ResolveAssemblyReferences">
 
 		<!-- audit: paste these lines if anything is still wrong -->

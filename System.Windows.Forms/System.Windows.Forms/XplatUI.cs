@@ -95,8 +95,21 @@ namespace System.Windows.Forms {
 
             var useSocket = Environment.GetEnvironmentVariable("MONO_MWF_USE_SOCKET")?.ToLowerInvariant() == "yes";
             var useWebSocket = Environment.GetEnvironmentVariable("MONO_MWF_USE_WEBSOCKET")?.ToLowerInvariant() == "yes";
+            System.Console.WriteLine($"OS: Browser: {OperatingSystem.IsBrowser()}, WASI: {OperatingSystem.IsWasi()}");
 
-            if (useSocket || useWebSocket)
+#if BROWSER_WASM || TRUE
+System.Console.WriteLine("XplatUI WASM driver is built....");
+            if (OperatingSystem.IsBrowser())
+			{
+				System.Console.WriteLine("XplatUI WASM driver is initializing....");
+				driver = XplatUISocketWasm.GetInstance();
+			}
+#else
+            if (OperatingSystem.IsBrowser()) System.Console.WriteLine("XplatUI WASM driver not called but we are in a browser");
+            if (false){}
+#endif
+
+			else if (useSocket || useWebSocket)
             {
                 driver = XplatUISocket.GetInstance();
 
@@ -107,6 +120,7 @@ namespace System.Windows.Forms {
                 if (useWebSocket)
                 {
 #if !BROWSER_WASM
+                    
                     XplatUIWebSocket.EnsureStarted();
 #endif
 				}
@@ -147,6 +161,10 @@ namespace System.Windows.Forms {
 
 			driver.InitializeDriver ();
 
+#if BROWSER_WASM || TRUE
+System.Console.WriteLine("XplatUI WASM driver initialized");
+#endif
+
 			// Initialize things that need to be done after the driver is ready
 			DataFormats.GetFormat (0);
 
@@ -154,12 +172,18 @@ namespace System.Windows.Forms {
 			// This allows UIA to initialize a11y support for MWF
 			// before the main loop begins.
 			Application.FirePreRun ();
-		}
-		#endregion	// Constructor & Destructor
 
-		#region Public Static Properties
 
-		public static bool RunningOnUnix {
+#if BROWSER_WASM || TRUE
+            System.Console.WriteLine("XplatUI constructor exiting");
+#endif
+
+        }
+        #endregion  // Constructor & Destructor                             
+
+        #region Public Static Properties
+
+        public static bool RunningOnUnix {
 			get {
 				int p = (int) Environment.OSVersion.Platform;
 				
@@ -478,7 +502,7 @@ namespace System.Windows.Forms {
 				return driver.ToolWindowCaptionButtonSize;
 			}
 		}
-		#endregion	// Public Static Properties
+		#endregion  // Public Static Properties                             
 
 		#region Events
 
@@ -491,7 +515,7 @@ namespace System.Windows.Forms {
 			}
 		}
 
-		#endregion	// Events
+		#endregion  // Events           
 
 		#region Public Static Methods
 		internal static void Activate (IntPtr handle)
@@ -531,31 +555,31 @@ namespace System.Windows.Forms {
 
 		internal static IntPtr CreateWindow (CreateParams cp)
 		{
-			#if DriverDebug || DriverDebugCreate
+#if DriverDebug || DriverDebugCreate
 				IntPtr handle;
 
 				handle = driver.CreateWindow (cp);
 
 				Console.WriteLine ("CreateWindow (): Called, returning {0:X}", handle.ToInt32 ());
 				return handle;
-			#else
+#else
 				return driver.CreateWindow (cp);
-			#endif
+#endif
 		}
 
 		internal static IntPtr CreateWindow (IntPtr Parent, int X, int Y, int Width, int Height)
 		{
-			#if DriverDebug || DriverDebugCreate
+#if DriverDebug || DriverDebugCreate
 				Console.WriteLine ("CreateWindow (): Called");
-			#endif
+#endif
 			return driver.CreateWindow (Parent, X, Y, Width, Height);
 		}
 
 		internal static void ClientToScreen (IntPtr handle, ref int x, ref int y)
 		{
-			#if DriverDebug
+#if DriverDebug
 				Console.WriteLine ("ClientToScreen ({0}, {1}, {2}): Called", Window (handle), x, y);
-			#endif
+#endif
 			driver.ClientToScreen (handle, ref x, ref y);
 		}
 
@@ -811,25 +835,25 @@ namespace System.Windows.Forms {
 
 		internal static bool IsEnabled (IntPtr handle)
 		{
-			#if DriverDebug || DriverDebugState
+#if DriverDebug || DriverDebugState
 				Console.WriteLine ("IsEnabled ({0}): Called, Result={1}", Window (handle), driver.IsEnabled (handle));
-			#endif
+#endif
 			return driver.IsEnabled (handle);
 		}
 
 		internal static bool IsKeyLocked (VirtualKeys key)
 		{
-			#if DriverDebug || DriverDebugState
+#if DriverDebug || DriverDebugState
 				Console.WriteLine ("IsKeyLocked ({0}): Called, Result={1}", key, driver.IsKeyLocked (key));
-			#endif
+#endif
 			return driver.IsKeyLocked (key);
 		}
 
 		internal static bool IsVisible (IntPtr handle)
 		{
-			#if DriverDebug || DriverDebugState
+#if DriverDebug || DriverDebugState
 				Console.WriteLine ("IsVisible ({0}): Called, Result={1}", Window (handle), driver.IsVisible (handle));
-			#endif
+#endif
 			return driver.IsVisible (handle);
 		}
 
@@ -853,17 +877,17 @@ namespace System.Windows.Forms {
 
 		internal static void PaintEventEnd (ref Message msg, IntPtr handle, bool client, PaintEventArgs pevent)
 		{
-			#if DriverDebug || DriverDebugPaint
+#if DriverDebug || DriverDebugPaint
 				Console.WriteLine ("PaintEventEnd ({0}, {1}, {2}): Called from thread {3}", msg, Window (handle), client, Thread.CurrentThread.GetHashCode ());
-			#endif
+#endif
 			driver.PaintEventEnd (ref msg, handle, client, pevent);
 		}
 
 		internal static PaintEventArgs PaintEventStart (ref Message msg, IntPtr handle, bool client)
 		{
-			#if DriverDebug || DriverDebugPaint
+#if DriverDebug || DriverDebugPaint
 				Console.WriteLine ("PaintEventStart ({0}, {1}, {2}): Called from thread {3}", msg, Window (handle), client, Thread.CurrentThread.GetHashCode ());
-			#endif
+#endif
 			return driver.PaintEventStart (ref msg, handle, client);
 		}
 
@@ -1055,17 +1079,17 @@ namespace System.Windows.Forms {
 
 		internal static bool SetVisible (IntPtr handle, bool visible, bool activate)
 		{
-			#if DriverDebug || DriverDebugState
+#if DriverDebug || DriverDebugState
 				Console.WriteLine ("SetVisible ({0}, {1}, {2}): Called", Window (handle), visible, activate);
-			#endif
+#endif
 			return driver.SetVisible (handle, visible, activate);
 		}
 
 		internal static void SetWindowMinMax (IntPtr handle, Rectangle maximized, Size min, Size max)
 		{
-			#if DriverDebug || DriverDebugState
+#if DriverDebug || DriverDebugState
 				Console.WriteLine ("SetWindowMinMax ({0}, {1}, {2}, {3}): Called", Window (handle), maximized, min, max);
-			#endif
+#endif
 			driver.SetWindowMinMax (handle, maximized, min, max);
 		}
 
@@ -1077,9 +1101,9 @@ namespace System.Windows.Forms {
 
 		internal static void SetWindowState (IntPtr handle, FormWindowState state)
 		{
-			#if DriverDebug || DriverDebugState
+#if DriverDebug || DriverDebugState
 				Console.WriteLine ("SetWindowState ({0} {1}): Called", Window (handle), state);
-			#endif
+#endif
 			driver.SetWindowState (handle, state);
 		}
 
@@ -1235,13 +1259,13 @@ namespace System.Windows.Forms {
 			}
 			return false;
 		}
-		#endregion	// Public Static Methods
+		#endregion  // Public Static Methods                          
 
 		#region	Delegates
 		public delegate bool ClipboardToObject (int type, IntPtr data, out object obj);
 		public delegate bool ObjectToClipboard (ref int type, object obj, out byte[] data);
 
-		#endregion	// Delegates
+		#endregion  // Delegates              
 
 		#region alternative Clipboard API
 		// This alternative clipboard API is required for X11 as the original API requires

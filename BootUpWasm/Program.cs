@@ -14,6 +14,26 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.Loader;
 
+
+static void Dump(Exception ex)
+{
+    int depth = 0;
+    for (var e = ex; e != null; e = e.InnerException, depth++)
+        Console.WriteLine($"===== {(depth == 0 ? "EXCEPTION" : "INNER #" + depth)} =====\n{e.GetType().FullName}: {e.Message}\n{e.StackTrace}");
+    Console.Out.Flush();
+}
+
+// ── FIRST statements of Main: install logging before any WinForms type is touched ──
+AppDomain.CurrentDomain.FirstChanceException += (s, e) =>
+{
+    var x = e.Exception;
+    if (x is TypeInitializationException or TypeLoadException or FileNotFoundException
+        or FileLoadException or MissingMethodException or DllNotFoundException
+        or PlatformNotSupportedException or NotSupportedException)
+        Console.WriteLine($"[first-chance] {x.GetType().FullName}: {x.Message}");
+};
+
+
 // ==========================================
 // 1. System.Drawing Test: Output drawing.png
 // ==========================================
@@ -68,7 +88,8 @@ using (var g = Graphics.FromImage(bitmap))
     
 }*/
 
-SystemDrawingBinding.Install();
+//SystemDrawingBinding.Install();
+AssemblyDiag.Report();
 
 using var bmp = new Bitmap(1400, 6000);
 using var g = Graphics.FromImage(bmp);
@@ -921,26 +942,31 @@ Font font2 = new Font("Segoe UI", 12F);
 Size proposedSize = new Size(200, int.MaxValue);
 TextFormatFlags flags = TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix;
 
-using (var bmpx = new System.Drawing.Bitmap(1, 1))
-using (var gx = System.Drawing.Graphics.FromImage(bmpx))
+try
 {
-    Console.WriteLine("--- Text Measurement Test ---");
 
-    // 1. MeasureText(string text, Font font)
-    var size1Old = TextRenderer.MeasureText(text2, font2);
-    var size1New = gx.MeasureString(text2, font2).ToSize();
-    Console.WriteLine($"1. Old: {size1Old}, New: {size1New}");
+    using (var bmpx = new System.Drawing.Bitmap(1, 1))
+    using (var gx = System.Drawing.Graphics.FromImage(bmpx))
+    {
+        Console.WriteLine("--- Text Measurement Test ---");
 
-    // 3. MeasureText(string text, Font font, Size proposedSize)
-    var size3Old = TextRenderer.MeasureText(text2, font2, proposedSize);
-    var size3New = gx.MeasureString(text2, font2, proposedSize).ToSize();
-    Console.WriteLine($"3. Old: {size3Old}, New: {size3New}");
+        // 1. MeasureText(string text, Font font)
+        var size1Old = TextRenderer.MeasureText(text2, font2);
+        var size1New = gx.MeasureString(text2, font2).ToSize();
+        Console.WriteLine($"1. Old: {size1Old}, New: {size1New}");
 
-    // 5. MeasureText(string text, Font font, Size proposedSize, TextFormatFlags flags)
-    var size5Old = TextRenderer.MeasureText(text2, font2, proposedSize, flags);
-    var size5New = gx.MeasureString(text2, font2, proposedSize, StringFormat.GenericTypographic).ToSize();
-    Console.WriteLine($"5. Old: {size5Old}, New: {size5New}");
+        // 3. MeasureText(string text, Font font, Size proposedSize)
+        var size3Old = TextRenderer.MeasureText(text2, font2, proposedSize);
+        var size3New = gx.MeasureString(text2, font2, proposedSize).ToSize();
+        Console.WriteLine($"3. Old: {size3Old}, New: {size3New}");
+
+        // 5. MeasureText(string text, Font font, Size proposedSize, TextFormatFlags flags)
+        var size5Old = TextRenderer.MeasureText(text2, font2, proposedSize, flags);
+        var size5New = gx.MeasureString(text2, font2, proposedSize, StringFormat.GenericTypographic).ToSize();
+        Console.WriteLine($"5. Old: {size5Old}, New: {size5New}");
+    }
 }
+catch (Exception ex) { Dump(ex); throw; }
 
 
 
@@ -1323,7 +1349,7 @@ var form = new Form
     WindowState = FormWindowState.Maximized,
     //DoubleBuffered = true
 };
-if (BACKGROUND) form.BackgroundImage = Image.FromFile("328551_openclipart_transparent_cube_jarda.png");
+//if (BACKGROUND) form.BackgroundImage = Image.FromFile("328551_openclipart_transparent_cube_jarda.png");
 
 // === Global Strips ===
 var menuStrip1 = new MenuStrip();
@@ -1892,14 +1918,24 @@ Application.ThreadException += (s, e) =>
     Console.Out.Flush();
 };
 
+
+
+
 // Make UI-thread exceptions propagate to AppDomain.UnhandledException instead of
 // being swallowed by the default WinForms dialog (we still do NOT catch them).
 Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
 
 
 
+
+
 // === Run ===
-Application.Run(form);
+try
+{
+
+    Application.Run(form);
+}
+catch (Exception ex) { Dump(ex); throw; }
 
 // === Local helper ===
 Bitmap CreateStarBitmap(int width, int height)

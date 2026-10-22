@@ -28,7 +28,7 @@
 // arrive from JS callbacks). The WinForms message queue is unchanged; see the
 // note on GetMessage/PumpMessages at the bottom of the message-loop section.
 
-#if BROWSER_WASM
+#if BROWSER_WASM || TRUE
 
 using SkiaSharp;
 using System;
