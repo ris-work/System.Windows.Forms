@@ -23,10 +23,16 @@
 //   XPLAT_UI_SOCKET_SCREEN  "WxH" virtual screen                (default 1920x1080)
 //   XPLAT_UI_SOCKET_LOG     "0" disables log broadcast          (default on)
 //
-// Threading model: there are no threads. Accept / read / write loops are async
-// tasks whose continuations are driven by the JS interop (WetSocket completions
-// arrive from JS callbacks). The WinForms message queue is unchanged; see the
-// note on GetMessage/PumpMessages at the bottom of the message-loop section.
+// Threading model (single-threaded browser-wasm safe):
+//   * Nothing here ever blocks. Accept / read / write loops are async tasks whose
+//     continuations are driven by the JS interop (WetSocket completions arrive from
+//     JS callbacks into the runtime).
+//   * Socket I/O is awaited, never waited on.
+//   * The WinForms queue is filled exactly as before. On desktop (or a wasm build
+//     with threads) GetMessage blocks as usual; on single-threaded browser-wasm a
+//     blocking wait throws PlatformNotSupportedException, so GetMessage returns
+//     control instead and the host drives the UI with PumpMessages()/DoEvents()
+//     (form.Show() + [JSExport] Pump). See WaitForWork / GetMessage below.
 
 #if BROWSER_WASM || TRUE
 
@@ -196,7 +202,6 @@ namespace System.Windows.Forms
             public int LastFrameTick;           // Environment.TickCount of the last frame we wrote
             public volatile bool Dead;
 
-            public readonly object WLock = new object();
             public readonly object QueueLock = new object();
             public readonly Queue<string> OutQueue = new Queue<string>();   // control msgs
             public bool FrameWanted;                                        // coalesced frame slot
@@ -264,24 +269,25 @@ namespace System.Windows.Forms
                 Dead = true;
             }
 
+            // One newline-terminated message. WetSocket.SendAsync accepts as much as
+            // the JS window allows and returns the byte count (0 == window full,
+            // <0 == gone), so loop until the message is out. AWAITED — never blocks,
+            // which is essential on single-threaded browser-wasm. Only the writer
+            // task calls this, so writes stay ordered without a lock.
             public async Task WriteRawAsync(string s)
             {
                 if (Dead) return;
                 var b = Encoding.UTF8.GetBytes(s + "\n");
                 int off = 0;
-                lock (WLock)
+                while (off < b.Length)
                 {
-                    while (off < b.Length)
-                    {
-                        // WetSocket.SendAsync accepts as much as the JS window allows
-                        // and returns the byte count (0 == window full, <0 == gone).
-                        int n = Sock.SendAsync(b.AsMemory(off)).AsTask().GetAwaiter().GetResult();
-                        if (n <= 0) { Dead = true; return; }
-                        off += n;
-                        BytesOut += n;
-                    }
+                    int n;
+                    try { n = await Sock.SendAsync(b.AsMemory(off)).ConfigureAwait(false); }
+                    catch { Dead = true; return; }
+                    if (n <= 0) { Dead = true; return; }
+                    off += n;
+                    BytesOut += n;
                 }
-                await Task.CompletedTask.ConfigureAwait(false);
             }
         }
 
@@ -515,9 +521,8 @@ namespace System.Windows.Forms
         {
             try
             {
-                foreach (var line in ReadLinesAsync(cc))
+                await foreach (var text in ReadLinesAsync(cc).ConfigureAwait(false))
                 {
-                    var text = await line.ConfigureAwait(false);
                     if (text == null) break;
                     if (text.IndexOf("\"list\"", StringComparison.Ordinal) >= 0) cc.Send(ListJson());
                 }
@@ -557,9 +562,8 @@ namespace System.Windows.Forms
         {
             try
             {
-                foreach (var line in ReadLinesAsync(cc))
+                await foreach (var text in ReadLinesAsync(cc).ConfigureAwait(false))
                 {
-                    var text = await line.ConfigureAwait(false);
                     if (text == null) break;
                     if (text.Length == 0) continue;
                     try
@@ -581,17 +585,18 @@ namespace System.Windows.Forms
         }
 
         // Newline-delimited UTF-8 framing over a raw WetSocket byte stream.
-        // Yields one Task<string> per complete line; null signals EOF.
-        static IEnumerable<Task<string>> ReadLinesAsync(ClientConn cc)
+        // Fully async: receives are awaited, never blocked on — the JS interop is
+        // what completes them, and a blocking wait here would starve it.
+        static async IAsyncEnumerable<string> ReadLinesAsync(ClientConn cc)
         {
             var pending = new List<byte>(8 * 1024);
             var chunk = new byte[16 * 1024];
             for (; ; )
             {
                 int n;
-                try { n = cc.Sock.ReceiveAsync(chunk).AsTask().GetAwaiter().GetResult(); }
+                try { n = await cc.Sock.ReceiveAsync(chunk).ConfigureAwait(false); }
                 catch { n = 0; }
-                if (n <= 0) break;
+                if (n <= 0) yield break;
                 cc.BytesIn += n;
                 for (int i = 0; i < n; i++) pending.Add(chunk[i]);
 
@@ -600,10 +605,9 @@ namespace System.Windows.Forms
                 {
                     var line = Encoding.UTF8.GetString(pending.GetRange(0, cut).ToArray());
                     pending.RemoveRange(0, cut + 1);
-                    yield return Task.FromResult(line);
+                    if (line.Length > 0) yield return line;
                 }
             }
-            yield return Task.FromResult<string>(null);
         }
 
         // ── Frame encoding / pushing ─────────────────────────────────────
@@ -656,8 +660,6 @@ namespace System.Windows.Forms
             var wi = cc.Win;
             if (wi == null || cc.Dead) return;
 
-            // live throttle (optional)
-            // live throttle (optional)
             // live throttle (optional): pace the writer instead of dropping frames
             if (cc.MinFrameMs > 0)
             {
@@ -1897,11 +1899,29 @@ namespace System.Windows.Forms
             return Math.Max(5, timeout);
         }
 
-        // NOTE (WASM): every WetSocket completion arrives as a JS->.NET callback, so
-        // the runtime must get a chance to return to the browser event loop. The
-        // idle wait below is short (<= 250 ms) and calls RaiseIdle each round; if you
-        // host the loop yourself, call PumpMessages() from a JS timer (requestAnimationFrame
-        // / setInterval) and use DoEvents() as the cooperative pump instead of blocking.
+        // ── Waiting without blocking ─────────────────────────────────────
+        // Desktop and threaded wasm: a real blocking wait is fine. Single-threaded
+        // browser-wasm: ManualResetEventSlim.Wait throws PlatformNotSupportedException
+        // (and even where it is legal on the main thread it would starve the JS
+        // interop that feeds this queue). We probe once and remember.
+        static bool canBlock = true;
+
+        static void WaitForWork(SocketQueue q, int timeoutMs)
+        {
+            if (!canBlock) return;
+            try
+            {
+                q.Evt.Wait(timeoutMs);
+                q.Evt.Reset();
+            }
+            catch (PlatformNotSupportedException)
+            {
+                canBlock = false;
+                Log("blocking waits unavailable (single-threaded browser-wasm) — " +
+                    "the UI is driven by PumpMessages()/DoEvents(); see PumpMessages().");
+            }
+        }
+
         internal static Action JsYield;
 
         internal override bool GetMessage(object queue_id, ref MSG msg, IntPtr hWnd, int wFilterMin, int wFilterMax)
@@ -1930,8 +1950,20 @@ namespace System.Windows.Forms
                 }
                 RaiseIdle(EventArgs.Empty);
                 JsYield?.Invoke();
-                q.Evt.Wait(NextTimeout(250));
-                q.Evt.Reset();
+
+                WaitForWork(q, NextTimeout(250));
+
+                if (!canBlock)
+                {
+                    // Single-threaded browser-wasm: we cannot wait here. End the
+                    // Run loop cleanly and let the browser host keep dispatching
+                    // through PumpMessages()/DoEvents() (form.Show() + [JSExport] Pump).
+                    msg.hwnd = IntPtr.Zero;
+                    msg.message = Msg.WM_QUIT;
+                    msg.wParam = IntPtr.Zero;
+                    msg.lParam = IntPtr.Zero;
+                    return false;
+                }
             }
         }
 
@@ -1966,7 +1998,11 @@ namespace System.Windows.Forms
             in_doevents = false;
         }
 
-        /// <summary>Cooperative pump for the browser: drain the queue once.</summary>
+        /// <summary>
+        /// Cooperative pump for the browser: drain the queue once without blocking.
+        /// Export this to JS ([JSExport] Pump) and call it from a timer
+        /// (requestAnimationFrame / setInterval) — that is the ST message loop.
+        /// </summary>
         public static void PumpMessages()
         {
             try { Instance?.DoEvents(); } catch { }
