@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("BootUpWasm")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7d3bf4eb446e909be6ad62d5eeb1fe0bd20b46a8")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+96b1e922818aecf65d1eec47d310497321543415")]
 [assembly: System.Reflection.AssemblyProductAttribute("BootUpWasm")]
 [assembly: System.Reflection.AssemblyTitleAttribute("BootUpWasm")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

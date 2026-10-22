@@ -53,7 +53,7 @@ using Wystem.Wet;
 
 namespace System.Windows.Forms
 {
-    internal class XplatUISocketWasm : XplatUIDriver
+    public class XplatUISocketWasm : XplatUIDriver
     {
         // ── Singleton ────────────────────────────────────────────────────
         static volatile XplatUISocketWasm Instance;

@@ -35,7 +35,7 @@
     }
 
     #sidebar {
-      width: 300px;
+      width: 320px;
       background: var(--panel);
       border-right: 1px solid var(--line);
       padding: 12px;
@@ -106,6 +106,7 @@
     button.primary { background: var(--acc); color: #04121c; border-color: var(--acc); font-weight: 600; }
     button.mini { padding: 2px 7px; font-size: 11px; }
 
+    /* The stage is the app surface — nothing may cover it or eat its clicks. */
     #stage {
       flex: 1;
       display: flex;
@@ -114,6 +115,7 @@
       overflow: hidden;
       position: relative;
       background: #18181c;
+      outline: none;
     }
     #frame { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
     #svgwrap { width: 100%; height: 100%; }
@@ -132,17 +134,16 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      pointer-events: none;          /* never steal a click from the app */
     }
 
+    /* Log lives in the sidebar now, so it can never cover the rendered window. */
     #log {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 170px;
+      height: 200px;
       overflow: auto;
-      background: rgba(0, 0, 0, .78);
-      border-top: 1px solid var(--line);
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      border-radius: 8px;
       padding: 6px 8px;
       font: 11px/1.45 ui-monospace, monospace;
       white-space: pre-wrap;
@@ -195,8 +196,8 @@
           <option>svg</option>
         </select>
       </label>
-      <label>quality <input type="range" id="q" min="1" max="100" value="75"></label>
-      <label>fps cap <input type="number" id="fps" min="0" max="60" value="0" style="width:70px"> <span class="dim">0 = uncapped</span></label>
+      <label>quality <input type="range" id="q" min="1" max="100" value="60"></label>
+      <label>fps cap <input type="number" id="fps" min="0" max="60" value="30" style="width:70px"> <span class="dim">0 = uncapped</span></label>
       <label><input type="checkbox" id="gray"> grayscale</label>
       <label><input type="checkbox" id="live" checked> live (subscribe)</label>
       <div class="row">
@@ -215,21 +216,19 @@
       </div>
     </div>
 
-    <div class="panel">
-      <h2>log</h2>
-      <div class="row">
-        <button class="mini" id="clearlog">clear</button>
-        <button class="mini" id="copylog">copy</button>
-        <label style="margin:0"><input type="checkbox" id="autoscroll" checked> autoscroll</label>
-      </div>
+    <h2>log</h2>
+    <div class="row" style="margin-bottom:6px">
+      <button class="mini" id="clearlog">clear</button>
+      <button class="mini" id="copylog">copy</button>
+      <label style="margin:0"><input type="checkbox" id="autoscroll" checked> autoscroll</label>
     </div>
+    <div id="log"></div>
   </div>
 
-  <div id="stage">
+  <div id="stage" tabindex="-1">
     <div id="bar">not connected</div>
     <img id="frame" style="display:none" alt="">
     <div id="svgwrap" style="display:none"></div>
-    <div id="log"></div>
   </div>
 
   <script type="module">
@@ -245,8 +244,9 @@
     function log(level, msg) {
       const t = new Date().toTimeString().slice(0, 8);
       const cls = level === 'error' ? 'e' : level === 'warn' ? 'w' : level === 'ok' ? 's' : 'i';
-      logBox.innerHTML += `<span class="t">${t}</span> <span class="${cls}">${esc(msg)}</span>\n`;
-      if (logBox.textContent.length > 250000) logBox.textContent = logBox.textContent.slice(-120000);
+      // append, never innerHTML +=  (that re-parses the whole log each time)
+      logBox.insertAdjacentHTML('beforeend', `<div><span class="t">${t}</span> <span class="${cls}">${esc(msg)}</span></div>`);
+      while (logBox.childElementCount > 2000) logBox.removeChild(logBox.firstChild);
       if ($('#autoscroll').checked) logBox.scrollTop = logBox.scrollHeight;
     }
     function setTag(kind, text) {
@@ -299,12 +299,12 @@
     });
 
     // ══════════════════════════════════ 2. WetJs export resolution ══════════════════════════════════
-    // WetJs lives in the WetAfunix class library, not in the main assembly, and the
-    // assembly only loads once Main runs → resolve lazily, retry, and report where
-    // it came from so the wiring is never a mystery.
+    // WetJs lives in the WetAfunix class library; Pump lives in BootUpJs (main assembly).
+    // Both are resolved lazily: the assemblies only load once Main runs.
     let wet = null;
     let wetSource = null;
     let pump = null;
+    let pumpTimer = null;
     let runtimeDead = false;
 
     function die(reason, level = 'error') {
@@ -313,6 +313,7 @@
       log(level, 'runtime stopped: ' + reason);
       setTag('off', 'runtime exited');
       info('#info-pump', 'stopped');
+      if (pumpTimer) { clearInterval(pumpTimer); pumpTimer = null; }
     }
 
     async function tryResolveWet() {
@@ -322,7 +323,8 @@
         try { root = await getAssemblyExports(name); }
         catch { continue; }
         const w = root?.WetJs ?? root?.Wystem?.Wet?.WetJs ?? root?.Wystem?.WetJs;
-        const p = root?.BootUpJs?.Pump ?? root?.XplatUISocketWasm?.Pump;
+        const p = root?.BootUpJs?.Pump ?? root?.XplatUISocketWasm?.Pump
+               ?? root?.System?.Windows?.Forms?.XplatUISocketWasm?.Pump;
         if (!pump && typeof p === 'function') pump = p;
         if (w && typeof w.Write === 'function') {
           if (!wetSource) { wetSource = name; log('ok', `WetJs exports found in assembly "${name}"`); }
@@ -550,7 +552,6 @@
           case 'hello':
           case 'info':
             if (m.window) setBar(`window: ${m.window.title || m.window.handle} · ${m.window.width}x${m.window.height}`);
-            log('info', `${m.type}: ${m.window ? (m.window.title || m.window.handle) : ''}`);
             break;
           case 'frame': handleFrame(m); break;
           case 'log': log('info', '[dotnet] ' + (m.text || '')); break;
@@ -602,16 +603,15 @@
         fpsShown = Math.round(fpsCount * 1000 / (now - fpsMark));
         fpsCount = 0;
         fpsMark = now;
+        info('#info-frames', String(frameCount));
+        info('#info-fps', `${fpsShown} fps`);
       }
-      info('#info-frames', String(frameCount));
-      info('#info-fps', `${fpsShown} fps`);
 
       if (m.format === 'svg') {
         lastFrame = { format: 'svg', data: m.data };
         $('#frame').style.display = 'none';
         $('#svgwrap').style.display = 'block';
         $('#svgwrap').innerHTML = m.data;
-        setBar(`frame #${frameCount} · svg ${m.width}x${m.height} · ${fpsShown} fps`);
       } else {
         lastFrame = { format: m.format, data: m.data };
         $('#svgwrap').style.display = 'none';
@@ -619,8 +619,8 @@
         const img = $('#frame');
         img.style.display = 'block';
         img.src = 'data:image/' + m.format + ';base64,' + m.data;
-        setBar(`frame #${frameCount} · ${m.format} ${m.width}x${m.height} · ${fpsShown} fps`);
       }
+      setBar(`frame #${frameCount} · ${m.format} ${m.width}x${m.height} · ${fpsShown} fps`);
     }
 
     // ══════════════════════════════════ 7. input (HTML → .NET) ══════════════════════════════════
@@ -653,18 +653,34 @@
     function sendWin(obj) { if (winConn && !runtimeDead) winConn.send(obj); }
 
     const stage = $('#stage');
+
+    // mousemove is coalesced to one message per animation frame: a browser fires
+    // 60-120+ move events per second, and each one costs a hit-test + repaint +
+    // JPEG encode on the .NET side. Coalescing keeps the UI responsive.
+    let movePending = null, moveScheduled = false;
+    function queueMove(e) {
+      const p = pos(e);
+      if (!p) return;
+      movePending = { type: 'mousemove', x: p.x, y: p.y, button: 'left', t: Date.now() };
+      if (moveScheduled) return;
+      moveScheduled = true;
+      requestAnimationFrame(() => {
+        moveScheduled = false;
+        if (movePending) { sendWin(movePending); movePending = null; }
+      });
+    }
+
     stage.addEventListener('mousedown', (e) => {
+      stage.focus();                       // keep keyboard focus on the app surface
       const p = pos(e); if (!p) return;
+      sendWin({ type: 'mousemove', x: p.x, y: p.y, button: 'left', t: Date.now() });  // tell the app where we are first
       sendWin({ type: 'mousedown', x: p.x, y: p.y, button: btnName(e.button), t: Date.now() });
     });
     stage.addEventListener('mouseup', (e) => {
       const p = pos(e); if (!p) return;
       sendWin({ type: 'mouseup', x: p.x, y: p.y, button: btnName(e.button), t: Date.now() });
     });
-    stage.addEventListener('mousemove', (e) => {
-      const p = pos(e); if (!p) return;
-      sendWin({ type: 'mousemove', x: p.x, y: p.y, button: 'left', t: Date.now() });
-    });
+    stage.addEventListener('mousemove', queueMove);
     stage.addEventListener('wheel', (e) => {
       const p = pos(e); if (!p) return;
       sendWin({ type: 'wheel', x: p.x, y: p.y, delta: e.deltaY });
@@ -713,7 +729,7 @@
 
     // ══════════════════════════════════ 8. sidebar wiring ══════════════════════════════════
     $('#refresh').onclick = () => resub();
-    $('#clearlog').onclick = () => { logBox.textContent = ''; };
+    $('#clearlog').onclick = () => { logBox.innerHTML = ''; };
     $('#copylog').onclick = async () => {
       try { await navigator.clipboard.writeText(logBox.textContent); log('ok', 'log copied to clipboard'); }
       catch (e) { log('warn', 'copy failed: ' + (e.message || e)); }
@@ -765,7 +781,20 @@
       c.ondata = (u8) => c.write(u8);
     });
 
-    // ══════════════════════════════════ 9. boot ══════════════════════════════════
+    // ══════════════════════════════════ 9. pump (single, idempotent) ══════════════════════════════════
+    function startPump(when) {
+      if (pumpTimer) return;                       // never run two loops
+      info('#info-pump', `exported (${when}) · ${wetSource || '?'}`);
+      log('ok', 'message pump export found — driving the UI loop at ~60 Hz');
+      try { pump(); } catch (e) { die('pump threw: ' + (e.message || e)); return; }
+      pumpTimer = setInterval(() => {
+        if (runtimeDead) return;
+        try { pump(); }
+        catch (e) { die('pump threw: ' + (e.message || e)); }
+      }, 16);
+    }
+
+    // ══════════════════════════════════ 10. boot ══════════════════════════════════
     setTag('wait', 'resolving WetJs…');
     const ok = await initWet();
     if (!ok) {
@@ -781,57 +810,29 @@
     connectList();
     setInterval(connectList, 1500);
 
-    // Drive the WinForms message loop from the browser event loop so socket
-    // continuations keep flowing while Application.Run blocks in GetMessage.
-    if (pump) {
-      info('#info-pump', 'exported (' + (wetSource || '?') + ')');
-      log('ok', 'message pump export found — driving the UI loop at ~60 Hz');
-      setInterval(() => {
-        if (runtimeDead) return;
-        try { pump(); }
-        catch (e) { die('pump threw: ' + (e.message || e)); }
-      }, 16);
-    } else {
-      info('#info-pump', 'NOT EXPORTED');
-      log('warn', 'no Pump export found — frames may work, but input needs it. ' +
-        'Add [JSExport] Pump() (BootUpJs or XplatUISocketWasm) to keep the message loop live.');
-      // it can show up later, once Main has run
-      setTimeout(async () => {
-        await tryResolveWet();
-        if (pump && !runtimeDead) {
-          info('#info-pump', 'exported (late)');
-          log('ok', 'Pump export appeared later — starting the loop driver');
-          setInterval(() => { if (!runtimeDead) { try { pump(); } catch (e) { die('pump threw: ' + (e.message || e)); } } }, 16);
-        }
-      }, 2500);
-    }
-
-    function startPump(when) {
-      info('#info-pump', `exported (${when}) · ${wetSource || '?'}`);
-      log('ok', 'message pump export found — driving the UI loop at ~60 Hz');
-      setInterval(() => {
-        if (runtimeDead) return;
-        try { pump(); }
-        catch (e) { die('pump threw: ' + (e.message || e)); }
-      }, 16);
-    }
-
     if (pump) startPump('boot');
     else {
       info('#info-pump', 'NOT EXPORTED');
-      setTimeout(async () => { await tryResolveWet(); if (pump && !runtimeDead) startPump('late'); }, 2500);
+      log('warn', 'no Pump export yet — add [JSExport] Pump() to BootUpJs (Application.DoEvents) to make input live');
     }
 
-    // run the C# Main(); when it returns or throws, stop touching the runtime
     // run the C# Main(); in the ST pump model it returning is EXPECTED —
     // the form is shown and this page keeps dispatching through Pump().
     try {
       await dotnet.runMain();
       log('info', 'Main returned — UI keeps running under Pump()');
-      info('#info-pump', pump ? 'running (Main returned)' : 'waiting for Pump export');
       if (!pump) { await tryResolveWet(); if (pump) startPump('late'); }
     } catch (e) {
       die('Main threw: ' + ((e && e.stack) || e));
+    }
+
+    // last chance: the export can appear a moment after Main starts
+    if (!pump) {
+      setTimeout(async () => {
+        await tryResolveWet();
+        if (pump && !runtimeDead) startPump('late');
+        else if (!pump) log('warn', 'still no Pump export — clicks/keys will queue but not dispatch');
+      }, 2500);
     }
   </script>
 </body>

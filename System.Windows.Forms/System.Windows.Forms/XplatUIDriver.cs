@@ -31,7 +31,7 @@ using System.Threading;
 using System.Runtime.InteropServices;
 
 namespace System.Windows.Forms {
-	internal abstract class XplatUIDriver {
+	public abstract class XplatUIDriver {
 		internal abstract IntPtr	InitializeDriver();
 		internal abstract void		ShutdownDriver(IntPtr token);
 		internal delegate IntPtr	WndProc(IntPtr hwnd, Msg msg, IntPtr wParam, IntPtr lParam);

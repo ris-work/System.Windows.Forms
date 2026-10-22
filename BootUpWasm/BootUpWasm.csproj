@@ -20,6 +20,25 @@
 		<OurDrawingVersion>30.0.0.0</OurDrawingVersion>
 	</PropertyGroup>
 
+	<!-- compute the flavour from YOUR build (-r browser-wasm, or the TFM platform) -->
+	<PropertyGroup>
+		<XplatBrowserWasm Condition="'$(XplatBrowserWasm)' == '' and
+                                 ('$(RuntimeIdentifier)' == 'browser-wasm' or
+                                  $(RuntimeIdentifier.StartsWith('browser-')) or
+                                  '$(TargetPlatformIdentifier)' == 'browser')">true</XplatBrowserWasm>
+		<XplatBrowserWasm Condition="'$(XplatBrowserWasm)' == ''">false</XplatBrowserWasm>
+	</PropertyGroup>
+
+	<!-- forward the RESULT into each referenced project — this is the missing link -->
+	<ItemGroup>
+		<ProjectReference Include="..\System.Windows.Forms\System.Windows.Forms.csproj"
+						  AdditionalProperties="XplatBrowserWasm=$(XplatBrowserWasm)" />
+		<ProjectReference Include="..\System.Drawing.Design\System.Drawing.Design.csproj"
+						  AdditionalProperties="XplatBrowserWasm=$(XplatBrowserWasm)" />
+		<ProjectReference Include="..\..\..\..\invnew\System.Drawing\System.Drawing.csproj"
+						  AdditionalProperties="XplatBrowserWasm=$(XplatBrowserWasm)" />
+	</ItemGroup>
+
 	<!-- ══════════ BROWSER-WASM GATE ══════════
        Set explicitly by the consumer (AdditionalProperties / -p: / Directory.Build.props),
        otherwise auto-detect a browser-wasm build. -->
@@ -131,9 +150,7 @@
 	</Target>
 
 	<ItemGroup>
-		<ProjectReference Include="..\System.Drawing.Design\System.Drawing.Design.csproj" />
-		<ProjectReference Include="..\..\..\..\invnew\System.Drawing\System.Drawing.csproj" />
-		<ProjectReference Include="..\System.Windows.Forms\System.Windows.Forms.csproj" />
+
 	</ItemGroup>
 
 	<PropertyGroup>

@@ -1992,6 +1992,11 @@ public static partial class BootUpJs
     /// Drives the WinForms message loop from the browser event loop.
     //[JSExport]
     //public static void Pump() => System.Windows.Forms.XplatUISocketWasm.PumpMessages();
+
+    // Drive the DRIVER's queue directly: no Application ThreadContext needed,
+    // which is exactly what the ST path (Run returned) cannot guarantee.
+    [JSExport] public static void Pump() => System.Windows.Forms.XplatUISocketWasm.PumpMessages();
+
 }
 
 

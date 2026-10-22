@@ -23,6 +23,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SocketViewer", "SocketViewe
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SocketViewerWinForms", "SocketViewerWinForms\SocketViewerWinForms.csproj", "{66024F5E-6EFD-149B-2537-608964B17DD8}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BootUpWasm", "BootUpWasm\BootUpWasm.csproj", "{64B69BD9-3506-68CE-03D6-86799A47AE6C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -69,6 +71,10 @@ Global
 		{66024F5E-6EFD-149B-2537-608964B17DD8}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{66024F5E-6EFD-149B-2537-608964B17DD8}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{66024F5E-6EFD-149B-2537-608964B17DD8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{64B69BD9-3506-68CE-03D6-86799A47AE6C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{64B69BD9-3506-68CE-03D6-86799A47AE6C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{64B69BD9-3506-68CE-03D6-86799A47AE6C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{64B69BD9-3506-68CE-03D6-86799A47AE6C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
