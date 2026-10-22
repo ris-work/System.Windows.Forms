@@ -13,6 +13,60 @@
 		<GenerateEmbeddedFilesManifest>true</GenerateEmbeddedFilesManifest>
 	</PropertyGroup>
 
+	<PropertyGroup>
+		<!-- identity of YOUR assembly; everything else with these names is foreign -->
+		<OurDrawingVersion>30.0.0.0</OurDrawingVersion>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<!-- identity of YOUR assembly; everything else with these names is foreign -->
+		<OurDrawingVersion>30.0.0.0</OurDrawingVersion>
+	</PropertyGroup>
+
+	<Target Name="AuditAndDropSystemDrawing" AfterTargets="ResolveAssemblyReferences">
+
+		<!-- audit: see every candidate with its identity -->
+		<Message Importance="high"
+				 Text="[sd] REF  %(ReferencePath.FileName) | Fusion='%(ReferencePath.FusionName)' | %(ReferencePath.FullPath)"
+				 Condition="'%(ReferencePath.FileName)' == 'System.Drawing'
+                        or '%(ReferencePath.FileName)' == 'System.Drawing.Common'
+                        or '%(ReferencePath.FileName)' == 'System.Drawing.Primitives'" />
+		<Message Importance="high"
+				 Text="[sd] COPY %(ReferenceCopyLocalPaths.FileName) | Fusion='%(ReferenceCopyLocalPaths.FusionName)' | %(ReferenceCopyLocalPaths.FullPath)"
+				 Condition="'%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing'
+                        or '%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing.Common'
+                        or '%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing.Primitives'" />
+
+		<ItemGroup>
+			<!-- ── reference set: identity-based (FusionName is available here) ── -->
+			<_ForeignDrawing Include="@(ReferencePath)"
+			  Condition="'%(ReferencePath.FileName)' == 'System.Drawing.Common'
+                   or '%(ReferencePath.FileName)' == 'System.Drawing.Primitives'
+                   or ('%(ReferencePath.FileName)' == 'System.Drawing'
+                       and ($([System.String]::Copy('%(ReferencePath.FusionName)').Contains('PublicKeyToken=b03f5f7f11d50a3a'))
+                         or $([System.String]::Copy('%(ReferencePath.FusionName)').Contains('PublicKeyToken=cc7b13ffcd2ddd51'))
+                         or (!$([System.String]::Copy('%(ReferencePath.FusionName)').Equals(''))
+                             and !$([System.String]::Copy('%(ReferencePath.FusionName)').Contains('Version=$(OurDrawingVersion)')))))" />
+
+			<!-- what survived as OUR System.Drawing -->
+			<_OurDrawing Include="@(ReferencePath)" Condition="'%(ReferencePath.FileName)' == 'System.Drawing'" />
+
+			<!-- ── copy-local: FusionName may be missing here -> compare paths ── -->
+			<_ForeignDrawing Include="@(ReferenceCopyLocalPaths)"
+			  Condition="'%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing.Common'
+                   or '%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing.Primitives'
+                   or ('%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing'
+                       and '@(_OurDrawing)' != ''
+                       and '%(ReferenceCopyLocalPaths.FullPath)' != '@(_OurDrawing)')" />
+
+			<ReferencePath Remove="@(_ForeignDrawing)" />
+			<ReferenceCopyLocalPaths Remove="@(_ForeignDrawing)" />
+			<_ResolvedCopyLocalBuildAssets Remove="@(_ForeignDrawing)" />
+		</ItemGroup>
+
+		<Message Importance="high" Text="[sd] DROPPED %(_ForeignDrawing.Identity)" />
+	</Target>
+
 	<ItemGroup>
 		<StaticWebAssetFingerprintPattern Include="JS" Pattern="*.js" Expression="#[.{fingerprint}]!" />
 	</ItemGroup>

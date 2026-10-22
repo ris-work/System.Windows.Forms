@@ -2,12 +2,17 @@
 using System;
 using System.Data;
 using System.Drawing;
-using System.Drawing.Drawing2D;
-using System.Drawing.Imaging;
+//using System.Drawing.Drawing2D;
+//using System.Drawing.Imaging;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices.JavaScript;
-using System.Windows.Forms;
 using System.Runtime.InteropServices.JavaScript;
+using System.Runtime.Loader;
+using System.Windows.Forms;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Runtime.Loader;
 
 // ==========================================
 // 1. System.Drawing Test: Output drawing.png
@@ -62,6 +67,8 @@ using (var g = Graphics.FromImage(bitmap))
     
     
 }*/
+
+SystemDrawingBinding.Install();
 
 using var bmp = new Bitmap(1400, 6000);
 using var g = Graphics.FromImage(bmp);
@@ -1949,4 +1956,50 @@ public static partial class BootUpJs
     /// Drives the WinForms message loop from the browser event loop.
     //[JSExport]
     //public static void Pump() => System.Windows.Forms.XplatUISocketWasm.PumpMessages();
+}
+
+
+
+
+internal static class SystemDrawingBinding
+{
+    static Assembly ours;
+
+    [ModuleInitializer]
+    internal static void Install()
+    {
+        // 1) report what is already around
+        foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+            if (a.GetName().Name is "System.Drawing" or "System.Drawing.Common" or "System.Drawing.Primitives")
+                Console.WriteLine("[sd] already loaded: " + a.GetName().FullName);
+
+        // 2) load OURS first: touching the type binds our 30.0.0.0 under the simple name
+        try
+        {
+            ours = typeof(System.Drawing.ClipScope).Assembly;
+            Console.WriteLine("[sd] ours = " + ours.GetName().FullName +
+                              "  hasClipScope=" + (ours.GetType("System.Drawing.ClipScope") != null));
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("[sd] could not load ours: " + e.Message);
+            return;
+        }
+
+        // 3) answer every future lookup for that name with ours
+        AssemblyLoadContext.Default.Resolving += OnResolving;          // (AssemblyLoadContext, AssemblyName)
+        AppDomain.CurrentDomain.AssemblyResolve += OnAssemblyResolve;  // (object, ResolveEventArgs)
+    }
+
+    static Assembly OnResolving(AssemblyLoadContext ctx, AssemblyName requested)
+        => IsOurDrawing(requested.Name) ? ours : null;
+
+    static Assembly OnAssemblyResolve(object sender, ResolveEventArgs args)
+        => IsOurDrawing(Simple(args.Name)) ? ours : null;              // args.Name is a STRING
+
+    static string Simple(string displayName) =>
+        string.IsNullOrEmpty(displayName) ? "" : displayName.Split(',')[0].Trim();
+
+    static bool IsOurDrawing(string simpleName) =>
+        simpleName == "System.Drawing" && ours != null && ours.GetName().Name == "System.Drawing";
 }
