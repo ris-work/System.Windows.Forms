@@ -14,57 +14,57 @@
 	</PropertyGroup>
 
 	<PropertyGroup>
-		<!-- identity of YOUR assembly; everything else with these names is foreign -->
-		<OurDrawingVersion>30.0.0.0</OurDrawingVersion>
-	</PropertyGroup>
-
-	<PropertyGroup>
-		<!-- identity of YOUR assembly; everything else with these names is foreign -->
 		<OurDrawingVersion>30.0.0.0</OurDrawingVersion>
 	</PropertyGroup>
 
 	<Target Name="AuditAndDropSystemDrawing" AfterTargets="ResolveAssemblyReferences">
 
-		<!-- audit: see every candidate with its identity -->
+		<!-- audit: paste these lines if anything is still wrong -->
 		<Message Importance="high"
-				 Text="[sd] REF  %(ReferencePath.FileName) | Fusion='%(ReferencePath.FusionName)' | %(ReferencePath.FullPath)"
+				 Text="[sd] REF  %(ReferencePath.FileName) | Fusion='%(ReferencePath.FusionName)' | Src=%(ReferencePath.ReferenceSourceTarget) | From=%(ReferencePath.ResolvedFrom) | %(ReferencePath.FullPath)"
 				 Condition="'%(ReferencePath.FileName)' == 'System.Drawing'
                         or '%(ReferencePath.FileName)' == 'System.Drawing.Common'
                         or '%(ReferencePath.FileName)' == 'System.Drawing.Primitives'" />
 		<Message Importance="high"
-				 Text="[sd] COPY %(ReferenceCopyLocalPaths.FileName) | Fusion='%(ReferenceCopyLocalPaths.FusionName)' | %(ReferenceCopyLocalPaths.FullPath)"
+				 Text="[sd] COPY %(ReferenceCopyLocalPaths.FileName) | Fusion='%(ReferenceCopyLocalPaths.FusionName)' | Src=%(ReferenceCopyLocalPaths.ReferenceSourceTarget) | %(ReferenceCopyLocalPaths.FullPath)"
 				 Condition="'%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing'
                         or '%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing.Common'
                         or '%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing.Primitives'" />
 
 		<ItemGroup>
-			<!-- ── reference set: identity-based (FusionName is available here) ── -->
-			<_ForeignDrawing Include="@(ReferencePath)"
-			  Condition="'%(ReferencePath.FileName)' == 'System.Drawing.Common'
-                   or '%(ReferencePath.FileName)' == 'System.Drawing.Primitives'
-                   or ('%(ReferencePath.FileName)' == 'System.Drawing'
-                       and ($([System.String]::Copy('%(ReferencePath.FusionName)').Contains('PublicKeyToken=b03f5f7f11d50a3a'))
-                         or $([System.String]::Copy('%(ReferencePath.FusionName)').Contains('PublicKeyToken=cc7b13ffcd2ddd51'))
-                         or (!$([System.String]::Copy('%(ReferencePath.FusionName)').Equals(''))
-                             and !$([System.String]::Copy('%(ReferencePath.FusionName)').Contains('Version=$(OurDrawingVersion)')))))" />
+			<!-- ══ reference set ══ -->
+			<!-- never ours -->
+			<_ForeignRef Include="@(ReferencePath)"
+						 Condition="'%(ReferencePath.FileName)' == 'System.Drawing.Common'
+                              or '%(ReferencePath.FileName)' == 'System.Drawing.Primitives'" />
+			<!-- System.Drawing: drop the signed / wrong-version copies (ours = unsigned 30.0.0.0) -->
+			<_ForeignRef Include="@(ReferencePath)"
+						 Condition="'%(ReferencePath.FileName)' == 'System.Drawing'
+                              and ($([System.String]::Copy('%(ReferencePath.FusionName)').Contains('PublicKeyToken=b03f5f7f11d50a3a'))
+                                or $([System.String]::Copy('%(ReferencePath.FusionName)').Contains('PublicKeyToken=cc7b13ffcd2ddd51'))
+                                or $([System.String]::Copy('%(ReferencePath.FusionName)').Contains('Version=4.0.0.0'))
+                                or (!$([System.String]::Copy('%(ReferencePath.FusionName)').Equals(''))
+                                    and !$([System.String]::Copy('%(ReferencePath.FusionName)').Contains('Version=$(OurDrawingVersion)'))))" />
 
-			<!-- what survived as OUR System.Drawing -->
-			<_OurDrawing Include="@(ReferencePath)" Condition="'%(ReferencePath.FileName)' == 'System.Drawing'" />
+			<!-- ══ copy-local ══ -->
+			<!-- never ours -->
+			<_ForeignCopy Include="@(ReferenceCopyLocalPaths)"
+						  Condition="'%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing.Common'
+                               or '%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing.Primitives'" />
+			<!-- the copy of exactly the files we just dropped from the reference set -->
+			<_ForeignCopy Include="@(ReferenceCopyLocalPaths)"
+						  Condition="'%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing'
+                               and '@(_ForeignRef)' != ''
+                               and '@(_ForeignRef)' == '%(ReferenceCopyLocalPaths.FullPath)'" />
 
-			<!-- ── copy-local: FusionName may be missing here -> compare paths ── -->
-			<_ForeignDrawing Include="@(ReferenceCopyLocalPaths)"
-			  Condition="'%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing.Common'
-                   or '%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing.Primitives'
-                   or ('%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing'
-                       and '@(_OurDrawing)' != ''
-                       and '%(ReferenceCopyLocalPaths.FullPath)' != '@(_OurDrawing)')" />
-
-			<ReferencePath Remove="@(_ForeignDrawing)" />
-			<ReferenceCopyLocalPaths Remove="@(_ForeignDrawing)" />
-			<_ResolvedCopyLocalBuildAssets Remove="@(_ForeignDrawing)" />
+			<!-- removes: strictly per list -->
+			<ReferencePath Remove="@(_ForeignRef)" />
+			<ReferenceCopyLocalPaths Remove="@(_ForeignCopy)" />
+			<_ResolvedCopyLocalBuildAssets Remove="@(_ForeignCopy)" />
 		</ItemGroup>
 
-		<Message Importance="high" Text="[sd] DROPPED %(_ForeignDrawing.Identity)" />
+		<Message Importance="high" Text="[sd] DROPPED-REF %(_ForeignRef.Identity)" />
+		<Message Importance="high" Text="[sd] DROPPED-COPY %(_ForeignCopy.Identity)" />
 	</Target>
 
 	<ItemGroup>
