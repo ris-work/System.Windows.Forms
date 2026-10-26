@@ -1,4 +1,5 @@
-﻿using SkiaSharp;
+﻿using ExCSS;
+using SkiaSharp;
 using System;
 using System.Data;
 using System.Drawing;
@@ -1304,15 +1305,15 @@ bool BACKGROUND = true;
 if (BootUpSD_BACKGROUND == "false" || BootUpSD_BACKGROUND == "no" || BootUpSD_BACKGROUND == "no" || BootUpSD_BACKGROUND == "0") BACKGROUND = false;
 var form = new Form
 {
-    AllowTransparency = true,
-    //BackColor = Color.Transparent,
-    
-    BackgroundImageLayout = ImageLayout.None,
-    ClientSize = new Size(1800, 950),
-    BackColor = Color.FromArgb(45, 48, 45),
-    Text = "Ultimate Control Test Bench",
-    WindowState = FormWindowState.Maximized,
-    //DoubleBuffered = true
+    Text = "Wasm Paint — latency bench",
+    AutoScaleMode = AutoScaleMode.None,        // ← MWF autoscaling collapses the window without this
+    ClientSize = new Size(1280, 860),
+    MinimumSize = new Size(1280, 860),         // ← the driver honours Min/Max; nothing may shrink us
+    FormBorderStyle = FormBorderStyle.Sizable,
+    StartPosition = FormStartPosition.Manual,
+    WindowState = FormWindowState.Maximized,   // ← same trick as the original program
+    BackColor = Color.FromArgb(245, 246, 250),
+
 };
 if (BACKGROUND) form.BackgroundImage = Image.FromFile("328551_openclipart_transparent_cube_jarda.png");
 
@@ -1892,7 +1893,7 @@ Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
 // === Run ===
 try
 {
-    if (System.Windows.Forms.XplatUISocketWasm.ThreadsAvailable)
+    if (System.Windows.Forms.XplatUISocketWasm.ThreadsAvailable || true)
         Application.Run(form);        // threaded wasm or desktop: normal loop
     else
         form.Show();                  // single-threaded browser: JS drives us via Pump()

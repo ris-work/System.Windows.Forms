@@ -1403,9 +1403,14 @@ int inputCount = 0, paintCount = 0;
 var form = new Form
 {
     Text = "Wasm Paint — latency bench",
-    ClientSize = new Size(1280, 860),
-    StartPosition = FormStartPosition.CenterScreen,
+    AutoScaleMode = AutoScaleMode.None,        // ← MWF autoscaling collapses the window without this
+    ClientSize = new Size(1200, 860),
+    MinimumSize = new Size(1200, 860),         // ← the driver honours Min/Max; nothing may shrink us
+    FormBorderStyle = FormBorderStyle.Sizable,
+    StartPosition = FormStartPosition.Manual,
+    WindowState = FormWindowState.Maximized,   // ← same trick as the original program
     BackColor = Color.FromArgb(245, 246, 250),
+
 };
 
 // ---- toolbar ----
@@ -1704,6 +1709,22 @@ uiTimer.Tick += (s, e) =>
 };
 uiTimer.Start();
 
+try
+{
+    if (OperatingSystem.IsBrowser())
+    {
+        form.Show();
+        Console.WriteLine("[paint] form shown — the page pumps the message loop (BootUpJs.Pump)");
+    }
+    else
+    {
+        Application.Run(form);
+    }
+    Console.WriteLine($"[paint] bounds={form.Bounds} client={form.ClientSize} text='{form.Text}' " +
+                      $"visible={form.Visible} state={form.WindowState}");
+}
+catch (Exception ex) { Dump(ex); throw; }
+
 // ═══════════════════════════════════════════════════════════════════════════
 // types
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1711,6 +1732,8 @@ public enum PaintTool { Pencil, Brush, Eraser, Line, Rectangle, Ellipse }
 
 
 // BootUpWasm — BootUpJs.cs (kept here so the file is self-contained)
+
+
 
 
 public static partial class BootUpJs
