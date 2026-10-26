@@ -1740,14 +1740,14 @@ public static partial class BootUpJs
 {
     /// Forces WetAfunix to load so getAssemblyExports("WetAfunix") can see WetJs.
     [JSExport]
-    public static void LoadWet() => _ = typeof(Wystem.Wet.WetSocket);
+    public static async void LoadWet() => _ = typeof(Wystem.Wet.WetSocket);
 
     /// Drives the WinForms message loop from the browser event loop (ST model).
     /// XplatUISocketWasm is internal: System.Windows.Forms needs
     /// [assembly: InternalsVisibleTo("BootUpWasm")], or swap the body for
     /// System.Windows.Forms.Application.DoEvents() which is public.
     [JSExport]
-    public static void Pump() => System.Windows.Forms.XplatUISocketWasm.PumpMessages();
+    public static async void Pump()  { return; System.Windows.Forms.XplatUISocketWasm.PumpMessages(); }
 }
 
 

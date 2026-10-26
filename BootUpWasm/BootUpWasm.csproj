@@ -8,6 +8,8 @@
 		<OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
+		<StripSymbols>true</StripSymbols>
+		<WasmEnableThreads>true</WasmEnableThreads>
 		<!--<EnableDiagnostics>true</EnableDiagnostics>-->
 
 		<!-- emits the manifest ManifestEmbeddedFileProvider reads -->
