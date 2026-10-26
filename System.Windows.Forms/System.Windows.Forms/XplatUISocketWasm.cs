@@ -2017,7 +2017,7 @@ namespace System.Windows.Forms
         internal override void DoEvents()
         {
             MSG msg = new MSG();
-            var q = ThreadQueue(Thread.CurrentThread);
+            var q = mainQueue ?? ThreadQueue(Thread.CurrentThread);   // ← mainQueue
             in_doevents = true;
             while (PeekMessage(q, ref msg, IntPtr.Zero, 0, 0, (uint)PeekMessageFlags.PM_REMOVE))
             {

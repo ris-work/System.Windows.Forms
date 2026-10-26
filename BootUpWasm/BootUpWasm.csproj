@@ -8,7 +8,7 @@
 		<OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
-		<StripSymbols>true</StripSymbols>
+		<!--<StripSymbols>true</StripSymbols>-->
 		<WasmEnableThreads>true</WasmEnableThreads>
 		<!--<EnableDiagnostics>true</EnableDiagnostics>-->
 

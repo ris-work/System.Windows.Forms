@@ -1707,23 +1707,25 @@ uiTimer.Tick += (s, e) =>
         ? $"latency in→paint {latLast} ms · avg {latSum / latCount} ms · max {latMax} ms"
         : "latency in→paint —";
 };
-uiTimer.Start();
+//uiTimer.Start();
 
 try
 {
     if (OperatingSystem.IsBrowser())
     {
-        form.Show();
+        //form.Show();
         Console.WriteLine("[paint] form shown — the page pumps the message loop (BootUpJs.Pump)");
     }
     else
     {
-        Application.Run(form);
+        //Application.Run(form);
     }
     Console.WriteLine($"[paint] bounds={form.Bounds} client={form.ClientSize} text='{form.Text}' " +
                       $"visible={form.Visible} state={form.WindowState}");
 }
 catch (Exception ex) { Dump(ex); throw; }
+
+//await Task.Delay(TimeSpan.FromSeconds(100));
 
 // ═══════════════════════════════════════════════════════════════════════════
 // types
@@ -1740,15 +1742,38 @@ public static partial class BootUpJs
 {
     /// Forces WetAfunix to load so getAssemblyExports("WetAfunix") can see WetJs.
     [JSExport]
-    public static async void LoadWet() => _ = typeof(Wystem.Wet.WetSocket);
+    public static Task LoadWet()
+    {
+        _ = typeof(Wystem.Wet.WetSocket);
+        return Task.CompletedTask;
+    }
 
-    /// Drives the WinForms message loop from the browser event loop (ST model).
-    /// XplatUISocketWasm is internal: System.Windows.Forms needs
-    /// [assembly: InternalsVisibleTo("BootUpWasm")], or swap the body for
-    /// System.Windows.Forms.Application.DoEvents() which is public.
     [JSExport]
-    public static async void Pump()  { return; System.Windows.Forms.XplatUISocketWasm.PumpMessages(); }
+    public static Task<string> Pump()
+    {
+        /*var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                System.Windows.Forms.Application.DoEvents();
+                tcs.TrySetResult("ok " + sw.ElapsedMilliseconds + "ms");
+            }
+            catch (Exception e)
+            {
+                tcs.TrySetResult("THREW " + e.GetType().Name + ": " + e.Message);
+            }
+        });
+        return tcs.Task;*/
+        return Task.FromResult("");
+    }
+
+    [JSExport] public static Task<string> PingStr() => Task.FromResult("pong");
+    [JSExport] public static Task<int> PingInt() => Task.FromResult(42);
+    [JSExport] public static Task PingVoid() => Task.CompletedTask;
 }
+
 
 
 internal static class SystemDrawingBinding
