@@ -1385,6 +1385,8 @@ Bitmap CreateStarBitmap(int width, int height)
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ---- drawing state (declared BEFORE the local functions that use them) ----
+
+/*
 var tool = PaintTool.Pencil;
 var ink = Color.Black;
 int brushSize = 4;
@@ -1734,7 +1736,7 @@ public enum PaintTool { Pencil, Brush, Eraser, Line, Rectangle, Ellipse }
 
 
 // BootUpWasm — BootUpJs.cs (kept here so the file is self-contained)
-
+*/
 
 
 
@@ -1742,14 +1744,14 @@ public static partial class BootUpJs
 {
     /// Forces WetAfunix to load so getAssemblyExports("WetAfunix") can see WetJs.
     [JSExport]
-    public static Task LoadWet()
+    public static async Task LoadWet()
     {
         _ = typeof(Wystem.Wet.WetSocket);
-        return Task.CompletedTask;
+        return;
     }
 
     [JSExport]
-    public static Task<string> Pump()
+    public static async Task<string> Pump()
     {
         /*var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         ThreadPool.QueueUserWorkItem(_ =>
@@ -1766,12 +1768,12 @@ public static partial class BootUpJs
             }
         });
         return tcs.Task;*/
-        return Task.FromResult("");
+        return "";
     }
 
-    [JSExport] public static Task<string> PingStr() => Task.FromResult("pong");
-    [JSExport] public static Task<int> PingInt() => Task.FromResult(42);
-    [JSExport] public static Task PingVoid() => Task.CompletedTask;
+    [JSExport] public static async Task<string> PingStr() => "pong";
+    [JSExport] public static async Task<int> PingInt() => 42;
+    [JSExport] public static async Task PingVoid()  { return; }
 }
 
 
