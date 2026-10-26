@@ -296,7 +296,7 @@ namespace System.Windows.Forms
                         }
                     }
                 }
-                catch { }
+                catch (Exception e) { Log("writer died: " + e); }
                 Dead = true;
             }
 
@@ -305,6 +305,7 @@ namespace System.Windows.Forms
             // <0 == gone), so loop until the message is out. AWAITED — never blocks,
             // which is essential on single-threaded browser-wasm. Only the writer
             // task calls this, so writes stay ordered without a lock.
+            // ClientConn — the ONLY writer, so ordering needs no lock
             public async Task WriteRawAsync(string s)
             {
                 if (Dead) return;
@@ -314,7 +315,7 @@ namespace System.Windows.Forms
                 {
                     int n;
                     try { n = await Sock.SendAsync(b.AsMemory(off)).ConfigureAwait(false); }
-                    catch { Dead = true; return; }
+                    catch (Exception e) { Log("send failed: " + e.Message); Dead = true; return; }
                     if (n <= 0) { Dead = true; return; }
                     off += n;
                     BytesOut += n;
@@ -630,7 +631,6 @@ namespace System.Windows.Forms
                 if (n <= 0) yield break;
                 cc.BytesIn += n;
                 for (int i = 0; i < n; i++) pending.Add(chunk[i]);
-
                 int cut;
                 while ((cut = pending.IndexOf((byte)'\n')) >= 0)
                 {
@@ -640,6 +640,7 @@ namespace System.Windows.Forms
                 }
             }
         }
+
 
         // ── Frame encoding / pushing ─────────────────────────────────────
         static byte[] EncodeFrame(Bitmap bmp, string fmt, int quality, bool gray)
