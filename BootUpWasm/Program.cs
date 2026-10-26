@@ -10,6 +10,8 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Loader;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 [assembly: System.Runtime.Versioning.SupportedOSPlatform("browser")]
@@ -1385,6 +1387,7 @@ Bitmap CreateStarBitmap(int width, int height)
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ---- drawing state (declared BEFORE the local functions that use them) ----
+/*
 var tool = PaintTool.Pencil;
 var ink = Color.Black;
 int brushSize = 4;
@@ -1707,23 +1710,52 @@ uiTimer.Tick += (s, e) =>
         ? $"latency in→paint {latLast} ms · avg {latSum / latCount} ms · max {latMax} ms"
         : "latency in→paint —";
 };
-//uiTimer.Start();
+//uiTimer.Start();*/
 
-try
+/*var form = new Form
 {
-    if (OperatingSystem.IsBrowser())
+    Text = "Wasm Paint — latency bench",
+    AutoScaleMode = AutoScaleMode.None,        // ← MWF autoscaling collapses the window without this
+    ClientSize = new Size(1200, 860),
+    MinimumSize = new Size(1200, 860),         // ← the driver honours Min/Max; nothing may shrink us
+    FormBorderStyle = FormBorderStyle.Sizable,
+    StartPosition = FormStartPosition.Manual,
+    WindowState = FormWindowState.Maximized,   // ← same trick as the original program
+    BackColor = Color.FromArgb(245, 246, 250),
+
+};*/
+
+/*try
+{
+    if (!OperatingSystem.IsBrowser())
     {
-        //form.Show();
-        Console.WriteLine("[paint] form shown — the page pumps the message loop (BootUpJs.Pump)");
+        Application.Run(form);                       // desktop: unchanged
     }
-    else
+    else if (ThreadingAvailable())                   // MT build
     {
-        //Application.Run(form);
+        // The UI loop gets a thread of its own — it may block in GetMessage
+        // as much as it likes. The main thread stays free for JS interop.
+        var ui = new Thread(() => Application.Run(form))
+        {
+            IsBackground = true,
+            Name = "winforms-ui",
+        };
+        ui.Start();
+        Console.WriteLine("[boot] UI loop on worker thread 'winforms-ui'");
+
+        // Main must stay ALIVE (returned = runtime halts dispatch) but must not
+        // block: a never-completing await keeps the runtime executing.
+        await Task.Delay(Timeout.Infinite);
     }
-    Console.WriteLine($"[paint] bounds={form.Bounds} client={form.ClientSize} text='{form.Text}' " +
-                      $"visible={form.Visible} state={form.WindowState}");
+    else                                             // ST build
+    {
+        form.Show();                                 // Main returns; page pumps via BootUpJs.Pump
+    }
 }
-catch (Exception ex) { Dump(ex); throw; }
+catch (Exception ex) { Dump(ex); throw; }*/
+
+
+
 
 //await Task.Delay(TimeSpan.FromSeconds(100));
 
@@ -1740,38 +1772,38 @@ public enum PaintTool { Pencil, Brush, Eraser, Line, Rectangle, Ellipse }
 
 public static partial class BootUpJs
 {
-    /// Forces WetAfunix to load so getAssemblyExports("WetAfunix") can see WetJs.
+    [JSExport] async static Task<bool> ThreadingAvailable()
+    {
+        try { using var p = new ManualResetEventSlim(false); p.Wait(1); return true; }
+        catch (PlatformNotSupportedException) { return false; }
+    }
+
     [JSExport]
-    public static Task LoadWet()
+    public static async Task LoadWet()
     {
         _ = typeof(Wystem.Wet.WetSocket);
-        return Task.CompletedTask;
     }
 
     [JSExport]
-    public static Task<string> Pump()
+    public static async Task<string> Pump()
     {
-        /*var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        ThreadPool.QueueUserWorkItem(_ =>
+        /*var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
         {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            try
-            {
-                System.Windows.Forms.Application.DoEvents();
-                tcs.TrySetResult("ok " + sw.ElapsedMilliseconds + "ms");
-            }
-            catch (Exception e)
-            {
-                tcs.TrySetResult("THREW " + e.GetType().Name + ": " + e.Message);
-            }
-        });
-        return tcs.Task;*/
-        return Task.FromResult("");
+            System.Windows.Forms.Application.DoEvents();
+            return "ok " + sw.ElapsedMilliseconds + "ms";
+        }
+        catch (Exception e)
+        {
+            return "THREW " + e.GetType().Name + ": " + e.Message;
+        }*/
+        return "";
     }
 
-    [JSExport] public static Task<string> PingStr() => Task.FromResult("pong");
-    [JSExport] public static Task<int> PingInt() => Task.FromResult(42);
-    [JSExport] public static Task PingVoid() => Task.CompletedTask;
+    [JSExport] public static async Task<string> PingStr() { return "pong"; }
+    [JSExport] public static async Task IsMultithreadingAvailable() { Console.WriteLine(await ThreadingAvailable()); return; }
+    [JSExport] public static async Task<int> PingInt() { return 42; }
+    [JSExport] public static async Task PingVoid() { return; }
 }
 
 
