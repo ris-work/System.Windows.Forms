@@ -8,12 +8,20 @@
 		<OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
-		<EnableDiagnostics>true</EnableDiagnostics>
+		<!--<EnableDiagnostics>true</EnableDiagnostics>-->
 
 		<!-- emits the manifest ManifestEmbeddedFileProvider reads -->
 		<!--<GenerateEmbeddedFilesManifest>true</GenerateEmbeddedFilesManifest>-->
 
 		<!--<WasmEnableThreads>true</WasmEnableThreads>-->
+		<!--<RunAOTCompilation>true</RunAOTCompilation>-->
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
+		<!-- Do not generate debug symbols -->
+		<DebugSymbols>false</DebugSymbols>
+		<!-- Completely stop the compiler from creating PDB outputs -->
+		<DebugType>none</DebugType>
 	</PropertyGroup>
 
 	<PropertyGroup>

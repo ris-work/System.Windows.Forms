@@ -1890,7 +1890,14 @@ Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
 
 
 // === Run ===
-Application.Run(form);
+try
+{
+    if (System.Windows.Forms.XplatUISocketWasm.ThreadsAvailable)
+        Application.Run(form);        // threaded wasm or desktop: normal loop
+    else
+        form.Show();                  // single-threaded browser: JS drives us via Pump()
+}
+catch (Exception ex) { Dump(ex); throw; }
 
 // === Local helper ===
 Bitmap CreateStarBitmap(int width, int height)

@@ -73,6 +73,37 @@ namespace System.Windows.Forms
         }
 
         // ── Global state ─────────────────────────────────────────────────
+
+        // ── threading capability probe (runs once, then cached) ─────────
+        static bool? _threads;
+
+        /// <summary>True when the runtime can block — i.e. a threaded wasm build
+        /// or any desktop runtime. False on single-threaded browser-wasm.</summary>
+        public static bool ThreadsAvailable
+        {
+            get
+            {
+                if (!_threads.HasValue)
+                {
+                    try
+                    {
+                        using var probe = new ManualResetEventSlim(false);
+                        probe.Wait(1);
+                        _threads = true;
+                    }
+                    catch (PlatformNotSupportedException) { _threads = false; }
+                    Log("threading: " + (_threads.Value ? "available — blocking loop" : "NOT available — pump model"));
+                }
+                return _threads.Value;
+            }
+        }
+
+        static void WaitForWork(SocketQueue q, int timeoutMs)
+        {
+            if (!ThreadsAvailable) return;   // single-threaded browser: never block
+            q.Evt.Wait(timeoutMs);
+            q.Evt.Reset();
+        }
         static readonly object Sync = new object();
         static string SockDir = "/ui";
         static bool serverStarted;
@@ -1906,7 +1937,7 @@ namespace System.Windows.Forms
         // interop that feeds this queue). We probe once and remember.
         static bool canBlock = true;
 
-        static void WaitForWork(SocketQueue q, int timeoutMs)
+        /*static void WaitForWork(SocketQueue q, int timeoutMs)
         {
             if (!canBlock) return;
             try
@@ -1920,7 +1951,7 @@ namespace System.Windows.Forms
                 Log("blocking waits unavailable (single-threaded browser-wasm) — " +
                     "the UI is driven by PumpMessages()/DoEvents(); see PumpMessages().");
             }
-        }
+        }*/
 
         internal static Action JsYield;
 

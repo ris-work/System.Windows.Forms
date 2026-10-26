@@ -1,19 +1,18 @@
-﻿using SkiaSharp;
+﻿
+using SkiaSharp;
 using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Drawing;
-using System.Drawing.Drawing2D;
-using System.Drawing.Imaging;
+
+using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Loader;
 using System.Windows.Forms;
-using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Runtime.Loader;
 
+[assembly: System.Runtime.Versioning.SupportedOSPlatform("browser")]
 
 static void Dump(Exception ex)
 {
@@ -29,7 +28,7 @@ AppDomain.CurrentDomain.FirstChanceException += (s, e) =>
     var x = e.Exception;
     if (x is TypeInitializationException or TypeLoadException or FileNotFoundException
         or FileLoadException or MissingMethodException or DllNotFoundException
-        or PlatformNotSupportedException or NotSupportedException)
+        or PlatformNotSupportedException or NotSupportedException or ArgumentNullException)
         Console.WriteLine($"[first-chance] {x.GetType().FullName}: {x.Message}");
 };
 
@@ -90,6 +89,8 @@ using (var g = Graphics.FromImage(bitmap))
 
 //SystemDrawingBinding.Install();
 AssemblyDiag.Report();
+
+/* ── Legacy diagnostic suite (Tests 1..28 + text measurement) — kept for reference ──
 
 using var bmp = new Bitmap(1400, 6000);
 using var g = Graphics.FromImage(bmp);
@@ -968,6 +969,7 @@ try
 }
 catch (Exception ex) { Dump(ex); throw; }
 
+*/
 
 
 // ==========================================
@@ -1093,6 +1095,7 @@ var gridStandard = new DataGridView
     Location = new Point(400, 20),
     Size = new Size(380, 540),
     AllowUserToAddRows = false,
+    ReadOnly = true,
     BorderStyle = BorderStyle.FixedSingle,
     EnableHeadersVisualStyles = false,
 };
@@ -1333,611 +1336,7 @@ form.Controls.Add(datePicker);
 
 Application.Run(form);*/
 
-// === Form ===
-string BootUpSD_BACKGROUND = (Environment.GetEnvironmentVariable("BACKGROUND") ?? "true").ToLowerInvariant();
-bool BACKGROUND = true;
-if (BootUpSD_BACKGROUND == "false" || BootUpSD_BACKGROUND == "no" || BootUpSD_BACKGROUND == "no" || BootUpSD_BACKGROUND == "0") BACKGROUND = false;
-var form = new Form
-{
-    AllowTransparency = true,
-    //BackColor = Color.Transparent,
-    
-    BackgroundImageLayout = ImageLayout.None,
-    ClientSize = new Size(1800, 950),
-    BackColor = Color.FromArgb(45, 48, 45),
-    Text = "Ultimate Control Test Bench",
-    WindowState = FormWindowState.Maximized,
-    //DoubleBuffered = true
-};
-//if (BACKGROUND) form.BackgroundImage = Image.FromFile("328551_openclipart_transparent_cube_jarda.png");
-
-// === Global Strips ===
-var menuStrip1 = new MenuStrip();
-var statusStrip1 = new StatusStrip();
-
-// === Zone 1: Inputs & Basics ===
-var grpInputs = new GroupBox
-{
-    Text = "Zone 1: Inputs & Basics",
-    Location = new Point(20, 40),
-    Size = new Size(400, 420),
-    BackColor = Color.FromArgb(150, 60, 60, 65),
-    ForeColor = Color.White,
-    FlatStyle = FlatStyle.Flat
-};
-
-var txtStandard = new TextBox
-{
-    Location = new Point(20, 30),
-    Size = new Size(360, 25),
-    Text = "Standard TextBox",
-    ForeColor = Color.Black,
-    BackColor = Color.Red
-};
-var txtStandard2 = new TextBox
-{
-    Location = new Point(200, 30),
-    Size = new Size(360, 25),
-    Text = "Standard TextBox",
-    ForeColor = Color.Black,
-    BackColor = Color.Red
-};
-var txtPassword = new TextBox
-{
-    Location = new Point(20, 70),
-    Size = new Size(360, 25),
-    UseSystemPasswordChar = true,
-    Text = "password",
-    ForeColor = Color.Black,
-    //BackColor = Color.FromArgb(200, 125, 75, 175)
-};
-var txtMulti = new TextBox
-{
-    Location = new Point(20, 110),
-    Size = new Size(360, 100),
-    Multiline = true,
-    ScrollBars = ScrollBars.Vertical,
-    Text = "Multiline text box...",
-    BackColor = Color.FromArgb(255, 255, 220)
-};
-var numericUpDown1 = new NumericUpDown
-{
-    Location = new Point(20, 230),
-    Size = new Size(150, 25),
-    Value = 50,
-    BorderStyle = BorderStyle.FixedSingle
-};
-var trackBar1 = new TrackBar
-{
-    Location = new Point(20, 270),
-    Size = new Size(360, 45),
-    Maximum = 100,
-    Value = 75
-};
-var comboBox1 = new ComboBox
-{
-    Location = new Point(20, 330),
-    Size = new Size(200, 25),
-    FlatStyle = FlatStyle.Flat,
-    DropDownStyle = ComboBoxStyle.DropDown
-};
-comboBox1.Items.AddRange(new object[] { "Option A", "Option B" });
-comboBox1.SelectedIndex = 0;
-
-var dateTimePicker1 = new DateTimePicker
-{
-    Location = new Point(20, 375),
-    Size = new Size(200, 25),
-    Format = DateTimePickerFormat.Short,
-    Value = DateTime.Now,
-    BackColor = Color.White,
-    ForeColor = Color.Black,
-    CalendarTitleBackColor = Color.Green
-};
-
-grpInputs.Controls.Add(txtStandard);
-grpInputs.Controls.Add(txtPassword);
-grpInputs.Controls.Add(txtMulti);
-grpInputs.Controls.Add(numericUpDown1);
-grpInputs.Controls.Add(trackBar1);
-grpInputs.Controls.Add(comboBox1);
-grpInputs.Controls.Add(dateTimePicker1);
-
-// === Zone 2: Builtin Transparency Test ===
-var grpTransparency = new GroupBox
-{
-    Text = "Zone 2: Builtin Transparency Test",
-    Location = new Point(440, 40),
-    Size = new Size(450, 420),
-    BackColor = Color.FromArgb(60, 60, 65),
-    ForeColor = Color.White,
-    FlatStyle = FlatStyle.Flat
-};
-
-var picStar = new PictureBox
-{
-    Location = new Point(25, 30),
-    Size = new Size(400, 350),
-    BackColor = Color.LightGray,
-    BorderStyle = BorderStyle.Fixed3D,
-    SizeMode = PictureBoxSizeMode.CenterImage
-};
-
-var btnTran1 = new Button
-{
-    Text = "Tran Btn 1",
-    Location = new Point(30, 30),
-    Size = new Size(150, 40),
-    BackColor = Color.Transparent,
-    FlatStyle = FlatStyle.Flat,
-    ForeColor = Color.Black
-};
-btnTran1.FlatAppearance.BorderSize = 0;
-
-var btnTran2 = new Button
-{
-    Text = "Tran Btn 2",
-    Location = new Point(200, 150),
-    Size = new Size(160, 40),
-    BackColor = Color.Transparent,
-    FlatStyle = FlatStyle.Flat,
-    Font = new Font("Arial", 10, FontStyle.Bold),
-    ForeColor = Color.Blue
-};
-btnTran2.FlatAppearance.BorderSize = 0;
-
-var btnTran3 = new Button
-{
-    Text = "Tran Btn 3",
-    Location = new Point(30, 270),
-    Size = new Size(120, 40),
-    BackColor = Color.Cyan,
-    FlatStyle = FlatStyle.Flat,
-    ForeColor = Color.Magenta
-};
-btnTran3.FlatAppearance.BorderSize = 0;
-
-picStar.Controls.Add(btnTran1);
-picStar.Controls.Add(btnTran2);
-picStar.Controls.Add(btnTran3);
-picStar.Controls.Add(txtStandard2);
-
-grpTransparency.Controls.Add(picStar);
-
-// === Zone 3: Rainbow Cell Grid ===
-var grpRainbowData = new GroupBox
-{
-    Text = "Zone 3: Rainbow Cell Grid",
-    Location = new Point(910, 40),
-    Size = new Size(450, 420),
-    BackColor = Color.FromArgb(60, 60, 65),
-    ForeColor = Color.White,
-    FlatStyle = FlatStyle.Flat
-};
-
-var dataGridViewRainbow = new DataGridView
-{
-    Location = new Point(10, 30),
-    Size = new Size(430, 380),
-    AllowUserToAddRows = false,
-    ReadOnly = true,
-    BorderStyle = BorderStyle.FixedSingle,
-    EnableHeadersVisualStyles = false,
-    BackgroundColor = Color.FromArgb(255, 60, 65),
-    GridColor = Color.Wheat
-};
-dataGridViewRainbow.DefaultCellStyle.BackColor = Color.White;
-dataGridViewRainbow.DefaultCellStyle.SelectionBackColor = Color.FromArgb(100, 0, 0, 0);
-dataGridViewRainbow.DefaultCellStyle.SelectionForeColor = Color.White;
-
-DataTable dtRainbow = new DataTable();
-dtRainbow.Columns.Add("R"); dtRainbow.Columns.Add("A");
-dtRainbow.Columns.Add("I"); dtRainbow.Columns.Add("N");
-for (int i = 0; i < 10; i++) dtRainbow.Rows.Add("Cel", "Cel", "Cel", "Cel");
-dataGridViewRainbow.DataSource = dtRainbow;
-
-dataGridViewRainbow.CellFormatting += (sender, e) =>
-{
-    if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
-    int seed = (e.RowIndex * 100) + e.ColumnIndex;
-    Random rnd = new Random(seed);
-    e.CellStyle.BackColor = Color.FromArgb(255, rnd.Next(150, 256), rnd.Next(150, 256), rnd.Next(150, 256));
-    e.CellStyle.ForeColor = Color.Black;
-    e.CellStyle.SelectionBackColor = dataGridViewRainbow.DefaultCellStyle.SelectionBackColor;
-};
-
-grpRainbowData.Controls.Add(dataGridViewRainbow);
-
-// === Zone 4: Interactive Buttons ===
-var grpButtons = new GroupBox
-{
-    Text = "Zone 4: Interactive Buttons",
-    Location = new Point(20, 480),
-    Size = new Size(400, 380),
-    BackColor = Color.FromArgb(60, 60, 65),
-    ForeColor = Color.White,
-    FlatStyle = FlatStyle.Flat
-};
-
-var btnColored1 = new Button
-{
-    Text = "RED ACTION",
-    Location = new Point(20, 30),
-    Size = new Size(150, 50),
-    BackColor = Color.DarkGray,
-    FlatStyle = FlatStyle.Flat,
-    ForeColor = Color.White
-};
-btnColored1.FlatAppearance.BorderSize = 0;
-
-var btnColored2 = new Button
-{
-    Text = "Blue Action",
-    Location = new Point(20, 100),
-    Size = new Size(150, 50),
-    BackColor = Color.Fuchsia,
-    FlatStyle = FlatStyle.Flat,
-    ForeColor = Color.White
-};
-btnColored2.FlatAppearance.BorderSize = 0;
-
-var btnColored3 = new Button
-{
-    Text = "Green Submit",
-    Location = new Point(20, 170),
-    Size = new Size(150, 50),
-    BackColor = Color.Lime,
-    FlatStyle = FlatStyle.Flat,
-    ForeColor = Color.White
-};
-btnColored3.FlatAppearance.BorderSize = 0;
-
-var checkBox1 = new CheckBox
-{
-    Text = "Enable Options",
-    Location = new Point(200, 40),
-    AutoSize = true,
-    ForeColor = Color.White,
-    FlatStyle = FlatStyle.Flat
-};
-var radioButton1 = new RadioButton
-{
-    Text = "Radio Choice",
-    Location = new Point(200, 80),
-    AutoSize = true,
-    ForeColor = Color.White,
-    FlatStyle = FlatStyle.Flat
-};
-var linkLabel1 = new LinkLabel
-{
-    Text = "Visit Example.com",
-    Location = new Point(200, 120),
-    AutoSize = true,
-    LinkColor = Color.Cyan
-};
-
-grpButtons.Controls.Add(btnColored1);
-grpButtons.Controls.Add(btnColored2);
-grpButtons.Controls.Add(btnColored3);
-grpButtons.Controls.Add(checkBox1);
-grpButtons.Controls.Add(radioButton1);
-grpButtons.Controls.Add(linkLabel1);
-
-// === Zone 5: Hierarchies ===
-var grpLists = new GroupBox
-{
-    Text = "Zone 5: Hierarchies",
-    Location = new Point(440, 480),
-    Size = new Size(450, 380),
-    BackColor = Color.FromArgb(60, 60, 65),
-    ForeColor = Color.White,
-    FlatStyle = FlatStyle.Flat
-};
-
-var treeView1 = new TreeView
-{
-    Location = new Point(10, 30),
-    Size = new Size(200, 330),
-    BackColor = Color.White,
-    BorderStyle = BorderStyle.FixedSingle
-};
-treeView1.Nodes.Add("Root");
-treeView1.Nodes[0].Nodes.Add("Child");
-
-var listView1 = new ListView
-{
-    Location = new Point(220, 30),
-    Size = new Size(200, 330),
-    View = View.Details,
-    BorderStyle = BorderStyle.FixedSingle
-};
-listView1.Columns.Add("Item");
-listView1.Columns.Add("Info");
-listView1.Items.Add("Item 1", "Info 1");
-
-grpLists.Controls.Add(treeView1);
-grpLists.Controls.Add(listView1);
-
-// === Zone 6: Standard Data ===
-var grpStandardData = new GroupBox
-{
-    Text = "Zone 6: Standard Data",
-    Location = new Point(910, 480),
-    Size = new Size(450, 380),
-    BackColor = Color.FromArgb(60, 60, 65),
-    ForeColor = Color.White,
-    FlatStyle = FlatStyle.Flat
-};
-
-var dataGridView1 = new DataGridView
-{
-    Location = new Point(10, 30),
-    Size = new Size(410, 150),
-    BorderStyle = BorderStyle.FixedSingle,
-    EnableHeadersVisualStyles = false
-};
-dataGridView1.ColumnHeadersDefaultCellStyle.BackColor = Color.Gray;
-dataGridView1.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
-
-DataTable dtStd = new DataTable();
-dtStd.Columns.Add("ID"); dtStd.Columns.Add("Data");
-dtStd.Rows.Add(1, "Alpha"); dtStd.Rows.Add(2, "Beta");
-dataGridView1.DataSource = dtStd;
-
-var richTextBox1 = new RichTextBox
-{
-    Location = new Point(10, 200),
-    Size = new Size(250, 150),
-    Text = "Rich Text Area...",
-    BackColor = Color.White
-};
-var progressBar1 = new ProgressBar
-{
-    Location = new Point(280, 200),
-    Size = new Size(140, 23),
-    Value = 60
-};
-
-grpStandardData.Controls.Add(dataGridView1);
-grpStandardData.Controls.Add(richTextBox1);
-grpStandardData.Controls.Add(progressBar1);
-
-// === Zone 7: Tab Control & Random Crap ===
-var grpTabs = new GroupBox
-{
-    Text = "Zone 7: Tab Control & Random Crap",
-    Location = new Point(1380, 40),
-    Size = new Size(380, 820),
-    BackColor = Color.FromArgb(60, 60, 65),
-    ForeColor = Color.White,
-    FlatStyle = FlatStyle.Flat
-};
-
-var tabControlRandom = new TabControl
-{
-    Location = new Point(10, 20),
-    Size = new Size(360, 780),
-    SelectedIndex = 0,
-    Appearance = TabAppearance.FlatButtons
-};
-
-// --- Tab 1: Scrolls ---
-var tabPageScrolls = new TabPage
-{
-    Text = "Scrolls",
-    BackColor = Color.FromArgb(70, 70, 75)
-};
-var hScrollBar1 = new HScrollBar
-{
-    Location = new Point(20, 30),
-    Size = new Size(300, 20),
-    Maximum = 100,
-    Value = 50
-};
-var vScrollBar1 = new VScrollBar
-{
-    Location = new Point(20, 70),
-    Size = new Size(20, 200),
-    Maximum = 100,
-    Value = 20
-};
-var progressBarCrap = new ProgressBar
-{
-    Location = new Point(60, 70),
-    Size = new Size(260, 20),
-    Style = ProgressBarStyle.Marquee,
-    MarqueeAnimationSpeed = 50
-};
-tabPageScrolls.Controls.Add(hScrollBar1);
-tabPageScrolls.Controls.Add(vScrollBar1);
-tabPageScrolls.Controls.Add(progressBarCrap);
-
-// --- Tab 2: More Lists ---
-var thisTabPageLists = new TabPage
-{
-    Text = "More Lists",
-    BackColor = Color.FromArgb(70, 70, 75)
-};
-var listBox1 = new ListBox
-{
-    Location = new Point(20, 20),
-    Size = new Size(150, 200),
-    BorderStyle = BorderStyle.FixedSingle
-};
-listBox1.Items.Add("List Item 1"); listBox1.Items.Add("List Item 2");
-listBox1.Items.Add("List Item 3"); listBox1.Items.Add("List Item 4");
-
-var checkedListBox1 = new CheckedListBox
-{
-    Location = new Point(180, 20),
-    Size = new Size(150, 200),
-    BorderStyle = BorderStyle.FixedSingle
-};
-checkedListBox1.Items.Add("Check 1");
-checkedListBox1.Items.Add("Check 2");
-checkedListBox1.Items.Add("Check 3");
-
-thisTabPageLists.Controls.Add(listBox1);
-thisTabPageLists.Controls.Add(checkedListBox1);
-
-// --- Tab 3: Weird Stuff ---
-var thisTabPageWeird = new TabPage
-{
-    Text = "Weird Stuff",
-    BackColor = Color.FromArgb(70, 70, 75)
-};
-var domainUpDown1 = new DomainUpDown
-{
-    Location = new Point(20, 30),
-    Size = new Size(120, 20),
-    BorderStyle = BorderStyle.FixedSingle
-};
-domainUpDown1.Items.Add("Item 1");
-domainUpDown1.SelectedIndex = 0;
-
-var maskedTextBox1 = new MaskedTextBox
-{
-    Location = new Point(20, 60),
-    Size = new Size(100, 20),
-    Mask = "00/00/0000"
-};
-
-var pictureBoxCrap = new PictureBox
-{
-    Location = new Point(20, 100),
-    Size = new Size(300, 100),
-    BackColor = Color.White,
-    BorderStyle = BorderStyle.FixedSingle
-};
-var bmpCrap = new Bitmap(300, 100);
-using (Graphics g_ = Graphics.FromImage(bmpCrap))
-{
-    g_.Clear(Color.White);
-    g_.FillEllipse(Brushes.Magenta, 10, 10, 80, 80);
-    g_.FillRectangle(Brushes.Orange, 100, 20, 180, 60);
-}
-pictureBoxCrap.Image = bmpCrap;
-
-thisTabPageWeird.Controls.Add(domainUpDown1);
-thisTabPageWeird.Controls.Add(maskedTextBox1);
-thisTabPageWeird.Controls.Add(pictureBoxCrap);
-
-tabControlRandom.Controls.Add(tabPageScrolls);
-tabControlRandom.Controls.Add(thisTabPageLists);
-tabControlRandom.Controls.Add(thisTabPageWeird);
-
-grpTabs.Controls.Add(tabControlRandom);
-
-// === Add Zones to Form ===
-form.Controls.Add(grpInputs);
-form.Controls.Add(grpTransparency);
-form.Controls.Add(grpRainbowData);
-form.Controls.Add(grpButtons);
-form.Controls.Add(grpLists);
-form.Controls.Add(grpStandardData);
-form.Controls.Add(grpTabs);
-form.Controls.Add(statusStrip1);
-form.Controls.Add(menuStrip1);
-
-// === Status & Menu Items ===
-statusStrip1.Items.Add("Ready");
-menuStrip1.Items.Add("File");
-menuStrip1.Items.Add("Edit");
-menuStrip1.Items.Add("View");
-
-// === Final Star Image (generated) ===
-picStar.Image = CreateStarBitmap(400, 350);
-
-// === Event Hookup ===
-btnTran1.Click += (_, __) => { txtMulti.Text = Logger.Log; };
-
-// === Exception Dumping (does NOT catch — exceptions still propagate / terminate) ===
-AppDomain.CurrentDomain.UnhandledException += (s, e) =>
-{
-    var ex = e.ExceptionObject as Exception;
-    Console.WriteLine("===== UNHANDLED EXCEPTION (AppDomain.UnhandledException) =====");
-    Console.WriteLine("IsTerminating    : " + e.IsTerminating);
-    Console.WriteLine("ExceptionObject  : " + (e.ExceptionObject == null ? "(null)" : e.ExceptionObject.ToString()));
-    Console.WriteLine("AppDomain        : " + AppDomain.CurrentDomain.FriendlyName);
-    Console.WriteLine("Timestamp (UTC)  : " + DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.fff"));
-    if (ex != null)
-    {
-        Console.WriteLine("Type             : " + ex.GetType().FullName);
-        Console.WriteLine("Message          : " + ex.Message);
-        Console.WriteLine("Source           : " + (ex.Source ?? "(null)"));
-        Console.WriteLine("TargetSite       : " + (ex.TargetSite == null ? "(null)" : ex.TargetSite.ToString()));
-        Console.WriteLine("HelpLink         : " + (ex.HelpLink ?? "(null)"));
-        Console.WriteLine("HResult          : 0x" + ex.HResult.ToString("X8"));
-        Console.WriteLine("StackTrace:");
-        Console.WriteLine(ex.StackTrace ?? "(no stack trace)");
-        Exception inner = ex.InnerException;
-        int depth = 0;
-        while (inner != null)
-        {
-            depth++;
-            Console.WriteLine("----- Inner Exception #" + depth + " -----");
-            Console.WriteLine("Type             : " + inner.GetType().FullName);
-            Console.WriteLine("Message          : " + inner.Message);
-            Console.WriteLine("Source           : " + (inner.Source ?? "(null)"));
-            Console.WriteLine("StackTrace:");
-            Console.WriteLine(inner.StackTrace ?? "(no stack trace)");
-            inner = inner.InnerException;
-        }
-    }
-    Console.WriteLine("===== END UNHANDLED EXCEPTION =====");
-    Console.Out.Flush();
-};
-
-Application.ThreadException += (s, e) =>
-{
-    var ex = e.Exception;
-    Console.WriteLine("===== UNHANDLED UI THREAD EXCEPTION (Application.ThreadException) =====");
-    Console.WriteLine("Timestamp (UTC)  : " + DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.fff"));
-    Console.WriteLine("Type             : " + ex.GetType().FullName);
-    Console.WriteLine("Message          : " + ex.Message);
-    Console.WriteLine("Source           : " + (ex.Source ?? "(null)"));
-    Console.WriteLine("TargetSite       : " + (ex.TargetSite == null ? "(null)" : ex.TargetSite.ToString()));
-    Console.WriteLine("HelpLink         : " + (ex.HelpLink ?? "(null)"));
-    Console.WriteLine("HResult          : 0x" + ex.HResult.ToString("X8"));
-    Console.WriteLine("StackTrace:");
-    Console.WriteLine(ex.StackTrace ?? "(no stack trace)");
-    Exception inner = ex.InnerException;
-    int depth = 0;
-    while (inner != null)
-    {
-        depth++;
-        Console.WriteLine("----- Inner Exception #" + depth + " -----");
-        Console.WriteLine("Type             : " + inner.GetType().FullName);
-        Console.WriteLine("Message          : " + inner.Message);
-        Console.WriteLine("Source           : " + (inner.Source ?? "(null)"));
-        Console.WriteLine("StackTrace:");
-        Console.WriteLine(inner.StackTrace ?? "(no stack trace)");
-        inner = inner.InnerException;
-    }
-    Console.WriteLine("===== END UNHANDLED UI THREAD EXCEPTION =====");
-    Console.Out.Flush();
-};
-
-
-
-
-// Make UI-thread exceptions propagate to AppDomain.UnhandledException instead of
-// being swallowed by the default WinForms dialog (we still do NOT catch them).
-Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
-
-
-
-
-
-// === Run ===
-try
-{
-
-    Application.Run(form);
-}
-catch (Exception ex) { Dump(ex); throw; }
-
-// === Local helper ===
+/* CreateStarBitmap — used only by the commented-out galleries above
 Bitmap CreateStarBitmap(int width, int height)
 {
     var bmp = new Bitmap(width, height);
@@ -1978,9 +1377,340 @@ Bitmap CreateStarBitmap(int width, int height)
     }
     return bmp;
 }
+*/
 
 
-// BootUpWasm — BootUpJs.cs
+// ═══════════════════════════════════════════════════════════════════════════
+// 2. Basic Paint — MS-Paint-like, minimal, measures input→output latency
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ---- drawing state (declared BEFORE the local functions that use them) ----
+var tool = PaintTool.Pencil;
+var ink = Color.Black;
+int brushSize = 4;
+bool drawing = false;
+Point lastPt = Point.Empty, anchorPt = Point.Empty;
+Bitmap surface = null, snapshot = null;
+var undoStack = new List<Bitmap>();
+
+// ---- latency instrumentation ----
+long inputTick = 0;                       // timestamp of the input that caused the pending repaint
+long latLast = 0, latSum = 0, latMax = 0;
+int latCount = 0;
+int inputCount = 0, paintCount = 0;
+
+// ---- form ----
+var form = new Form
+{
+    Text = "Wasm Paint — latency bench",
+    ClientSize = new Size(1280, 860),
+    StartPosition = FormStartPosition.CenterScreen,
+    BackColor = Color.FromArgb(245, 246, 250),
+};
+
+// ---- toolbar ----
+var toolStrip = new ToolStrip { Location = new Point(0, 0), Size = new Size(1280, 30) };
+var tPencil = new ToolStripButton("Pencil");
+var tBrush = new ToolStripButton("Brush");
+var tEraser = new ToolStripButton("Eraser");
+var tLine = new ToolStripButton("Line");
+var tRect = new ToolStripButton("Rect");
+var tEllipse = new ToolStripButton("Ellipse");
+toolStrip.Items.Add(tPencil);
+toolStrip.Items.Add(tBrush);
+toolStrip.Items.Add(tEraser);
+toolStrip.Items.Add(new ToolStripSeparator());
+toolStrip.Items.Add(tLine);
+toolStrip.Items.Add(tRect);
+toolStrip.Items.Add(tEllipse);
+toolStrip.Items.Add(new ToolStripSeparator());
+var tUndo = new ToolStripButton("Undo");
+var tClear = new ToolStripButton("Clear");
+var tSave = new ToolStripButton("Save");
+var tProbe = new ToolStripButton("Probe latency");
+toolStrip.Items.Add(tUndo);
+toolStrip.Items.Add(tClear);
+toolStrip.Items.Add(tSave);
+toolStrip.Items.Add(tProbe);
+
+// ---- palette + brush size ----
+var dimGray = Color.FromArgb(105, 105, 105);
+var pnlLeft = new Panel { Location = new Point(0, 32), Size = new Size(120, 780), BackColor = Color.FromArgb(235, 238, 245) };
+var lblColors = new Label { Text = "Colours", Location = new Point(8, 8), AutoSize = true, ForeColor = dimGray };
+pnlLeft.Controls.Add(lblColors);
+
+var palette = new[]
+{
+    Color.Black, dimGray, Color.White, Color.Red,
+    Color.Orange, Color.Yellow, Color.Green, Color.Cyan,
+    Color.Blue, Color.Purple, Color.Pink, Color.FromArgb(139, 69, 19),
+};
+for (int i = 0; i < palette.Length; i++)
+{
+    var sw = new Button
+    {
+        Location = new Point(8 + (i % 3) * 36, 30 + (i / 3) * 36),
+        Size = new Size(32, 32),
+        BackColor = palette[i],
+        FlatStyle = FlatStyle.Flat,
+        Tag = i,
+    };
+    sw.FlatAppearance.BorderSize = 1;
+    pnlLeft.Controls.Add(sw);
+}
+
+var lblInk = new Label { Text = "", Location = new Point(8, 190), Size = new Size(104, 26), BackColor = Color.Black, BorderStyle = BorderStyle.FixedSingle };
+pnlLeft.Controls.Add(lblInk);
+
+var lblSize = new Label { Text = "Brush size", Location = new Point(8, 230), AutoSize = true, ForeColor = dimGray };
+var nudSize = new NumericUpDown { Location = new Point(8, 252), Size = new Size(100, 24), Minimum = 1, Maximum = 24, Value = 4 };
+pnlLeft.Controls.Add(lblSize);
+pnlLeft.Controls.Add(nudSize);
+
+// ---- canvas ----
+const int canvasW = 1120, canvasH = 740;
+var canvas = new PictureBox
+{
+    Location = new Point(130, 40),
+    Size = new Size(canvasW, canvasH),
+    BackColor = Color.White,
+    BorderStyle = BorderStyle.FixedSingle,
+    SizeMode = PictureBoxSizeMode.Normal,
+};
+surface = new Bitmap(canvasW, canvasH);
+using (var g0 = Graphics.FromImage(surface)) g0.Clear(Color.White);
+canvas.Image = surface;
+
+// ---- status strip ----
+var status = new StatusStrip { Location = new Point(0, 820), Size = new Size(1280, 24) };
+var lblTool = new ToolStripStatusLabel("tool: Pencil");
+var lblPos = new ToolStripStatusLabel("0,0");
+var lblStats = new ToolStripStatusLabel("in 0 · paint 0");
+var lblLatency = new ToolStripStatusLabel("latency in→paint —");
+var lblStatus = new ToolStripStatusLabel("ready") { Spring = true };
+status.Items.Add(lblTool);
+status.Items.Add(lblPos);
+status.Items.Add(lblStats);
+status.Items.Add(lblLatency);
+status.Items.Add(lblStatus);
+
+form.Controls.Add(toolStrip);
+form.Controls.Add(pnlLeft);
+form.Controls.Add(canvas);
+form.Controls.Add(status);
+
+// ---- local functions (after every local they touch is declared) ----
+void NoteInput()
+{
+    inputCount++;
+    inputTick = Environment.TickCount64;  // the "in" mark
+}
+
+void DrawStroke(Point from, Point to)
+{
+    using var g = Graphics.FromImage(surface);
+    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+    using var pen = new Pen(tool == PaintTool.Eraser ? Color.White : ink, brushSize)
+    {
+        StartCap = System.Drawing.Drawing2D.LineCap.Round,
+        EndCap = System.Drawing.Drawing2D.LineCap.Round,
+        LineJoin = System.Drawing.Drawing2D.LineJoin.Round,
+    };
+    g.DrawLine(pen, from, to);
+}
+
+void DrawShape(Graphics g, Point a, Point b)
+{
+    using var pen = new Pen(ink, brushSize);
+    var r = new Rectangle(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y),
+                          Math.Abs(b.X - a.X), Math.Abs(b.Y - a.Y));
+    switch (tool)
+    {
+        case PaintTool.Line: g.DrawLine(pen, a, b); break;
+        case PaintTool.Rectangle: g.DrawRectangle(pen, r); break;
+        case PaintTool.Ellipse: g.DrawEllipse(pen, r); break;
+    }
+}
+
+void PushUndo()
+{
+    undoStack.Add(new Bitmap(surface));
+    while (undoStack.Count > 12) { undoStack[0].Dispose(); undoStack.RemoveAt(0); }
+}
+
+void Undo()
+{
+    if (undoStack.Count == 0) return;
+    var prev = undoStack[undoStack.Count - 1];
+    undoStack.RemoveAt(undoStack.Count - 1);
+    using (var g = Graphics.FromImage(surface)) g.DrawImage(prev, 0, 0);
+    prev.Dispose();
+    canvas.Invalidate();
+}
+
+void ClearCanvas()
+{
+    using var g = Graphics.FromImage(surface);
+    g.Clear(Color.White);
+    canvas.Invalidate();
+}
+
+void Save()
+{
+    try
+    {
+        using var ms = new MemoryStream();
+        surface.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+        surface.Save("painting.png", System.Drawing.Imaging.ImageFormat.Png);   // browser: MEMFS
+        lblStatus.Text = $"saved painting.png · {ms.Length} bytes";
+        Console.WriteLine($"[paint] saved painting.png ({ms.Length} bytes)");
+    }
+    catch (Exception ex) { Dump(ex); }
+}
+
+void SetTool(PaintTool t)
+{
+    tool = t;
+    lblTool.Text = "tool: " + t;
+}
+
+void ProbeLatency()
+{
+    NoteInput();
+    canvas.Invalidate();
+    Console.WriteLine("[paint] probe queued");
+}
+
+// ---- wiring ----
+tPencil.Click += (_, __) => SetTool(PaintTool.Pencil);
+tBrush.Click += (_, __) => SetTool(PaintTool.Brush);
+tEraser.Click += (_, __) => SetTool(PaintTool.Eraser);
+tLine.Click += (_, __) => SetTool(PaintTool.Line);
+tRect.Click += (_, __) => SetTool(PaintTool.Rectangle);
+tEllipse.Click += (_, __) => SetTool(PaintTool.Ellipse);
+tUndo.Click += (_, __) => Undo();
+tClear.Click += (_, __) => { PushUndo(); ClearCanvas(); };
+tSave.Click += (_, __) => Save();
+tProbe.Click += (_, __) => ProbeLatency();
+
+for (int i = 0; i < palette.Length; i++)
+{
+    var sw = pnlLeft.Controls[2 + i] as Button;   // 0=lblColors, 1=swatch loop starts at 2
+    if (sw == null) continue;
+    int idx = (int)sw.Tag;
+    sw.Click += (s, __) =>
+    {
+        ink = palette[idx];
+        lblInk.BackColor = ink;
+    };
+}
+nudSize.ValueChanged += (_, __) => brushSize = (int)nudSize.Value;
+
+canvas.MouseDown += (s, e) =>
+{
+    NoteInput();
+    drawing = true;
+    lastPt = anchorPt = e.Location;
+    PushUndo();
+    if (tool == PaintTool.Line || tool == PaintTool.Rectangle || tool == PaintTool.Ellipse)
+        snapshot = new Bitmap(surface);
+    else
+        DrawStroke(lastPt, e.Location);
+    canvas.Invalidate();
+};
+
+canvas.MouseMove += (s, e) =>
+{
+    NoteInput();
+    lblPos.Text = $"{e.X},{e.Y}";
+    if (!drawing) return;
+
+    if (tool == PaintTool.Line || tool == PaintTool.Rectangle || tool == PaintTool.Ellipse)
+    {
+        using (var g = Graphics.FromImage(surface))
+        {
+            if (snapshot != null) g.DrawImage(snapshot, 0, 0);
+            DrawShape(g, anchorPt, e.Location);
+        }
+    }
+    else
+    {
+        DrawStroke(lastPt, e.Location);
+        lastPt = e.Location;
+    }
+    canvas.Invalidate();
+};
+
+canvas.MouseUp += (s, e) =>
+{
+    if (!drawing) return;
+    NoteInput();
+    drawing = false;
+    if (tool == PaintTool.Line || tool == PaintTool.Rectangle || tool == PaintTool.Ellipse)
+    {
+        using var g = Graphics.FromImage(surface);
+        if (snapshot != null) g.DrawImage(snapshot, 0, 0);
+        DrawShape(g, anchorPt, e.Location);
+        snapshot?.Dispose();
+        snapshot = null;
+    }
+    canvas.Invalidate();
+};
+
+// keyboard: P/B/E/L/R/O tools, Ctrl+Z undo, Ctrl+S save
+form.KeyDown += (s, e) =>
+{
+    NoteInput();
+    if (e.Control && e.KeyCode == Keys.Z) { Undo(); return; }
+    if (e.Control && e.KeyCode == Keys.S) { Save(); return; }
+    switch (e.KeyCode)
+    {
+        case Keys.P: SetTool(PaintTool.Pencil); break;
+        case Keys.B: SetTool(PaintTool.Brush); break;
+        case Keys.E: SetTool(PaintTool.Eraser); break;
+        case Keys.L: SetTool(PaintTool.Line); break;
+        case Keys.R: SetTool(PaintTool.Rectangle); break;
+        case Keys.O: SetTool(PaintTool.Ellipse); break;
+    }
+};
+
+// ---- output → measure: the "out" mark ----
+canvas.Paint += (s, e) =>
+{
+    paintCount++;
+    if (inputTick != 0)
+    {
+        latLast = Environment.TickCount64 - inputTick;
+        latSum += latLast;
+        latCount++;
+        if (latLast > latMax) latMax = latLast;
+        inputTick = 0;              // consumed by this repaint
+    }
+};
+
+// ---- live stats ----
+var uiTimer = new System.Windows.Forms.Timer { Interval = 500 };
+int lastIn = 0, lastPaint = 0;
+uiTimer.Tick += (s, e) =>
+{
+    int inRate = (inputCount - lastIn) * 2;
+    int paintRate = (paintCount - lastPaint) * 2;
+    lastIn = inputCount;
+    lastPaint = paintCount;
+    lblStats.Text = $"in {inputCount} ({inRate}/s) · paint {paintCount} ({paintRate}/s)";
+    lblLatency.Text = latCount > 0
+        ? $"latency in→paint {latLast} ms · avg {latSum / latCount} ms · max {latMax} ms"
+        : "latency in→paint —";
+};
+uiTimer.Start();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// types
+// ═══════════════════════════════════════════════════════════════════════════
+public enum PaintTool { Pencil, Brush, Eraser, Line, Rectangle, Ellipse }
+
+
+// BootUpWasm — BootUpJs.cs (kept here so the file is self-contained)
 
 
 public static partial class BootUpJs
@@ -1989,17 +1719,13 @@ public static partial class BootUpJs
     [JSExport]
     public static void LoadWet() => _ = typeof(Wystem.Wet.WetSocket);
 
-    /// Drives the WinForms message loop from the browser event loop.
-    //[JSExport]
-    //public static void Pump() => System.Windows.Forms.XplatUISocketWasm.PumpMessages();
-
-    // Drive the DRIVER's queue directly: no Application ThreadContext needed,
-    // which is exactly what the ST path (Run returned) cannot guarantee.
-    [JSExport] public static void Pump() => System.Windows.Forms.XplatUISocketWasm.PumpMessages();
-
+    /// Drives the WinForms message loop from the browser event loop (ST model).
+    /// XplatUISocketWasm is internal: System.Windows.Forms needs
+    /// [assembly: InternalsVisibleTo("BootUpWasm")], or swap the body for
+    /// System.Windows.Forms.Application.DoEvents() which is public.
+    [JSExport]
+    public static void Pump() => System.Windows.Forms.XplatUISocketWasm.PumpMessages();
 }
-
-
 
 
 internal static class SystemDrawingBinding
