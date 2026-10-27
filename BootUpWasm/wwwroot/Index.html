@@ -442,9 +442,17 @@
             },
 
             // results are PUSHED here — string returns from [JSExport] never arrive
+            // results are PUSHED here
             async deliver(req, payload) {
-                const p = rpcPending.get(num(req));
-                if (p) { rpcPending.delete(num(req)); p.resolve(payload ?? ''); }
+                const key = num(req);
+                const p = rpcPending.get(key);
+                if (!p) {
+                    log('warn', `[deliver] unmatched req=${req} (${typeof req}) ` +
+                        `pending=[${[...rpcPending.keys()].join(',') || 'none'}] len=${(payload ?? '').length}`);
+                    return;
+                }
+                rpcPending.delete(key);
+                p.resolve(payload ?? '');
             },
         });
 
@@ -494,7 +502,7 @@
                 let root;
                 try { root = await getAssemblyExports(name); } catch { continue; }
                 const w = root?.WetJs ?? root?.Wystem?.Wet?.WetJs ?? root?.Wystem?.WetJs;
-                const p = root?.BootUpJs?.Pump ?? root?.XplatUISocketWasm?.Pump;
+                const p = boot?.BootUpJs?.PumpRpcAsync;      // ← app-level, not WetJs
                 if (!pump && typeof p === 'function') pump = p;
                 if (w && typeof w.WriteAsync === 'function') {
                     if (!wetSource) { wetSource = name; log('ok', `WetJs found in "${name}" (async surface)`); }
@@ -547,12 +555,14 @@
                     }
                 },
 
-                async write(data) { return await getWet().WriteAsync(id, toU8(data)); },
+                async write(data) {
+                    return await rpc((req) => getWet().WriteRpcAsync(req, id, toU8(data))).then(num);
+                },
 
                 async writeAll(data) {
                     data = toU8(data);
                     for (let off = 0; off < data.length;) {
-                        const n = await getWet().WriteAsync(id, data.subarray(off));
+                        const n = await rpc((req) => getWet().WriteRpcAsync(req, id, data.subarray(off))).then(num);
                         if (n < 0) throw new Error(`write: connection #${id} is gone`);
                         off += n;
                         if (off < data.length) await new Promise((r) => (this.onwritable = r));
@@ -560,15 +570,13 @@
                     return data.length;
                 },
 
-                // strings never come back as JS←.NET return values on this runtime —
-                // read through the pushed-result RPC (WetJs.ReadRpcAsync + deliver)
                 async read(max = 65536) {
                     const b64 = await rpc((req) => getWet().ReadRpcAsync(req, id, max));
                     return b64 ? b64ToU8(b64) : new Uint8Array(0);
                 },
 
                 async close() {
-                    try { await getWet().CloseAsync(id); }
+                    try { await rpc((req) => getWet().CloseRpcAsync(req, id)).then(num); }
                     catch (e) { log('warn', 'close: ' + fmtErr(e)); }
                 },
             };
@@ -576,6 +584,7 @@
             log('info', `[conn] makeConn #${id}`);
             return c;
         }
+
 
         // ---- request/response over pushed results (strings never come back as
         //      return values on this runtime, so .NET pushes them) ----
@@ -585,37 +594,41 @@
         function rpc(fn, ...args) {
             return new Promise((resolve, reject) => {
                 const req = ++rpcSeq;
+                log('info', `[rpc] req=${req} registered`);
                 rpcPending.set(req, { resolve, reject });
                 try { fn(req, ...args); }
                 catch (e) { rpcPending.delete(req); reject(e); }
                 setTimeout(() => {
-                    if (rpcPending.delete(req)) reject(new Error('rpc timeout'));
+                    if (rpcPending.delete(req)) { log('warn', `[rpc] req=${req} TIMEOUT`); reject(new Error('rpc timeout')); }
                 }, 5000);
             });
         }
 
         const AF_UNIX = {
             list: async () => JSON.parse(await rpc((req) => getWet().ListRpcAsync(req))),
+
             listeners: async () => {
                 const net = JSON.parse(await rpc((req) => getWet().ListeningRpcAsync(req)))
                     .map((r) => ({ ...r, host: 'net' }));
                 const js = [...services.keys()].map((path) => ({ id: 0, path, host: 'js', state: 'Listening', pending: 0, backlog: 0 }));
                 return [...net, ...js];
             },
+
             connect: async (path) => {
-                const raw = await getWet().ConnectAsync(path);     // int return — fine
+                const raw = await rpc((req) => getWet().ConnectRpcAsync(req, path));   // ← RPC name
                 const id = num(raw);
                 log('info', `[connect] unix:${path} -> raw=${raw} (${typeof raw}) id=${id}`);
                 if (!(id >= 0)) throw new Error(`connect refused — nothing listening at unix:${path}`);
                 return makeConn(id);
             },
+
             read: (id, max) => rpc((req) => getWet().ReadRpcAsync(req, num(id), max)).then((b64) => (b64 ? b64ToU8(b64) : new Uint8Array(0))),
-            write: (id, data) => getWet().WriteAsync(num(id), toU8(data)),
-            disconnect: (id) => getWet().CloseAsync(num(id)),
+            write: (id, data) => rpc((req) => getWet().WriteRpcAsync(req, num(id), toU8(data))).then(num),
+            disconnect: (id) => rpc((req) => getWet().CloseRpcAsync(req, num(id))).then(num),
             listen: (path, onAccept) => services.set(path, onAccept),
         };
         globalThis.AF_UNIX = AF_UNIX;
-        globalThis.AF_UNIX = AF_UNIX;
+
 
         // ────────────────── newline-delimited JSON framing ──────────────────
         class LineConn {
@@ -831,10 +844,14 @@
         // ───────────────────────── pump (manual + timer) ─────────────────────────
         async function pumpOnce() {
             if (runtimeDead) { log('warn', 'pump: runtime dead'); return; }
-            if (!pump) { log('warn', 'pump: no Pump export resolved yet'); return; }
+            const bootJs = globalThis.boot && globalThis.boot.BootUpJs;
+            if (!bootJs || typeof bootJs.PumpRpcAsync !== 'function') {
+                log('warn', 'pump: BootUpJs.PumpRpcAsync not found yet');
+                return;
+            }
             try {
-                const r = await pump();
-                log('ok', 'pump ok' + (typeof r === 'string' ? ' — ' + r : ''));
+                await rpc((req) => bootJs.PumpRpcAsync(req));
+                log('ok', 'pump kicked');
             } catch (e) {
                 log('warn', 'pump: ' + fmtErr(e));
             }

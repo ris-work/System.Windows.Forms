@@ -1732,36 +1732,34 @@ var fn = () =>
     System.Console.WriteLine($"Form code executed");
 };
 
-/*try
+try
 {
     if (!OperatingSystem.IsBrowser())
     {
         Application.Run(form);                       // desktop: unchanged
     }
-    else if (ThreadingAvailable())                   // MT build
+    else if (ParallelExecutionUnit.ThreadingAvailable())                   // MT build
     {
         // The UI loop gets a thread of its own — it may block in GetMessage
         // as much as it likes. The main thread stays free for JS interop.
-        var ui = new Thread(() => Application.Run(form))
+        var ui = new Task(() => Application.Run(form))
         {
-            IsBackground = true,
-            Name = "winforms-ui",
         };
         ui.Start();
         Console.WriteLine("[boot] UI loop on worker thread 'winforms-ui'");
 
         // Main must stay ALIVE (returned = runtime halts dispatch) but must not
         // block: a never-completing await keeps the runtime executing.
-        await Task.Delay(Timeout.Infinite);
+        //await Task.Delay(Timeout.Infinite);
     }
     else                                             // ST build
     {
         form.Show();                                 // Main returns; page pumps via BootUpJs.Pump
     }
 }
-catch (Exception ex) { Dump(ex); throw; }*/
+catch (Exception ex) { Dump(ex); throw; }
 
-if (await BootUpJs.ThreadingAvailable())
+/*if (await BootUpJs.ThreadingAvailable())
 {
     System.Console.WriteLine("Starting a new thread...");
     //Thread newThread = new Thread(new ThreadStart(fn));
@@ -1804,7 +1802,7 @@ catch (Exception ex) { Dump(ex); throw; }
 
 
 // belt and braces: whatever happens above, Main must not fall off the end.
-await Task.Delay(Timeout.Infinite);
+await Task.Delay(Timeout.Infinite);*/
 
 
 
@@ -1821,11 +1819,13 @@ public enum PaintTool { Pencil, Brush, Eraser, Line, Rectangle, Ellipse }
 
 
 
+#pragma warning disable CS1998
 public static partial class BootUpJs
 {
-    [JSExport] public async static Task<bool> ThreadingAvailable()
+    [JSExport]
+    public static async Task<bool> ThreadingAvailable()
     {
-        try { using var p = new ManualResetEventSlim(false); p.Wait(1); return true; }
+        try { return true; }
         catch (PlatformNotSupportedException) { return false; }
     }
 
@@ -1835,17 +1835,22 @@ public static partial class BootUpJs
         _ = typeof(Wystem.Wet.WetSocket);
     }
 
+    /// <summary>
+    /// UI message pump. Lives HERE (the host app), not in Wystem.Wet — the socket
+    /// library must not know WinForms exists. Result is pushed, never returned.
+    /// </summary>
     [JSExport]
-    public static async Task<int> Pump()
+    public static async Task PumpRpcAsync(int req)
     {
-        System.Windows.Forms.Application.DoEvents();
-        return 1;
+        //System.Windows.Forms.XplatUISocketWasm.SchedulePump();
+        //await Wystem.Wet.WetWire.Deliver(req, "1");
     }
-    [JSExport] public static async Task<string> PingStr() { return "pong"; }
-    [JSExport] public static async Task IsMultithreadingAvailable() { Console.WriteLine(await ThreadingAvailable()); return; }
-    [JSExport] public static async Task<int> PingInt() { return 42; }
-    [JSExport] public static async Task PingVoid() { return; }
+
+    [JSExport] public static async Task PingStrAsync(int req) => await Wystem.Wet.WetWire.Deliver(req, "pong");
+    [JSExport] public static async Task PingIntAsync(int req) => await Wystem.Wet.WetWire.Deliver(req, "42");
+    [JSExport] public static async Task PingVoidAsync(int req) { }
 }
+#pragma warning restore CS1998
 
 
 

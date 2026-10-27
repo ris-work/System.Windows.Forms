@@ -17,8 +17,9 @@
 
 		<!--<WasmEnableThreads>true</WasmEnableThreads>-->
 		<!--<RunAOTCompilation>true</RunAOTCompilation>-->
+		<DebugSymbols>true</DebugSymbols>
 		<ThreadPoolMaxThreads>4</ThreadPoolMaxThreads>
-		<!--<MonoRuntimeDebuggerEnabled>true</MonoRuntimeDebuggerEnabled>-->
+		<MonoRuntimeDebuggerEnabled>true</MonoRuntimeDebuggerEnabled>
 	</PropertyGroup>
 
 	<!--<PropertyGroup Condition="'$(Configuration)' == 'Release'">

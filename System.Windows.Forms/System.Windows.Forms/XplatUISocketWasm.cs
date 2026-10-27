@@ -482,7 +482,7 @@ namespace System.Windows.Forms
         // enqueued we run one DoEvents pass on the execution unit. No JS timer.
         static int pumpScheduled;
 
-        static void SchedulePump()
+        public static void SchedulePump()
         {
             if (Interlocked.CompareExchange(ref pumpScheduled, 1, 0) != 0) return;
             ParallelExecutionUnit.Run(() =>
@@ -636,6 +636,7 @@ namespace System.Windows.Forms
         static async Task WinAcceptLoopAsync(WinInfo wi)
         {
             if (wi.Listener == null) return;
+            WetTrace.Enter("WinAcceptLoopAsync " + wi.SockPath);
             try
             {
                 for (; ; )
@@ -645,16 +646,19 @@ namespace System.Windows.Forms
                     catch (WetException) { break; }
                     if (s == null) break;
 
+                    WetTrace.Mark("win-accept: #" + s.Handle + " on " + wi.SockPath);
                     var cc = new ClientConn { Sock = s, Win = wi };
                     lock (Sync) wi.Clients.Add(cc);
                     cc.StartWriter();
                     cc.Send("{\"type\":\"hello\",\"protocol\":1,\"screen\":[" + screenW + "," + screenH +
                             "],\"window\":" + (wi.IsDesktop ? DesktopJson() : WindowJson(wi)) + "}");
+                    WetTrace.Mark("win-accept: hello queued #" + s.Handle);
                     cc.Reader = ParallelExecutionUnit.RunAsync(() => WinClientLoopAsync(cc), "win-reader");
                     Log("client #" + s.Handle + " attached to " + (wi.IsDesktop ? "compositor" : "0x" + wi.Handle.ToInt64().ToString("X")));
                 }
             }
             catch (Exception e) { Log("accept loop (" + wi.SockPath + "): " + e.Message); }
+            WetTrace.Exit("WinAcceptLoopAsync " + wi.SockPath);
         }
 
         static async Task WinClientLoopAsync(ClientConn cc)
@@ -914,15 +918,14 @@ namespace System.Windows.Forms
         {
             var wi = cc.Win;
             if (wi == null || cc.Dead) return;
+            WetTrace.Enter("SendFrameAsync #" + cc.Sock.Handle + " fmt=" + cc.Format);
 
-            // live throttle (optional): pace the writer instead of dropping frames
             if (cc.MinFrameMs > 0)
             {
                 int wait = cc.MinFrameMs - unchecked(Environment.TickCount - cc.LastFrameTick);
                 if (wait > 0) await Task.Delay(wait).ConfigureAwait(false);
             }
 
-            // SVG requested but server-side SVG is off: negotiate down to PNG
             if (cc.Format == "svg" && !SvgSupport.Enabled)
                 cc.Format = "png";
 
@@ -960,10 +963,13 @@ namespace System.Windows.Forms
                 payload = bytes != null ? Convert.ToBase64String(bytes) : "";
             }
 
+            WetTrace.Mark("SendFrameAsync #" + cc.Sock.Handle + " " + cc.Format + " " + w + "x" + h +
+                          " payload=" + payload.Length + "b64");
             await cc.WriteRawAsync(FrameJson(cc.Format, w, h, payload)).ConfigureAwait(false);
 
             cc.LastFrameTick = Environment.TickCount;
             cc.FramesOut++;
+            WetTrace.Exit("SendFrameAsync #" + cc.Sock.Handle + " frames=" + cc.FramesOut);
         }
 
         static void PushFrames(WinInfo wi)
@@ -1068,6 +1074,7 @@ namespace System.Windows.Forms
         {
             var wi = cc.Win;
             string type = root.TryGetProperty("type", out var te) ? te.GetString() : "";
+            WetTrace.Mark("client-msg #" + cc.Sock.Handle + " '" + type + "'");
             int t = (int)(root.TryGetProperty("t", out var timeEl) ? timeEl.GetInt64() : Environment.TickCount);
             switch (type)
             {
