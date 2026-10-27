@@ -53,6 +53,9 @@ using Wystem.Wet;
 
 namespace System.Windows.Forms
 {
+
+
+
     public class XplatUISocketWasm : XplatUIDriver
     {
         // ── Singleton ────────────────────────────────────────────────────
@@ -242,7 +245,8 @@ namespace System.Windows.Forms
             public long BytesIn, BytesOut, FramesOut;
             const int MaxCtrl = 64;
 
-            public void StartWriter() => Writer = Task.Run(WriterLoopAsync);
+            public void StartWriter() =>
+                Writer = ParallelExecutionUnit.RunAsync(WriterLoopAsync, "client-writer");
 
             // Control messages (hello/info/pong/bye/log) — queued, capped.
             public void Send(string s)
@@ -273,6 +277,9 @@ namespace System.Windows.Forms
                         bool signalled;
                         try { signalled = await Work.WaitAsync(500).ConfigureAwait(false); }
                         catch { break; }
+                        Console.WriteLine("Running Task.Yield()");
+                        await Task.Yield();   // never continue the writer inside the caller's stack
+                        Console.WriteLine("Ran Task.Yield()");
 
                         // Heartbeat: a live subscriber gets a frame even if nothing
                         // invalidated — this is the "video output" path.
@@ -541,7 +548,7 @@ namespace System.Windows.Forms
                     lock (Sync) listWatchers.Add(cc);
                     cc.StartWriter();
                     cc.Send(ListJson());
-                    cc.Reader = Task.Run(() => ListClientLoopAsync(cc));
+                    cc.Reader = ParallelExecutionUnit.RunAsync(() => ListClientLoopAsync(cc), "list-reader");
                     Log("window-list client #" + s.Handle + " connected");
                 }
             }
@@ -582,7 +589,7 @@ namespace System.Windows.Forms
                     cc.StartWriter();
                     cc.Send("{\"type\":\"hello\",\"protocol\":1,\"screen\":[" + screenW + "," + screenH +
                             "],\"window\":" + (wi.IsDesktop ? DesktopJson() : WindowJson(wi)) + "}");
-                    cc.Reader = Task.Run(() => WinClientLoopAsync(cc));
+                    cc.Reader = ParallelExecutionUnit.RunAsync(() => WinClientLoopAsync(cc), "win-reader");
                     Log("client #" + s.Handle + " attached to " + (wi.IsDesktop ? "compositor" : "0x" + wi.Handle.ToInt64().ToString("X")));
                 }
             }
@@ -641,22 +648,33 @@ namespace System.Windows.Forms
             }
         }
 
-        // ── Frame encoding / pushing ─────────────────────────────────────
+        // ── RAW formats (no codec — memcpy / one integer pass per pixel) ──
+        //   rawbgra      BGRA8888, 4 B/px, compact rows
+        //   rawbgra332   R3G3B2 packed, 1 B/px
+        //   rawbgra1     1 bpp (luma threshold), MSB-first, stride=(w+7)/8
+        //   rawg8        Gray8, 1 B/px
+        //   rawycbcr322  planar 4:2:2: Y (w*h) | Cb (ceil(w/2)*h) | Cr (ceil(w/2)*h)
+        static bool IsRawFormat(string fmt) =>
+            fmt == "rawbgra" || fmt == "rawbgra332" || fmt == "rawbgra1" ||
+            fmt == "rawg8" || fmt == "rawycbcr322";
+
         static byte[] EncodeFrame(Bitmap bmp, string fmt, int quality, bool gray)
         {
             var src = bmp._skBitmap;
+
+            if (IsRawFormat(fmt))
+                return EncodeRawPixels(src, fmt);
+
             SKBitmap use = src;
             if (gray)
             {
                 use = new SKBitmap(src.Width, src.Height, SKColorType.Gray8, SKAlphaType.Opaque);
                 unsafe
                 {
-                    byte* s = (byte*)src.GetPixels();
-                    byte* d = (byte*)use.GetPixels();
+                    byte* s = (byte*)src.GetPixels(); byte* d = (byte*)use.GetPixels();
                     for (int y = 0; y < src.Height; y++)
                     {
-                        byte* sr = s + y * src.RowBytes;
-                        byte* dr = d + y * use.RowBytes;
+                        byte* sr = s + y * src.RowBytes; byte* dr = d + y * use.RowBytes;
                         for (int x = 0; x < src.Width; x++)
                         {
                             int b = sr[x * 4], g = sr[x * 4 + 1], r = sr[x * 4 + 2];
@@ -675,6 +693,122 @@ namespace System.Windows.Forms
             return result;
         }
 
+        /// <summary>One pass over the source pixels, no Skia codec. Rows are compact
+        /// (stride == bpp*w) except rawbgra1 where stride = ceil(w/8).</summary>
+        static unsafe byte[] EncodeRawPixels(SKBitmap src, string fmt)
+        {
+            int w = src.Width, h = src.Height;
+            if (w <= 0 || h <= 0) return Array.Empty<byte>();
+            byte* s = (byte*)src.GetPixels();
+
+            switch (fmt)
+            {
+                case "rawbgra":
+                    {
+                        var raw = new byte[(long)w * h * 4];
+                        fixed (byte* dst = raw)
+                            for (int y = 0; y < h; y++)
+                                Buffer.MemoryCopy(s + (long)y * src.RowBytes, dst + (long)y * w * 4, w * 4, w * 4);
+                        return raw;
+                    }
+
+                case "rawbgra332":
+                    {
+                        var raw = new byte[(long)w * h];
+                        fixed (byte* dst = raw)
+                            for (int y = 0; y < h; y++)
+                            {
+                                byte* sr = s + (long)y * src.RowBytes;
+                                byte* dr = dst + (long)y * w;
+                                for (int x = 0; x < w; x++)
+                                {
+                                    int b = sr[x * 4], g = sr[x * 4 + 1], r = sr[x * 4 + 2];
+                                    dr[x] = (byte)(((r >> 5) << 5) | ((g >> 5) << 2) | (b >> 6));
+                                }
+                            }
+                        return raw;
+                    }
+
+                case "rawbgra1":
+                    {
+                        int stride = (w + 7) / 8;
+                        var raw = new byte[(long)stride * h];
+                        fixed (byte* dst = raw)
+                            for (int y = 0; y < h; y++)
+                            {
+                                byte* sr = s + (long)y * src.RowBytes;
+                                byte* dr = dst + (long)y * stride;
+                                for (int x = 0; x < w; x++)
+                                {
+                                    int b = sr[x * 4], g = sr[x * 4 + 1], r = sr[x * 4 + 2];
+                                    int luma = (r * 77 + g * 150 + b * 29) >> 8;
+                                    if (luma >= 128) dr[x >> 3] |= (byte)(0x80 >> (x & 7));
+                                }
+                            }
+                        return raw;
+                    }
+
+                case "rawg8":
+                    {
+                        var raw = new byte[(long)w * h];
+                        fixed (byte* dst = raw)
+                            for (int y = 0; y < h; y++)
+                            {
+                                byte* sr = s + (long)y * src.RowBytes;
+                                byte* dr = dst + (long)y * w;
+                                for (int x = 0; x < w; x++)
+                                {
+                                    int b = sr[x * 4], g = sr[x * 4 + 1], r = sr[x * 4 + 2];
+                                    dr[x] = (byte)((r * 77 + g * 150 + b * 29) >> 8);
+                                }
+                            }
+                        return raw;
+                    }
+
+                case "rawycbcr322":
+                    {
+                        // BT.601 integer math; chroma averaged over each horizontal pair.
+                        int cw = (w + 1) / 2;
+                        var raw = new byte[(long)w * h + 2L * cw * h];
+                        fixed (byte* dst = raw)
+                        {
+                            byte* yp = dst;
+                            byte* cbp = dst + (long)w * h;
+                            byte* crp = cbp + (long)cw * h;
+                            for (int y = 0; y < h; y++)
+                            {
+                                byte* sr = s + (long)y * src.RowBytes;
+                                byte* yr = yp + (long)y * w;
+                                byte* cbr = cbp + (long)y * cw;
+                                byte* crr = crp + (long)y * cw;
+
+                                for (int x = 0; x < w; x++)
+                                {
+                                    int b = sr[x * 4], g = sr[x * 4 + 1], r = sr[x * 4 + 2];
+                                    yr[x] = (byte)((77 * r + 150 * g + 29 * b) >> 8);
+                                }
+                                for (int cx = 0; cx < cw; cx++)
+                                {
+                                    int x0 = cx * 2;
+                                    int x1 = x0 + 1 < w ? x0 + 1 : x0;
+                                    int b = (sr[x0 * 4] + sr[x1 * 4]) / 2;
+                                    int g = (sr[x0 * 4 + 1] + sr[x1 * 4 + 1]) / 2;
+                                    int r = (sr[x0 * 4 + 2] + sr[x1 * 4 + 2]) / 2;
+                                    int cb = 128 + ((-43 * r - 85 * g + 128 * b) >> 8);
+                                    int cr = 128 + ((128 * r - 107 * g - 21 * b) >> 8);
+                                    cbr[cx] = (byte)(cb < 0 ? 0 : (cb > 255 ? 255 : cb));
+                                    crr[cx] = (byte)(cr < 0 ? 0 : (cr > 255 ? 255 : cr));
+                                }
+                            }
+                        }
+                        return raw;
+                    }
+
+                default:
+                    return Array.Empty<byte>();
+            }
+        }
+
         static byte[] EncodeWindowFrame(WinInfo wi, string fmt, int q, bool gray)
         {
             Bitmap src = BuildCompositedFrame(wi);
@@ -684,8 +818,37 @@ namespace System.Windows.Forms
             return bytes;
         }
 
-        // Called on the connection's writer task: build + encode + write here,
-        // off the UI path.
+        /// <summary>
+        /// One frame message. Raw formats carry their pixel description so the
+        /// client can write the bytes straight into memory — no decoding.
+        /// </summary>
+        static string FrameJson(string fmt, int w, int h, string data)
+        {
+            if (!IsRawFormat(fmt))
+                return "{\"type\":\"frame\",\"format\":\"" + fmt + "\",\"width\":" + w +
+                       ",\"height\":" + h + ",\"data\":\"" + data + "\"}";
+
+            int cw = (w + 1) / 2;
+            string pix;
+            int stride;
+            switch (fmt)
+            {
+                case "rawbgra": pix = "bgra8"; stride = w * 4; break;
+                case "rawbgra332": pix = "bgra332"; stride = w; break;
+                case "rawbgra1": pix = "bgra1"; stride = (w + 7) / 8; break;
+                case "rawg8": pix = "gray8"; stride = w; break;
+                default: pix = "ycbcr422"; stride = w; break;
+            }
+
+            string extra = fmt == "rawycbcr322"
+                ? ",\"chromawidth\":" + cw + ",\"layout\":\"Y|Cb|Cr\""
+                : "";
+
+            return "{\"type\":\"frame\",\"format\":\"" + fmt + "\",\"width\":" + w + ",\"height\":" + h +
+                   ",\"pixelformat\":\"" + pix + "\",\"stride\":" + stride + extra +
+                   ",\"data\":\"" + data + "\"}";
+        }
+
         static async Task SendFrameAsync(ClientConn cc)
         {
             var wi = cc.Win;
@@ -710,21 +873,22 @@ namespace System.Windows.Forms
                 w = screenW; h = screenH;
                 if (cc.Format == "svg")
                 {
-                    payload = BuildDesktopSvg();
+                    payload = JEsc(BuildDesktopSvg());
                 }
                 else
                 {
-                    var desk = BuildDesktopFrame();
-                    var dbytes = EncodeFrame(desk, cc.Format, cc.Quality, cc.Gray);
-                    desk.Dispose();
-                    payload = dbytes != null ? Convert.ToBase64String(dbytes) : "";
+                    using (var desk = BuildDesktopFrame())
+                    {
+                        var dbytes = EncodeFrame(desk, cc.Format, cc.Quality, cc.Gray);
+                        payload = dbytes != null ? Convert.ToBase64String(dbytes) : "";
+                    }
                 }
             }
             else if (cc.Format == "svg")
             {
                 w = wi.Hwnd != null ? wi.Hwnd.width : 0;
                 h = wi.Hwnd != null ? wi.Hwnd.height : 0;
-                payload = BuildTopFrameSvg(wi);
+                payload = JEsc(BuildTopFrameSvg(wi));
             }
             else
             {
@@ -735,9 +899,7 @@ namespace System.Windows.Forms
                 payload = bytes != null ? Convert.ToBase64String(bytes) : "";
             }
 
-            await cc.WriteRawAsync("{\"type\":\"frame\",\"format\":\"" + cc.Format +
-                                   "\",\"width\":" + w + ",\"height\":" + h +
-                                   ",\"data\":\"" + (cc.Format == "svg" ? JEsc(payload) : payload) + "\"}").ConfigureAwait(false);
+            await cc.WriteRawAsync(FrameJson(cc.Format, w, h, payload)).ConfigureAwait(false);
 
             cc.LastFrameTick = Environment.TickCount;
             cc.FramesOut++;
@@ -870,7 +1032,8 @@ namespace System.Windows.Forms
                     if (root.TryGetProperty("format", out var f))
                     {
                         var fs = f.GetString();
-                        cc.Format = (fs == "png" || fs == "jpeg" || fs == "svg") ? fs : "jpeg";
+                        cc.Format = (fs == "png" || fs == "jpeg" || fs == "svg"
+                                     || IsRawFormat(fs)) ? fs : "jpeg";
                     }
                     if (root.TryGetProperty("quality", out var q)) cc.Quality = Math.Max(1, Math.Min(100, q.GetInt32()));
                     if (root.TryGetProperty("gray", out var ge)) cc.Gray = ge.GetBoolean();
@@ -2601,7 +2764,7 @@ namespace System.Windows.Forms
         internal override void DrawReversibleFrame(Rectangle rectangle, Color backColor, FrameStyle style) { }
 
         // ── Driver: misc stubs ───────────────────────────────────────────
-        internal override void AudibleAlert(AlertType alert) { try { Console.Beep(); } catch { } }
+        internal override void AudibleAlert(AlertType alert) { try { if (OperatingSystem.IsBrowser()) return; Console.Beep(); } catch { } }
         internal override void BeginMoveResize(IntPtr handle) { }
         internal override void EnableThemes() => themes_enabled = true;
         internal override void HandleException(Exception e)

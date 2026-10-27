@@ -6,6 +6,7 @@ using System.Data;
 using System.Drawing;
 
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices.JavaScript;
@@ -13,6 +14,7 @@ using System.Runtime.Loader;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using Wystem.Wet;
 
 [assembly: System.Runtime.Versioning.SupportedOSPlatform("browser")]
 
@@ -1387,7 +1389,7 @@ Bitmap CreateStarBitmap(int width, int height)
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ---- drawing state (declared BEFORE the local functions that use them) ----
-/*
+
 var tool = PaintTool.Pencil;
 var ink = Color.Black;
 int brushSize = 4;
@@ -1710,20 +1712,25 @@ uiTimer.Tick += (s, e) =>
         ? $"latency in→paint {latLast} ms · avg {latSum / latCount} ms · max {latMax} ms"
         : "latency in→paint —";
 };
-//uiTimer.Start();*/
+//uiTimer.Start();
 
-/*var form = new Form
+var fn = () =>
 {
-    Text = "Wasm Paint — latency bench",
-    AutoScaleMode = AutoScaleMode.None,        // ← MWF autoscaling collapses the window without this
-    ClientSize = new Size(1200, 860),
-    MinimumSize = new Size(1200, 860),         // ← the driver honours Min/Max; nothing may shrink us
-    FormBorderStyle = FormBorderStyle.Sizable,
-    StartPosition = FormStartPosition.Manual,
-    WindowState = FormWindowState.Maximized,   // ← same trick as the original program
-    BackColor = Color.FromArgb(245, 246, 250),
-
-};*/
+    System.Console.WriteLine($"Thread {Environment.CurrentManagedThreadId} says hello");
+    /*var form = new Form
+    {
+        Text = "Wasm Paint — latency bench",
+        AutoScaleMode = AutoScaleMode.None,        // ← MWF autoscaling collapses the window without this
+        ClientSize = new Size(1200, 860),
+        MinimumSize = new Size(1200, 860),         // ← the driver honours Min/Max; nothing may shrink us
+        FormBorderStyle = FormBorderStyle.Sizable,
+        StartPosition = FormStartPosition.Manual,
+        WindowState = FormWindowState.Maximized,   // ← same trick as the original program
+        BackColor = Color.FromArgb(245, 246, 250),
+    
+    };*/
+    System.Console.WriteLine($"Form code executed");
+};
 
 /*try
 {
@@ -1754,7 +1761,19 @@ uiTimer.Tick += (s, e) =>
 }
 catch (Exception ex) { Dump(ex); throw; }*/
 
-
+if (await BootUpJs.ThreadingAvailable())
+{
+    System.Console.WriteLine("Starting a new thread...");
+    //Thread newThread = new Thread(new ThreadStart(fn));
+    System.Console.WriteLine("[1/2] Starting a new thread...");
+    for(int i=0; i<= 1; i++)
+        ParallelExecutionUnit.Run(fn);
+    System.Console.WriteLine("[2/2] Started a new thread...");
+}
+else
+{
+    //fn();
+}
 
 
 //await Task.Delay(TimeSpan.FromSeconds(100));
@@ -1772,7 +1791,7 @@ public enum PaintTool { Pencil, Brush, Eraser, Line, Rectangle, Ellipse }
 
 public static partial class BootUpJs
 {
-    [JSExport] async static Task<bool> ThreadingAvailable()
+    [JSExport] public async static Task<bool> ThreadingAvailable()
     {
         try { using var p = new ManualResetEventSlim(false); p.Wait(1); return true; }
         catch (PlatformNotSupportedException) { return false; }
