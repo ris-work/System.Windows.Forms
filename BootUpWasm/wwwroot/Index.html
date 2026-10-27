@@ -444,15 +444,10 @@
             // results are PUSHED here — string returns from [JSExport] never arrive
             // results are PUSHED here
             async deliver(req, payload) {
-                const key = num(req);
-                const p = rpcPending.get(key);
-                if (!p) {
-                    log('warn', `[deliver] unmatched req=${req} (${typeof req}) ` +
-                        `pending=[${[...rpcPending.keys()].join(',') || 'none'}] len=${(payload ?? '').length}`);
-                    return;
-                }
-                rpcPending.delete(key);
-                p.resolve(payload ?? '');
+                log('info', `[deliver] req=${req} len=${(payload ?? '').length}`);
+                const p = rpcPending.get(num(req));
+                if (p) { rpcPending.delete(num(req)); p.resolve(payload ?? ''); }
+                else log('warn', `[deliver] unmatched req=${req} pending=[${[...rpcPending.keys()].join(',')}]`);
             },
         });
 
@@ -987,9 +982,11 @@
         on('#btn-listeners', 'click', async () => {
             log('info', 'listeners →');
             try {
-                const rows = await AF_UNIX.listeners();
-                log('info', `AF_UNIX listeners (${rows.length}):`);
-                rows.forEach((r) => log('info', `  ${r.host === 'js' ? '[js] ' : '[net]'} unix:${r.path}  ${r.state}  pending ${r.pending}/${r.backlog}`));
+                const js = getWet();
+                const listening = await rpc((req) => js.ListeningRpcAsync(req));
+                const all = await rpc((req) => js.ListRpcAsync(req));
+                log('info', `ListeningRpc raw: ${String(listening).slice(0, 300)}`);
+                log('info', `ListRpc      raw: ${String(all).slice(0, 300)}`);
             } catch (e) { log('error', 'listeners: ' + fmtErr(e)); }
         });
 

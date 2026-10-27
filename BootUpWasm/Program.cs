@@ -1731,33 +1731,88 @@ var fn = () =>
     };*/
     System.Console.WriteLine($"Form code executed");
 };
-
+/*
 try
 {
     if (!OperatingSystem.IsBrowser())
     {
+        Console.WriteLine("[boot] Application.Run() directly");
         Application.Run(form);                       // desktop: unchanged
     }
     else if (ParallelExecutionUnit.ThreadingAvailable())                   // MT build
     {
+        Console.WriteLine("[boot] UI loop on worker thread 'winforms-ui'");
         // The UI loop gets a thread of its own — it may block in GetMessage
         // as much as it likes. The main thread stays free for JS interop.
         var ui = new Task(() => Application.Run(form))
         {
         };
         ui.Start();
-        Console.WriteLine("[boot] UI loop on worker thread 'winforms-ui'");
+
 
         // Main must stay ALIVE (returned = runtime halts dispatch) but must not
         // block: a never-completing await keeps the runtime executing.
-        //await Task.Delay(Timeout.Infinite);
+        await Task.Delay(Timeout.Infinite);
+        /*while (true)
+        {
+            //System.Windows.Forms.XplatUISocketWasm.SchedulePump();
+            await Task.Yield();
+        }*//*
+
     }
     else                                             // ST build
     {
+        Console.WriteLine("[boot] form.Show() directly");
         form.Show();                                 // Main returns; page pumps via BootUpJs.Pump
+        
     }
 }
-catch (Exception ex) { Dump(ex); throw; }
+catch (Exception ex) { Dump(ex); throw; }*/
+
+// ── warm up the thread pool ──────────────────────────────────────────────
+// This RC does not create pool threads on demand (Thread.Start asserts), so
+// TaskCompletionSource continuations (RunContinuationsAsynchronously) have
+// nowhere to run unless workers already exist. The old Task.Run(fn) × 100
+// test block did this accidentally — that is the run where accepts resumed.
+static void WarmUpPool(int workers = 16)
+{
+    int done = 0;
+    for (int i = 0; i < workers; i++)
+        Task.Run(() => System.Threading.Interlocked.Increment(ref done));
+    Console.WriteLine($"[boot] pool warm-up: {workers} workers requested");
+}
+
+WarmUpPool();
+AssemblyDiag.Report();
+
+if (!OperatingSystem.IsBrowser())
+{
+    Task.Run(() => Application.Run(form));                       // desktop: the proper way, unchanged
+    while (true)
+    {
+        _ = Task.Run(() => Console.WriteLine("[pool] tick"));   // ← does the pool run anything?
+        System.Windows.Forms.XplatUISocketWasm.SchedulePump();
+        //await Task.Delay(16);
+    }
+}
+else
+{
+    // ── browser on this RC ─────────────────────────────────────────
+    //  * Task.Run is inline when the pool is idle → never wrap a blocking
+    //    loop in it.
+    //  * await continuations are stranded unless the pool is fed → keep
+    //    feeding it.
+    //  * so: Show() on this thread, then a feeder loop that (a) submits
+    //    pool work so continuations drain, and (b) pumps the message loop.
+    form.Show();
+    Console.WriteLine("[boot] browser: feeder loop (pool-fed pump)");
+    while (true)
+    {
+        _ = Task.Run(() => Console.WriteLine("[pool] tick"));                                   // feeds the pool → continuations drain
+        System.Windows.Forms.XplatUISocketWasm.SchedulePump();     // message loop pass
+    }
+
+}
 
 /*if (await BootUpJs.ThreadingAvailable())
 {
