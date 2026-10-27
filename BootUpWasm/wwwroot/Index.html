@@ -440,6 +440,12 @@
             async notify(handle, kind) {
                 setTimeout(() => onNotify(num(handle), kind), 0);
             },
+
+            // results are PUSHED here — string returns from [JSExport] never arrive
+            async deliver(req, payload) {
+                const p = rpcPending.get(num(req));
+                if (p) { rpcPending.delete(num(req)); p.resolve(payload ?? ''); }
+            },
         });
 
         function onNotify(key, kind) {
@@ -554,37 +560,61 @@
                     return data.length;
                 },
 
+                // strings never come back as JS←.NET return values on this runtime —
+                // read through the pushed-result RPC (WetJs.ReadRpcAsync + deliver)
                 async read(max = 65536) {
-                    const b64 = await getWet().ReadAsync(id, max);
+                    const b64 = await rpc((req) => getWet().ReadRpcAsync(req, id, max));
                     return b64 ? b64ToU8(b64) : new Uint8Array(0);
                 },
 
-                async close() { try { await getWet().CloseAsync(id); } catch (e) { log('warn', 'close: ' + fmtErr(e)); } },
+                async close() {
+                    try { await getWet().CloseAsync(id); }
+                    catch (e) { log('warn', 'close: ' + fmtErr(e)); }
+                },
             };
             conns.set(id, c);
             log('info', `[conn] makeConn #${id}`);
             return c;
         }
 
+        // ---- request/response over pushed results (strings never come back as
+        //      return values on this runtime, so .NET pushes them) ----
+        let rpcSeq = 0;
+        const rpcPending = new Map();
+
+        function rpc(fn, ...args) {
+            return new Promise((resolve, reject) => {
+                const req = ++rpcSeq;
+                rpcPending.set(req, { resolve, reject });
+                try { fn(req, ...args); }
+                catch (e) { rpcPending.delete(req); reject(e); }
+                setTimeout(() => {
+                    if (rpcPending.delete(req)) reject(new Error('rpc timeout'));
+                }, 5000);
+            });
+        }
+
         const AF_UNIX = {
-            list: async () => JSON.parse(await getWet().ListAsync()),
+            list: async () => JSON.parse(await rpc((req) => getWet().ListRpcAsync(req))),
             listeners: async () => {
-                const net = JSON.parse(await getWet().ListeningAsync()).map((r) => ({ ...r, host: 'net' }));
+                const net = JSON.parse(await rpc((req) => getWet().ListeningRpcAsync(req)))
+                    .map((r) => ({ ...r, host: 'net' }));
                 const js = [...services.keys()].map((path) => ({ id: 0, path, host: 'js', state: 'Listening', pending: 0, backlog: 0 }));
                 return [...net, ...js];
             },
             connect: async (path) => {
-                const raw = await getWet().ConnectAsync(path);
+                const raw = await getWet().ConnectAsync(path);     // int return — fine
                 const id = num(raw);
                 log('info', `[connect] unix:${path} -> raw=${raw} (${typeof raw}) id=${id}`);
                 if (!(id >= 0)) throw new Error(`connect refused — nothing listening at unix:${path}`);
                 return makeConn(id);
             },
-            read: (id, max) => getWet().ReadAsync(num(id), max),
+            read: (id, max) => rpc((req) => getWet().ReadRpcAsync(req, num(id), max)).then((b64) => (b64 ? b64ToU8(b64) : new Uint8Array(0))),
             write: (id, data) => getWet().WriteAsync(num(id), toU8(data)),
             disconnect: (id) => getWet().CloseAsync(num(id)),
             listen: (path, onAccept) => services.set(path, onAccept),
         };
+        globalThis.AF_UNIX = AF_UNIX;
         globalThis.AF_UNIX = AF_UNIX;
 
         // ────────────────── newline-delimited JSON framing ──────────────────
@@ -893,8 +923,8 @@
             log('info', '🧪 test pressed');
             try {
                 const js = getWet();
-                const l = await js.ListAsync();
-                log('ok', `ListAsync -> ${typeof l} ${String(l).slice(0, 120)}`);
+                const l = await rpc((req) => js.ListRpcAsync(req));
+                log('ok', `ListRpc -> ${String(l).slice(0, 120)}`);
                 const raw = await js.ConnectAsync(LIST_PATH);
                 log('ok', `ConnectAsync -> ${typeof raw} ${raw}`);
             } catch (e) { log('error', 'test: ' + fmtErr(e)); }
@@ -1010,6 +1040,23 @@
             info('#info-pump', 'NOT EXPORTED');
             log('warn', 'no Pump export — use the pump button / pumpOnce() once it resolves');
         }
+
+        setInterval(async () => {
+            if (runtimeDead) return;
+            try {
+                const raw = await rpc((req) => getWet().TakeEventsAsync(req));
+                const evs = JSON.parse(raw || '[]');
+                for (const e of evs) {
+                    if (e.kind === 'log') { log('info', '[dotnet] ' + (e.text || '')); continue; }
+                    if (e.kind === 'trace') { log('info', '[trace] ' + (e.text || '')); continue; }
+                    onNotify(num(e.handle), e.kind);
+                }
+            } catch (e) {
+                const m = fmtErr(e);
+                if (/already exited|Cannot call synchronous|rpc timeout/.test(m)) return;
+                log('warn', 'tick: ' + m);
+            }
+        }, 16);
 
         try {
             await dotnet.runMain();

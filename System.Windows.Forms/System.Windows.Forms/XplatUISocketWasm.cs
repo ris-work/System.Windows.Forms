@@ -312,20 +312,40 @@ namespace System.Windows.Forms
             // <0 == gone), so loop until the message is out. AWAITED — never blocks,
             // which is essential on single-threaded browser-wasm. Only the writer
             // task calls this, so writes stay ordered without a lock.
+            // One newline-terminated message. WetSocket.SendAsync accepts as much as
+            // the JS window allows and returns the byte count (0 == window full,
+            // <0 == gone), so loop until the message is out. AWAITED — never blocks.
             public async Task WriteRawAsync(string s)
             {
-                if (Dead) return;
+                WetTrace.Enter("WriteRawAsync " + s.Length + " chars -> #" + Sock.Handle);
+                if (Dead)
+                {
+                    WetTrace.Exit("WriteRawAsync -> dead");
+                    return;
+                }
                 var b = Encoding.UTF8.GetBytes(s + "\n");
                 int off = 0;
                 while (off < b.Length)
                 {
                     int n;
+                    WetTrace.Mark("WriteRawAsync: sending " + (b.Length - off) + "B");
                     try { n = await Sock.SendAsync(b.AsMemory(off)).ConfigureAwait(false); }
-                    catch { Dead = true; return; }
-                    if (n <= 0) { Dead = true; return; }
+                    catch
+                    {
+                        WetTrace.Exit("WriteRawAsync -> send threw");
+                        Dead = true;
+                        return;
+                    }
+                    if (n <= 0)
+                    {
+                        WetTrace.Exit("WriteRawAsync -> " + (n == 0 ? "window full/gone" : "peer gone"));
+                        Dead = true;
+                        return;
+                    }
                     off += n;
                     BytesOut += n;
                 }
+                WetTrace.Exit("WriteRawAsync -> " + off + "B written");
             }
         }
 
@@ -457,9 +477,42 @@ namespace System.Windows.Forms
             return mainQueue ?? ThreadQueue(Thread.CurrentThread);
         }
 
+        // ── event-driven message pump ───────────────────────────────────
+        // The UI loop is driven by the messages themselves: whenever something is
+        // enqueued we run one DoEvents pass on the execution unit. No JS timer.
+        static int pumpScheduled;
+
+        static void SchedulePump()
+        {
+            if (Interlocked.CompareExchange(ref pumpScheduled, 1, 0) != 0) return;
+            ParallelExecutionUnit.Run(() =>
+            {
+                try { PumpMessages(); }
+                catch (Exception e) { Log("pump: " + e.Message); }
+                finally { Interlocked.Exchange(ref pumpScheduled, 0); }
+            }, "pump");
+        }
+
+
         static void EnqueueMsg(IntPtr target, Msg m, IntPtr w, IntPtr l)
         {
             QueueForHandle(target).Enqueue(new MSG { hwnd = target, message = m, wParam = w, lParam = l });
+            SchedulePump();                       // work arrived → run the loop
+        }
+
+
+        // Coarse heartbeat: only while a WinForms timer is armed. Without this the
+        // loop only runs when messages arrive, and System.Windows.Forms.Timer would
+        // never tick. 250 ms is plenty for UI timers and costs nothing otherwise.
+        static System.Threading.Timer timerPump;
+
+        static void EnsureTimerPump()
+        {
+            if (timerPump != null) return;
+            timerPump = new System.Threading.Timer(_ =>
+            {
+                if (timers.Count > 0) SchedulePump();
+            }, null, 250, 250);
         }
 
         // ── JSON helpers ─────────────────────────────────────────────────
@@ -535,6 +588,7 @@ namespace System.Windows.Forms
         static async Task ListAcceptLoopAsync(WetSocket listener)
         {
             if (listener == null) return;
+            WetTrace.Enter("ListAcceptLoopAsync");
             try
             {
                 for (; ; )
@@ -544,16 +598,23 @@ namespace System.Windows.Forms
                     catch (WetException) { break; }
                     if (s == null) break;
 
+                    WetTrace.Mark("accept: client #" + s.Handle + " accepted on window-list");
                     var cc = new ClientConn { Sock = s };
+                    WetTrace.Mark("accept: ClientConn created #" + s.Handle);
                     lock (Sync) listWatchers.Add(cc);
                     cc.StartWriter();
+                    WetTrace.Mark("accept: writer started #" + s.Handle);
                     cc.Send(ListJson());
+                    WetTrace.Mark("accept: ListJson queued #" + s.Handle);
                     cc.Reader = ParallelExecutionUnit.RunAsync(() => ListClientLoopAsync(cc), "list-reader");
+                    WetTrace.Mark("accept: reader started #" + s.Handle);
                     Log("window-list client #" + s.Handle + " connected");
                 }
             }
             catch (Exception e) { Log("window-list accept loop: " + e.Message); }
+            WetTrace.Exit("ListAcceptLoopAsync");
         }
+
 
         static async Task ListClientLoopAsync(ClientConn cc)
         {
@@ -2750,6 +2811,8 @@ namespace System.Windows.Forms
         {
             lock (Sync) if (!timers.Contains(timer)) timers.Add(timer);
             lock (Sync) foreach (var q in queues.Values) q.Evt.Set();
+            EnsureTimerPump();                    // WinForms timers need a heartbeat
+            SchedulePump();
         }
 
         internal override void KillTimer(Timer timer)

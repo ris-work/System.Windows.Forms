@@ -18,14 +18,13 @@
 		<!--<WasmEnableThreads>true</WasmEnableThreads>-->
 		<!--<RunAOTCompilation>true</RunAOTCompilation>-->
 		<ThreadPoolMaxThreads>4</ThreadPoolMaxThreads>
+		<!--<MonoRuntimeDebuggerEnabled>true</MonoRuntimeDebuggerEnabled>-->
 	</PropertyGroup>
 
-	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
-		<!-- Do not generate debug symbols -->
+	<!--<PropertyGroup Condition="'$(Configuration)' == 'Release'">
 		<DebugSymbols>false</DebugSymbols>
-		<!-- Completely stop the compiler from creating PDB outputs -->
 		<DebugType>none</DebugType>
-	</PropertyGroup>
+	</PropertyGroup>-->
 
 	<PropertyGroup>
 		<OurDrawingVersion>30.0.0.0</OurDrawingVersion>

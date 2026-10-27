@@ -1775,6 +1775,38 @@ else
     //fn();
 }
 
+// ── start the UI, and keep Main alive ────────────────────────────────────
+async Task StartUiAsync(Form f)
+{
+    if (!OperatingSystem.IsBrowser())
+    {
+        Application.Run(f);                       // desktop: owns a real thread, blocking is fine
+        return;
+    }
+
+    // Browser, ST or MT:
+    //   * Application.Run blocks its thread — on this runtime that thread is a POOL
+    //     thread, and the pool is what runs async continuations. Blocking it kills
+    //     every await (the accept loop after TrySetResult never resumed).
+    //   * Main must not return (JS→.NET results stop being delivered) and must not
+    //     block (interop starves). Suspended is the only safe state.
+    //   * The message loop is driven by the page: BootUpJs.Pump -> DoEvents.
+    f.Show();
+    Console.WriteLine("[boot] browser: form.Show() — page pumps via BootUpJs.Pump; Main suspended");
+    await Task.Delay(Timeout.Infinite);
+}
+
+try
+{
+    await StartUiAsync(form);
+}
+catch (Exception ex) { Dump(ex); throw; }
+
+
+// belt and braces: whatever happens above, Main must not fall off the end.
+await Task.Delay(Timeout.Infinite);
+
+
 
 //await Task.Delay(TimeSpan.FromSeconds(100));
 
@@ -1804,21 +1836,11 @@ public static partial class BootUpJs
     }
 
     [JSExport]
-    public static async Task<string> Pump()
+    public static async Task<int> Pump()
     {
-        /*var sw = System.Diagnostics.Stopwatch.StartNew();
-        try
-        {
-            System.Windows.Forms.Application.DoEvents();
-            return "ok " + sw.ElapsedMilliseconds + "ms";
-        }
-        catch (Exception e)
-        {
-            return "THREW " + e.GetType().Name + ": " + e.Message;
-        }*/
-        return "";
+        System.Windows.Forms.Application.DoEvents();
+        return 1;
     }
-
     [JSExport] public static async Task<string> PingStr() { return "pong"; }
     [JSExport] public static async Task IsMultithreadingAvailable() { Console.WriteLine(await ThreadingAvailable()); return; }
     [JSExport] public static async Task<int> PingInt() { return 42; }

@@ -54,6 +54,7 @@
 	  <RepositoryUrl>https://vz.al/repos/sd</RepositoryUrl>
 	  <RepositoryType>fossil</RepositoryType>
 	  <!--<WasmEnableThreads>true</WasmEnableThreads>-->
+	 
   </PropertyGroup>
 
 	<ItemGroup>
