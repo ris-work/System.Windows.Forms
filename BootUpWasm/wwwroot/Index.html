@@ -554,7 +554,9 @@
             },
 
             notify(handle, kind) {
-                setTimeout(() => onNotify(num(handle), kind), 0);
+                // .NET says "there is something" → pump again NOW instead of waiting
+                // for the next rAF. Terminates: a pump with no work sends no notify.
+                setTimeout(() => { onNotify(num(handle), kind); pumpOnce(); }, 0);
             },
 
             // results are PUSHED here — returned Task<string> values never arrive
@@ -760,9 +762,12 @@
             }
             send(obj) {
                 try {
-                    this.conn.writeAll(enc.encode(JSON.stringify(obj) + '\n'))
-                        .catch((e) => log('warn', `${this.label}: write failed — ${fmtErr(e)}`));
-                } catch (e) { log('warn', `${this.label}: write failed — ${fmtErr(e)}`); }
+                    return this.conn.writeAll(enc.encode(JSON.stringify(obj) + '\n'))
+                        .catch((e) => { log('warn', `${this.label}: write failed — ${fmtErr(e)}`); });
+                } catch (e) {
+                    log('warn', `${this.label}: write failed — ${fmtErr(e)}`);
+                    return Promise.resolve();
+                }
             }
             close() { try { this.conn.close(); } catch (e) { log('warn', `${this.label}: close — ${fmtErr(e)}`); } }
         }
@@ -1078,7 +1083,12 @@
 
         const pos = (e) => imgPos(e) || svgPos(e);
         const btnName = (b) => b === 2 ? 'right' : b === 1 ? 'middle' : 'left';
-        const sendWin = (o) => { if (winConn && !runtimeDead) winConn.send(o); };
+        const sendWin = (o) => {
+            if (!winConn || runtimeDead) return;
+            // bytes land in .NET when writeAll resolves → pump immediately so the
+            // paint and the outgoing frame happen NOW, not on the next rAF.
+            Promise.resolve(winConn.send(o)).then(pumpOnce).catch(() => { });
+        };
 
         const stage = $('#stage');
         stage.addEventListener('mousedown', (e) => { const p = pos(e); if (p) sendWin({ type: 'mousedown', x: p.x, y: p.y, button: btnName(e.button), t: Date.now() }); });
@@ -1463,10 +1473,22 @@
         setInterval(connectList, 1500);
         setInterval(() => dumpListeners('auto'), 10000);
 
+        // One non-blocking pump. BootUpJs.Pump() runs PumpMessages() synchronously
+        // and returns a completed Task — call-and-forget is safe and cheap.
+        function pumpOnce() {
+            if (runtimeDead) return;
+            const fn = globalThis.boot?.BootUpJs?.Pump;
+            if (!fn) return;
+            try { Promise.resolve(fn()).catch(() => { }); } catch (e) { }
+        }
+
         // message pump (harmless on MT where Main drives it; required on ST)
         if (pump) {
             info('#info-pump', 'exported');
             log('ok', 'message pump export found');
+            const rafLoop = () => { pumpOnce(); requestAnimationFrame(rafLoop); };
+            requestAnimationFrame(rafLoop);
+
             setInterval(async () => {
                 if (runtimeDead) return;
                 try { await pump(); }

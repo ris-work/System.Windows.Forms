@@ -1788,23 +1788,37 @@ AssemblyDiag.Report();
 if (!OperatingSystem.IsBrowser())
 {
     Task.Run(() => Application.Run(form));                       // desktop: the proper way, unchanged
-    while (true)
+    /*while (true)
     {
         _ = Task.Run(() => Console.WriteLine("[pool] tick"));   // ← does the pool run anything?
-        System.Windows.Forms.XplatUISocketWasm.SchedulePump();
+        //System.Windows.Forms.XplatUISocketWasm.SchedulePump();
         //await Task.Delay(16);
-    }
-}
-else
-{
-    form.Show();
-    Console.WriteLine("[boot] browser: fed-and-yielding pump loop");
+    }*/
     while (true)
     {
         await Task.Run(() => { });                 // feeds the pool (continuations drain)
                                                    // AND suspends Main (interop thread is free)
         System.Windows.Forms.XplatUISocketWasm.SchedulePump();
     }
+}
+else
+{
+    await Task.Run(() => form.Show());
+    //Task.Run(() => Application.Run(form));
+    Console.WriteLine("[boot] browser: fed-and-yielding pump loop");
+    var x = () =>
+    {
+        while (true)
+        {
+            //await Task.Run(() => { });                 // feeds the pool (continuations drain)
+            // AND suspends Main (interop thread is free)
+            System.Windows.Forms.XplatUISocketWasm.SchedulePump();
+            Task.Yield();
+        }
+    };
+    Task.Run(x);
+    Task.Run(x);
+    Task.Run(x);
 }
 
 /*if (await BootUpJs.ThreadingAvailable())
