@@ -38,6 +38,7 @@
 
 using SkiaSharp;
 using System;
+using System.Buffers;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -399,6 +400,7 @@ namespace System.Windows.Forms
             }
 
             // Build + encode + enqueue ONE frame message. Replaces SendFrameAsync.
+            // Build + encode + enqueue ONE frame message.
             bool GenerateFrame()
             {
                 var wi = Win;
@@ -411,15 +413,22 @@ namespace System.Windows.Forms
 
                 if (wi.IsDesktop)
                 {
-                    w = screenW; h = screenH;
+                    w = screenW;
+                    h = screenH;
+
                     if (Format == "svg")
+                    {
                         payload = JEsc(BuildDesktopSvg());
+                    }
                     else
                     {
                         using (var desk = BuildDesktopFrame())
                         {
-                            var dbytes = EncodeFrame(desk, Format, Quality, Gray);
-                            payload = dbytes != null ? Convert.ToBase64String(dbytes) : "";
+                            var enc = IsRawFormat(Format)
+                                ? EncodeRawPixels(desk._skBitmap, Format)
+                                : EncodeCompressed(desk, Format, Quality, Gray);
+                            try { payload = enc.ToBase64(); }
+                            finally { enc.Release(); }
                         }
                     }
                 }
@@ -433,13 +442,18 @@ namespace System.Windows.Forms
                 {
                     w = wi.Hwnd != null ? wi.Hwnd.width : 0;
                     h = wi.Hwnd != null ? wi.Hwnd.height : 0;
-                    var bytes = EncodeWindowFrame(wi, Format, Quality, Gray);
-                    if (bytes != null)
+
+                    var enc = EncodeWindowFrame(wi, Format, Quality, Gray);
+                    try
                     {
-                        lock (wi.BufLock)
-                            if (wi.Buffer != null) { w = wi.Buffer.Width; h = wi.Buffer.Height; }
+                        if (!enc.IsEmpty)
+                        {
+                            lock (wi.BufLock)
+                                if (wi.Buffer != null) { w = wi.Buffer.Width; h = wi.Buffer.Height; }
+                        }
+                        payload = enc.ToBase64();
                     }
-                    payload = bytes != null ? Convert.ToBase64String(bytes) : "";
+                    finally { enc.Release(); }
                 }
 
                 Send(FrameJson(Format, w, h, payload));
@@ -865,23 +879,61 @@ namespace System.Windows.Forms
             fmt == "rawbgra" || fmt == "rawbgra332" || fmt == "rawbgra1" ||
             fmt == "rawg8" || fmt == "rawycbcr322";
 
-        static byte[] EncodeFrame(Bitmap bmp, string fmt, int quality, bool gray)
+        // ════════════════════════════════════════════════════════════════════
+        //  EncodedFrame — one encoded picture plus its TRUE length.
+        //
+        //   * raw formats RENT their buffer from ArrayPool (a 4 MB LOH alloc per
+        //     frame is what killed the GC) and MUST be released with Release().
+        //   * jpeg/png allocate normally — the payload is ~100x smaller, the GC
+        //     can keep up, and ToArray() already gives an exact-length array.
+        //
+        //  ToBase64() encodes exactly Length bytes, never the rented tail.
+        // ════════════════════════════════════════════════════════════════════
+        readonly struct EncodedFrame
+        {
+            public readonly byte[] Bytes;
+            public readonly int Length;
+            readonly bool _pooled;
+
+            public EncodedFrame(byte[] bytes, int length, bool pooled)
+            {
+                Bytes = bytes;
+                Length = length;
+                _pooled = pooled;
+            }
+
+            public static readonly EncodedFrame Empty = new EncodedFrame(Array.Empty<byte>(), 0, false);
+
+            public bool IsEmpty => Length == 0;
+
+            public string ToBase64() => Length == 0 ? "" : Convert.ToBase64String(Bytes, 0, Length);
+
+            public void Release()
+            {
+                if (_pooled && Bytes != null && Bytes.Length > 0)
+                    ArrayPool<byte>.Shared.Return(Bytes);
+            }
+        }
+
+        /// <summary>jpeg / png — small payload, plain allocation.</summary>
+        static EncodedFrame EncodeCompressed(Bitmap bmp, string fmt, int quality, bool gray)
         {
             var src = bmp._skBitmap;
 
-            if (IsRawFormat(fmt))
-                return EncodeRawPixels(src, fmt);
-
             SKBitmap use = src;
+            SKBitmap grayBmp = null;
+
             if (gray)
             {
-                use = new SKBitmap(src.Width, src.Height, SKColorType.Gray8, SKAlphaType.Opaque);
+                grayBmp = new SKBitmap(src.Width, src.Height, SKColorType.Gray8, SKAlphaType.Opaque);
                 unsafe
                 {
-                    byte* s = (byte*)src.GetPixels(); byte* d = (byte*)use.GetPixels();
+                    byte* s = (byte*)src.GetPixels();
+                    byte* d = (byte*)grayBmp.GetPixels();
                     for (int y = 0; y < src.Height; y++)
                     {
-                        byte* sr = s + y * src.RowBytes; byte* dr = d + y * use.RowBytes;
+                        byte* sr = s + y * src.RowBytes;
+                        byte* dr = d + y * grayBmp.RowBytes;
                         for (int x = 0; x < src.Width; x++)
                         {
                             int b = sr[x * 4], g = sr[x * 4 + 1], r = sr[x * 4 + 2];
@@ -889,43 +941,79 @@ namespace System.Windows.Forms
                         }
                     }
                 }
+                use = grayBmp;
             }
+
             byte[] result = null;
-            using (var img = SKImage.FromBitmap(use))
-            using (var data = img.Encode(fmt == "jpeg" ? SKEncodedImageFormat.Jpeg : SKEncodedImageFormat.Png, quality))
-                result = data?.ToArray();
-            if (use != src) use.Dispose();
-            if (result == null && gray)   // encoder rejected Gray8 (older Skia JPEG)
-                return EncodeFrame(bmp, fmt, quality, false);
-            return result;
+            try
+            {
+                using (var img = SKImage.FromBitmap(use))
+                using (var data = img.Encode(fmt == "jpeg" ? SKEncodedImageFormat.Jpeg : SKEncodedImageFormat.Png, quality))
+                    result = data?.ToArray();
+            }
+            finally
+            {
+                grayBmp?.Dispose();
+            }
+
+            if (result == null && gray)                 // encoder rejected Gray8 (older Skia JPEG)
+                return EncodeCompressed(bmp, fmt, quality, false);
+
+            return result == null ? EncodedFrame.Empty : new EncodedFrame(result, result.Length, false);
         }
 
-        /// <summary>One pass over the source pixels, no Skia codec. Rows are compact
-        /// (stride == bpp*w) except rawbgra1 where stride = ceil(w/8).</summary>
-        static unsafe byte[] EncodeRawPixels(SKBitmap src, string fmt)
+        /// <summary>
+        /// One pass over the source pixels, no Skia codec. The buffer is RENTED —
+        /// call Release() on the result. Rows are compact (stride == bpp*w) except
+        /// rawbgra1 where stride = ceil(w/8).
+        /// </summary>
+        static unsafe EncodedFrame EncodeRawPixels(SKBitmap src, string fmt)
         {
             int w = src.Width, h = src.Height;
-            if (w <= 0 || h <= 0) return Array.Empty<byte>();
+            if (w <= 0 || h <= 0) return EncodedFrame.Empty;
+
             byte* s = (byte*)src.GetPixels();
+            if (s == null) return EncodedFrame.Empty;
+
+            int srcStride = src.RowBytes;
 
             switch (fmt)
             {
                 case "rawbgra":
                     {
-                        var raw = new byte[(long)w * h * 4];
+                        int row = w * 4;
+                        long totalLong = (long)row * h;
+                        if (totalLong > int.MaxValue) return EncodedFrame.Empty;
+                        int total = (int)totalLong;
+
+                        var raw = ArrayPool<byte>.Shared.Rent(total);
                         fixed (byte* dst = raw)
-                            for (int y = 0; y < h; y++)
-                                Buffer.MemoryCopy(s + (long)y * src.RowBytes, dst + (long)y * w * 4, w * 4, w * 4);
-                        return raw;
+                        {
+                            if (srcStride == row)
+                            {
+                                Buffer.MemoryCopy(s, dst, total, total);
+                            }
+                            else
+                            {
+                                for (int y = 0; y < h; y++)
+                                    Buffer.MemoryCopy(s + (long)y * srcStride, dst + (long)y * row, row, row);
+                            }
+                        }
+                        return new EncodedFrame(raw, total, true);
                     }
 
                 case "rawbgra332":
                     {
-                        var raw = new byte[(long)w * h];
+                        long totalLong = (long)w * h;
+                        if (totalLong > int.MaxValue) return EncodedFrame.Empty;
+                        int total = (int)totalLong;
+
+                        var raw = ArrayPool<byte>.Shared.Rent(total);
                         fixed (byte* dst = raw)
+                        {
                             for (int y = 0; y < h; y++)
                             {
-                                byte* sr = s + (long)y * src.RowBytes;
+                                byte* sr = s + (long)y * srcStride;
                                 byte* dr = dst + (long)y * w;
                                 for (int x = 0; x < w; x++)
                                 {
@@ -933,17 +1021,28 @@ namespace System.Windows.Forms
                                     dr[x] = (byte)(((r >> 5) << 5) | ((g >> 5) << 2) | (b >> 6));
                                 }
                             }
-                        return raw;
+                        }
+                        return new EncodedFrame(raw, total, true);
                     }
 
                 case "rawbgra1":
                     {
                         int stride = (w + 7) / 8;
-                        var raw = new byte[(long)stride * h];
+                        long totalLong = (long)stride * h;
+                        if (totalLong > int.MaxValue) return EncodedFrame.Empty;
+                        int total = (int)totalLong;
+
+                        var raw = ArrayPool<byte>.Shared.Rent(total);
                         fixed (byte* dst = raw)
+                        {
+                            // RENTED ARRAYS ARE NOT ZEROED. With `new byte[]` the padding
+                            // bits were implicitly 0; with Rent() they hold garbage from
+                            // the previous frame and the 1bpp image comes out speckled.
+                            new Span<byte>(dst, total).Clear();
+
                             for (int y = 0; y < h; y++)
                             {
-                                byte* sr = s + (long)y * src.RowBytes;
+                                byte* sr = s + (long)y * srcStride;
                                 byte* dr = dst + (long)y * stride;
                                 for (int x = 0; x < w; x++)
                                 {
@@ -952,16 +1051,22 @@ namespace System.Windows.Forms
                                     if (luma >= 128) dr[x >> 3] |= (byte)(0x80 >> (x & 7));
                                 }
                             }
-                        return raw;
+                        }
+                        return new EncodedFrame(raw, total, true);
                     }
 
                 case "rawg8":
                     {
-                        var raw = new byte[(long)w * h];
+                        long totalLong = (long)w * h;
+                        if (totalLong > int.MaxValue) return EncodedFrame.Empty;
+                        int total = (int)totalLong;
+
+                        var raw = ArrayPool<byte>.Shared.Rent(total);
                         fixed (byte* dst = raw)
+                        {
                             for (int y = 0; y < h; y++)
                             {
-                                byte* sr = s + (long)y * src.RowBytes;
+                                byte* sr = s + (long)y * srcStride;
                                 byte* dr = dst + (long)y * w;
                                 for (int x = 0; x < w; x++)
                                 {
@@ -969,22 +1074,28 @@ namespace System.Windows.Forms
                                     dr[x] = (byte)((r * 77 + g * 150 + b * 29) >> 8);
                                 }
                             }
-                        return raw;
+                        }
+                        return new EncodedFrame(raw, total, true);
                     }
 
                 case "rawycbcr322":
                     {
                         // BT.601 integer math; chroma averaged over each horizontal pair.
                         int cw = (w + 1) / 2;
-                        var raw = new byte[(long)w * h + 2L * cw * h];
+                        long totalLong = (long)w * h + 2L * cw * h;
+                        if (totalLong > int.MaxValue) return EncodedFrame.Empty;
+                        int total = (int)totalLong;
+
+                        var raw = ArrayPool<byte>.Shared.Rent(total);
                         fixed (byte* dst = raw)
                         {
                             byte* yp = dst;
                             byte* cbp = dst + (long)w * h;
                             byte* crp = cbp + (long)cw * h;
+
                             for (int y = 0; y < h; y++)
                             {
-                                byte* sr = s + (long)y * src.RowBytes;
+                                byte* sr = s + (long)y * srcStride;
                                 byte* yr = yp + (long)y * w;
                                 byte* cbr = cbp + (long)y * cw;
                                 byte* crr = crp + (long)y * cw;
@@ -994,6 +1105,7 @@ namespace System.Windows.Forms
                                     int b = sr[x * 4], g = sr[x * 4 + 1], r = sr[x * 4 + 2];
                                     yr[x] = (byte)((77 * r + 150 * g + 29 * b) >> 8);
                                 }
+
                                 for (int cx = 0; cx < cw; cx++)
                                 {
                                     int x0 = cx * 2;
@@ -1008,21 +1120,33 @@ namespace System.Windows.Forms
                                 }
                             }
                         }
-                        return raw;
+                        return new EncodedFrame(raw, total, true);
                     }
 
                 default:
-                    return Array.Empty<byte>();
+                    return EncodedFrame.Empty;
             }
         }
 
-        static byte[] EncodeWindowFrame(WinInfo wi, string fmt, int q, bool gray)
+        /// <summary>Composites wi + its popups, then encodes one frame.
+        /// Call Release() on the result.</summary>
+        static EncodedFrame EncodeWindowFrame(WinInfo wi, string fmt, int q, bool gray)
         {
             Bitmap src = BuildCompositedFrame(wi);
-            if (src == null) return null;
-            var bytes = EncodeFrame(src, fmt, q, gray);
-            src.Dispose();
-            return bytes;
+            if (src == null) return EncodedFrame.Empty;
+
+            EncodedFrame enc;
+            try
+            {
+                enc = IsRawFormat(fmt)
+                    ? EncodeRawPixels(src._skBitmap, fmt)
+                    : EncodeCompressed(src, fmt, q, gray);
+            }
+            finally
+            {
+                ReturnBitmap(src);            // ← was src.Dispose()
+            }
+            return enc;
         }
 
         /// <summary>
@@ -1549,6 +1673,50 @@ namespace System.Windows.Forms
             return wi.Buffer;
         }
 
+        // ════════════════════════════════════════════════════════════════════
+        //  Bitmap scratch pool.
+        //
+        //  Every frame used to allocate a fresh Bitmap: the compositor alone is
+        //  screenW*screenH*4 = 8.3 MB at 1080p, so 30 fps was 250 MB/s of LOH
+        //  garbage. Rent/Return reuses them.
+        //
+        //  Ownership: whoever Rents must Return, exactly once. Nesting depth is at
+        //  most 3 (desktop -> composited -> top frame), so a cap of 8 is plenty.
+        //  Rented bitmaps are NOT cleared — callers must overwrite or clear.
+        // ════════════════════════════════════════════════════════════════════
+        static readonly object ScratchLock = new object();
+        static readonly List<Bitmap> Scratch = new List<Bitmap>();
+        const int ScratchCap = 8;
+
+        static Bitmap RentBitmap(int w, int h)
+        {
+            w = Math.Max(1, w);
+            h = Math.Max(1, h);
+            lock (ScratchLock)
+            {
+                for (int i = Scratch.Count - 1; i >= 0; i--)
+                {
+                    var b = Scratch[i];
+                    if (b.Width == w && b.Height == h)
+                    {
+                        Scratch.RemoveAt(i);
+                        return b;
+                    }
+                }
+            }
+            return new Bitmap(w, h);
+        }
+
+        static void ReturnBitmap(Bitmap b)
+        {
+            if (b == null) return;
+            lock (ScratchLock)
+            {
+                if (Scratch.Count < ScratchCap) { Scratch.Add(b); return; }
+            }
+            b.Dispose();
+        }
+
         // ── Rendering: desktop compositor ────────────────────────────────
         static Bitmap BuildDesktopFrame()
         {
@@ -1559,17 +1727,20 @@ namespace System.Windows.Forms
                     .Where(w => w?.Hwnd != null && w.Hwnd.visible && !w.Hwnd.zombie)
                     .ToList();
 
-            var bmp = new Bitmap(screenW, screenH);
+            var bmp = RentBitmap(screenW, screenH);
             using (var g = Graphics.FromImage(bmp))
             {
                 g._suppressSvg = true;
-                g.Clear(Color.FromArgb(58, 58, 64));
+                g.Clear(Color.FromArgb(58, 58, 64));          // covers the whole bitmap
                 foreach (var w in vis)
                 {
                     bool ridesAlong = vis.Any(o => o != w && IsPopupOf(w, o));
                     if (ridesAlong) continue;
-                    using (var f = BuildCompositedFrame(w))
-                        if (f != null) g.DrawImage(f, w.Hwnd.x, w.Hwnd.y);
+
+                    var f = BuildCompositedFrame(w);
+                    if (f == null) continue;
+                    try { g.DrawImage(f, w.Hwnd.x, w.Hwnd.y); }
+                    finally { ReturnBitmap(f); }
                 }
             }
             return bmp;
@@ -1916,36 +2087,55 @@ namespace System.Windows.Forms
         {
             Bitmap frame = BuildTopFrame(wi);
             if (frame == null) return null;
+
             var pops = PopupsFor(wi);
-            if (pops.Count == 0) return frame;
-            var comp = new Bitmap(frame.Width, frame.Height);
+            if (pops.Count == 0) return frame;                // caller owns `frame`
+
+            var comp = RentBitmap(frame.Width, frame.Height);
             using (var g = Graphics.FromImage(comp))
             {
                 g._suppressSvg = true;
-                g.DrawImage(frame, 0, 0);
+                g.DrawImage(frame, 0, 0);                     // covers the whole bitmap
                 foreach (var p in pops)
-                    using (var pf = BuildTopFrame(p))
-                        if (pf != null)
-                            g.DrawImage(pf, p.Hwnd.x - wi.Hwnd.x, p.Hwnd.y - wi.Hwnd.y);
+                {
+                    var pf = BuildTopFrame(p);
+                    if (pf == null) continue;
+                    try { g.DrawImage(pf, p.Hwnd.x - wi.Hwnd.x, p.Hwnd.y - wi.Hwnd.y); }
+                    finally { ReturnBitmap(pf); }
+                }
             }
-            frame.Dispose();
+            ReturnBitmap(frame);                              // merged into comp
             return comp;
         }
 
         static Bitmap BuildTopFrame(WinInfo topWi)
         {
             var top = topWi.Hwnd;
-            var frame = new Bitmap(Math.Max(1, top.width), Math.Max(1, top.height));
+            var frame = RentBitmap(Math.Max(1, top.width), Math.Max(1, top.height));
+
             using (var g = Graphics.FromImage(frame))
             {
                 g._suppressSvg = true;
+
+                bool painted = false;
                 lock (topWi.BufLock)
+                {
                     if (topWi.Buffer != null)
+                    {
                         g.DrawImage(topWi.Buffer, 0, 0);
+                        painted = true;
+                    }
+                }
+
+                // A rented bitmap carries the previous frame's pixels. If there is
+                // no window buffer to overwrite them, clear — otherwise the frame
+                // shows garbage where the old (larger) window used to be.
+                if (!painted) g.Clear(Color.Transparent);
 
                 var c = Control.FromHandle(top.Handle);
                 if (c != null) RenderChildren(topWi, g);
             }
+
             DrawCaretIfAny(top, frame);
             return frame;
         }

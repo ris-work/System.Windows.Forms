@@ -17,9 +17,13 @@
 
 		<!--<WasmEnableThreads>true</WasmEnableThreads>-->
 		<!--<RunAOTCompilation>true</RunAOTCompilation>-->
-		<DebugSymbols>true</DebugSymbols>
+		<DebugSymbols>false</DebugSymbols>
 		<ThreadPoolMaxThreads>4</ThreadPoolMaxThreads>
-		<MonoRuntimeDebuggerEnabled>true</MonoRuntimeDebuggerEnabled>
+		<MonoRuntimeDebuggerEnabled>false</MonoRuntimeDebuggerEnabled>
+		<InvariantGlobalization>true</InvariantGlobalization>
+		<DebuggerSupport>false</DebuggerSupport>
+		<WasmBuildNative>true</WasmBuildNative>
+
 	</PropertyGroup>
 
 	<!--<PropertyGroup Condition="'$(Configuration)' == 'Release'">
@@ -33,31 +37,22 @@
 
 	<!-- compute the flavour from YOUR build (-r browser-wasm, or the TFM platform) -->
 	<PropertyGroup>
-		<XplatBrowserWasm Condition="'$(XplatBrowserWasm)' == '' and
-                                 ('$(RuntimeIdentifier)' == 'browser-wasm' or
-                                  $(RuntimeIdentifier.StartsWith('browser-')) or
-                                  '$(TargetPlatformIdentifier)' == 'browser')">true</XplatBrowserWasm>
+		<XplatBrowserWasm Condition="'$(XplatBrowserWasm)' == '' and&#xD;&#xA;                                 ('$(RuntimeIdentifier)' == 'browser-wasm' or&#xD;&#xA;                                  $(RuntimeIdentifier.StartsWith('browser-')) or&#xD;&#xA;                                  '$(TargetPlatformIdentifier)' == 'browser')">true</XplatBrowserWasm>
 		<XplatBrowserWasm Condition="'$(XplatBrowserWasm)' == ''">false</XplatBrowserWasm>
 	</PropertyGroup>
 
 	<!-- forward the RESULT into each referenced project — this is the missing link -->
 	<ItemGroup>
-		<ProjectReference Include="..\System.Windows.Forms\System.Windows.Forms.csproj"
-						  AdditionalProperties="XplatBrowserWasm=$(XplatBrowserWasm)" />
-		<ProjectReference Include="..\System.Drawing.Design\System.Drawing.Design.csproj"
-						  AdditionalProperties="XplatBrowserWasm=$(XplatBrowserWasm)" />
-		<ProjectReference Include="..\..\..\..\invnew\System.Drawing\System.Drawing.csproj"
-						  AdditionalProperties="XplatBrowserWasm=$(XplatBrowserWasm)" />
+		<ProjectReference Include="..\System.Windows.Forms\System.Windows.Forms.csproj" AdditionalProperties="XplatBrowserWasm=$(XplatBrowserWasm)" />
+		<ProjectReference Include="..\System.Drawing.Design\System.Drawing.Design.csproj" AdditionalProperties="XplatBrowserWasm=$(XplatBrowserWasm)" />
+		<ProjectReference Include="..\..\..\..\invnew\System.Drawing\System.Drawing.csproj" AdditionalProperties="XplatBrowserWasm=$(XplatBrowserWasm)" />
 	</ItemGroup>
 
 	<!-- ══════════ BROWSER-WASM GATE ══════════
        Set explicitly by the consumer (AdditionalProperties / -p: / Directory.Build.props),
        otherwise auto-detect a browser-wasm build. -->
 	<PropertyGroup>
-		<XplatBrowserWasm Condition="'$(XplatBrowserWasm)' == '' and
-                                 ('$(RuntimeIdentifier)' == 'browser-wasm' or
-                                  $(RuntimeIdentifier.StartsWith('browser-')) or
-                                  '$(TargetPlatformIdentifier)' == 'browser')">true</XplatBrowserWasm>
+		<XplatBrowserWasm Condition="'$(XplatBrowserWasm)' == '' and&#xD;&#xA;                                 ('$(RuntimeIdentifier)' == 'browser-wasm' or&#xD;&#xA;                                  $(RuntimeIdentifier.StartsWith('browser-')) or&#xD;&#xA;                                  '$(TargetPlatformIdentifier)' == 'browser')">true</XplatBrowserWasm>
 		<XplatBrowserWasm Condition="'$(XplatBrowserWasm)' == ''">false</XplatBrowserWasm>
 	</PropertyGroup>
 
@@ -70,57 +65,32 @@
 		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
 	</PropertyGroup>
 
-	<Target Name="EvictPackSystemDrawing" AfterTargets="ResolveAssemblyReferences"
-		BeforeTargets="WasmBuildProduce;_BrowserWasmWriteRspForLinking">
+	<Target Name="EvictPackSystemDrawing" AfterTargets="ResolveAssemblyReferences" BeforeTargets="WasmBuildProduce;_BrowserWasmWriteRspForLinking">
 		<ItemGroup>
-			<WasmAssembliesToBundle Remove="@(WasmAssembliesToBundle)"
-			  Condition="'%(FileName)' == 'System.Drawing' and $([System.String]::Copy('%(FullPath)').Contains('dotnet\packs'))" />
-			<_WasmAssembliesToBundle Remove="@(_WasmAssembliesToBundle)"
-			  Condition="'%(FileName)' == 'System.Drawing' and $([System.String]::Copy('%(FullPath)').Contains('dotnet\packs'))" />
-			<ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)"
-			  Condition="'%(FileName)' == 'System.Drawing' and $([System.String]::Copy('%(FullPath)').Contains('dotnet\packs'))" />
+			<WasmAssembliesToBundle Remove="@(WasmAssembliesToBundle)" Condition="'%(FileName)' == 'System.Drawing' and $([System.String]::Copy('%(FullPath)').Contains('dotnet\packs'))" />
+			<_WasmAssembliesToBundle Remove="@(_WasmAssembliesToBundle)" Condition="'%(FileName)' == 'System.Drawing' and $([System.String]::Copy('%(FullPath)').Contains('dotnet\packs'))" />
+			<ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)" Condition="'%(FileName)' == 'System.Drawing' and $([System.String]::Copy('%(FullPath)').Contains('dotnet\packs'))" />
 		</ItemGroup>
 	</Target>
 
 	<Target Name="AuditAndDropSystemDrawing" AfterTargets="ResolveAssemblyReferences">
 
 		<!-- audit: paste these lines if anything is still wrong -->
-		<Message Importance="high"
-				 Text="[sd] REF  %(ReferencePath.FileName) | Fusion='%(ReferencePath.FusionName)' | Src=%(ReferencePath.ReferenceSourceTarget) | From=%(ReferencePath.ResolvedFrom) | %(ReferencePath.FullPath)"
-				 Condition="'%(ReferencePath.FileName)' == 'System.Drawing'
-                        or '%(ReferencePath.FileName)' == 'System.Drawing.Common'
-                        or '%(ReferencePath.FileName)' == 'System.Drawing.Primitives'" />
-		<Message Importance="high"
-				 Text="[sd] COPY %(ReferenceCopyLocalPaths.FileName) | Fusion='%(ReferenceCopyLocalPaths.FusionName)' | Src=%(ReferenceCopyLocalPaths.ReferenceSourceTarget) | %(ReferenceCopyLocalPaths.FullPath)"
-				 Condition="'%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing'
-                        or '%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing.Common'
-                        or '%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing.Primitives'" />
+		<Message Importance="high" Text="[sd] REF  %(ReferencePath.FileName) | Fusion='%(ReferencePath.FusionName)' | Src=%(ReferencePath.ReferenceSourceTarget) | From=%(ReferencePath.ResolvedFrom) | %(ReferencePath.FullPath)" Condition="'%(ReferencePath.FileName)' == 'System.Drawing'&#xD;&#xA;                        or '%(ReferencePath.FileName)' == 'System.Drawing.Common'&#xD;&#xA;                        or '%(ReferencePath.FileName)' == 'System.Drawing.Primitives'" />
+		<Message Importance="high" Text="[sd] COPY %(ReferenceCopyLocalPaths.FileName) | Fusion='%(ReferenceCopyLocalPaths.FusionName)' | Src=%(ReferenceCopyLocalPaths.ReferenceSourceTarget) | %(ReferenceCopyLocalPaths.FullPath)" Condition="'%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing'&#xD;&#xA;                        or '%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing.Common'&#xD;&#xA;                        or '%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing.Primitives'" />
 
 		<ItemGroup>
 			<!-- ══ reference set ══ -->
 			<!-- never ours -->
-			<_ForeignRef Include="@(ReferencePath)"
-						 Condition="'%(ReferencePath.FileName)' == 'System.Drawing.Common'
-                              or '%(ReferencePath.FileName)' == 'System.Drawing.Primitives'" />
+			<_ForeignRef Include="@(ReferencePath)" Condition="'%(ReferencePath.FileName)' == 'System.Drawing.Common'&#xD;&#xA;                              or '%(ReferencePath.FileName)' == 'System.Drawing.Primitives'" />
 			<!-- System.Drawing: drop the signed / wrong-version copies (ours = unsigned 30.0.0.0) -->
-			<_ForeignRef Include="@(ReferencePath)"
-						 Condition="'%(ReferencePath.FileName)' == 'System.Drawing'
-                              and ($([System.String]::Copy('%(ReferencePath.FusionName)').Contains('PublicKeyToken=b03f5f7f11d50a3a'))
-                                or $([System.String]::Copy('%(ReferencePath.FusionName)').Contains('PublicKeyToken=cc7b13ffcd2ddd51'))
-                                or $([System.String]::Copy('%(ReferencePath.FusionName)').Contains('Version=4.0.0.0'))
-                                or (!$([System.String]::Copy('%(ReferencePath.FusionName)').Equals(''))
-                                    and !$([System.String]::Copy('%(ReferencePath.FusionName)').Contains('Version=$(OurDrawingVersion)'))))" />
+			<_ForeignRef Include="@(ReferencePath)" Condition="'%(ReferencePath.FileName)' == 'System.Drawing'&#xD;&#xA;                              and ($([System.String]::Copy('%(ReferencePath.FusionName)').Contains('PublicKeyToken=b03f5f7f11d50a3a'))&#xD;&#xA;                                or $([System.String]::Copy('%(ReferencePath.FusionName)').Contains('PublicKeyToken=cc7b13ffcd2ddd51'))&#xD;&#xA;                                or $([System.String]::Copy('%(ReferencePath.FusionName)').Contains('Version=4.0.0.0'))&#xD;&#xA;                                or (!$([System.String]::Copy('%(ReferencePath.FusionName)').Equals(''))&#xD;&#xA;                                    and !$([System.String]::Copy('%(ReferencePath.FusionName)').Contains('Version=$(OurDrawingVersion)'))))" />
 
 			<!-- ══ copy-local ══ -->
 			<!-- never ours -->
-			<_ForeignCopy Include="@(ReferenceCopyLocalPaths)"
-						  Condition="'%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing.Common'
-                               or '%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing.Primitives'" />
+			<_ForeignCopy Include="@(ReferenceCopyLocalPaths)" Condition="'%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing.Common'&#xD;&#xA;                               or '%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing.Primitives'" />
 			<!-- the copy of exactly the files we just dropped from the reference set -->
-			<_ForeignCopy Include="@(ReferenceCopyLocalPaths)"
-						  Condition="'%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing'
-                               and '@(_ForeignRef)' != ''
-                               and '@(_ForeignRef)' == '%(ReferenceCopyLocalPaths.FullPath)'" />
+			<_ForeignCopy Include="@(ReferenceCopyLocalPaths)" Condition="'%(ReferenceCopyLocalPaths.FileName)' == 'System.Drawing'&#xD;&#xA;                               and '@(_ForeignRef)' != ''&#xD;&#xA;                               and '@(_ForeignRef)' == '%(ReferenceCopyLocalPaths.FullPath)'" />
 
 			<!-- removes: strictly per list -->
 			<ReferencePath Remove="@(_ForeignRef)" />
@@ -172,6 +142,8 @@
 			<EmccExtraLDFlags>$(EmccExtraLDFlags) -sINCOMING_MODULE_JS_API=ENVIRONMENT,arguments,canvas,dynamicLibraries,elementPointerLock,instantiateWasm,locateFile,monitorRunDependencies,noExitRuntime,noInitialRun,onAbort,onExit,onRuntimeInitialized,postRun,preInit,preRun,print,printErr,setStatus,statusMessage,stderr,stdin,stdout,thisProgram,wasm,websocket,wasmMemory,mainScriptUrlOrBlob</EmccExtraLDFlags>
 		<EmccExtraLDFlags>$(EmccExtraLDFlags) -sEXPORTED_FUNCTIONS+=_emscripten_stack_get_base,_emscripten_stack_get_end,_emscripten_stack_get_free</EmccExtraLDFlags>-->
 		<EmccFlags>-sMAXIMUM_MEMORY=1073741824</EmccFlags>
+		<EmccExtraLDFlags>-sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=2147483648</EmccExtraLDFlags>
+
 
 	</PropertyGroup>
 
