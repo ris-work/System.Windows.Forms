@@ -171,7 +171,7 @@
 			<!--<EmccExtraLDFlags>$(EmccExtraLDFlags) -pthread</EmccExtraLDFlags>
 			<EmccExtraLDFlags>$(EmccExtraLDFlags) -sINCOMING_MODULE_JS_API=ENVIRONMENT,arguments,canvas,dynamicLibraries,elementPointerLock,instantiateWasm,locateFile,monitorRunDependencies,noExitRuntime,noInitialRun,onAbort,onExit,onRuntimeInitialized,postRun,preInit,preRun,print,printErr,setStatus,statusMessage,stderr,stdin,stdout,thisProgram,wasm,websocket,wasmMemory,mainScriptUrlOrBlob</EmccExtraLDFlags>
 		<EmccExtraLDFlags>$(EmccExtraLDFlags) -sEXPORTED_FUNCTIONS+=_emscripten_stack_get_base,_emscripten_stack_get_end,_emscripten_stack_get_free</EmccExtraLDFlags>-->
-		<EmccFlags>-sMAXIMUM_MEMORY=536870912</EmccFlags>
+		<EmccFlags>-sMAXIMUM_MEMORY=1073741824</EmccFlags>
 
 	</PropertyGroup>
 
