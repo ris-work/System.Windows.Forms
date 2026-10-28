@@ -137,7 +137,17 @@ namespace System.Windows.Forms
         const int MaxLogLines = 500;
         static bool logBroadcast = true;
 
-        internal static void Log(string message)
+        /// <summary>Console + ring + BROADCAST to window-list watchers.</summary>
+        internal static void Log(string message) => Write(message, broadcast: true);
+
+        /// <summary>
+        /// Console + ring ONLY. Never broadcast. A broadcast becomes a message on
+        /// the very connection we are describing, and describing that write
+        /// broadcasts again — a self-feeding loop (BytesOut climbing 496→565→663→…).
+        /// </summary>
+        internal static void LogLocal(string message) => Write(message, broadcast: false);
+
+        static void Write(string message, bool broadcast)
         {
             if (message == null) return;
             var line = DateTime.Now.ToString("HH:mm:ss.fff") + "  " + message;
@@ -148,9 +158,7 @@ namespace System.Windows.Forms
             }
             try { Console.WriteLine("[XplatUISocketWasm] " + message); } catch { }
 
-            if (!logBroadcast) return;
-            // Log lines ride the *window-list* connection only, so the frame
-            // stream of a live window is never interleaved with log noise.
+            if (!broadcast || !logBroadcast) return;
             var msg = "{\"type\":\"log\",\"text\":\"" + JEsc(line) + "\"}";
             lock (Sync)
             {
@@ -245,6 +253,7 @@ namespace System.Windows.Forms
             public bool FrameWanted;                                  // coalesced frame slot
 
             int _logIn, _logOut;                        // log throttles
+            long _lastOut = -1, _lastIn = -1, _lastPending = -1;
 
             public ClientConn(WetSocket sock, WinInfo win)
             {
@@ -255,10 +264,19 @@ namespace System.Windows.Forms
             // ── outbound: queue one complete message ─────────────────────────
             // Never blocks and never drops: backpressure lives in WetSocket's
             // send window (Send returns 0 when it is full, we retry next tick).
+            // ── outbound: queue one complete NEWLINE-DELIMITED record ────────
+            // The '\n' is WIRE FRAMING, not decoration: LineConn on the JS side
+            // splits on '\n' and never emits a message without it. (The ClientConn
+            // rewrite dropped it — the bytes arrived, JS buffered them forever.)
             public void Send(string s)
             {
                 if (Dead || s == null) return;
-                lock (QLock) OutQueue.Enqueue(s);
+                if (s.Length == 0 || s[s.Length - 1] != '\n') s += "\n";
+                lock (QLock)
+                {
+                    if (OutQueue.Count > 5000) { LogLocal($"Queue size: {OutQueue.Count} > 5000"); return; }
+                    OutQueue.Enqueue(s);
+                }
             }
 
             // ── "encode a frame the next time the wire is idle" ─────────────
@@ -276,8 +294,8 @@ namespace System.Windows.Forms
                 if (Dead || data == null || data.Length == 0) return;
                 BytesIn += data.Length;
                 if (++_logIn <= 8 || (_logIn & 31) == 0)
-                    Log("wire #" + Sock.Handle + " <- " + data.Length + "B  (in " + BytesIn +
-                        "B, rx pending " + Sock.RxPending + "B)");
+                    LogLocal("wire #" + Sock.Handle + " <- +" + data.Length + "B  (in " + BytesIn +
+                             ", rx pending " + Sock.RxPending + ")");
 
                 string text;
                 try { text = Encoding.UTF8.GetString(data); }
@@ -322,9 +340,12 @@ namespace System.Windows.Forms
             }
 
             // ── outbound: push whatever fits; the rest waits for the next tick ─
+            // ── outbound: push whatever fits; the rest waits for the next tick ──
             public void FlushOut()
             {
                 if (Dead) return;
+                long wrote = 0;
+
                 for (; ; )
                 {
                     if (Cur == null)
@@ -337,11 +358,11 @@ namespace System.Windows.Forms
                         if (Cur == null)
                         {
                             // Wire idle → encode a frame NOW (freshest possible state).
-                            if (!FrameWanted) return;
+                            if (!FrameWanted) break;
                             if (MinFrameMs > 0 && unchecked(Environment.TickCount - LastFrameTick) < MinFrameMs)
-                                return;                      // throttled; FrameWanted stays set
+                                break;                       // throttled; FrameWanted stays set
                             FrameWanted = false;
-                            if (!GenerateFrame()) return;
+                            if (!GenerateFrame()) break;
                             continue;
                         }
                     }
@@ -349,19 +370,32 @@ namespace System.Windows.Forms
                     int n;
                     try { n = Sock.Send(Cur.AsSpan(CurOff)); }     // PARTIAL, non-blocking
                     catch { Kill(); return; }
-                    if (n <= 0) return;                            // send window full → next tick
+                    if (n <= 0) break;                             // send window full → next tick
 
                     CurOff += n;
                     BytesOut += n;
-                    if (CurOff >= Cur.Length)
-                    {
-                        Cur = null; CurOff = 0;
-                        if (++_logOut <= 8 || (_logOut & 31) == 0)
-                            Log("wire #" + Sock.Handle + " -> " + BytesOut + "B written, " +
-                                (BytesOut - Sock.TxPending) + "B read by peer, " +
-                                Sock.TxPending + "B STILL PENDING");
-                    }
+                    wrote += n;
+                    if (CurOff >= Cur.Length) { Cur = null; CurOff = 0; }
                 }
+
+
+            }
+
+            /// <summary>
+            /// Called once per tick. Logs the TRANSPORT TRUTH: what we wrote AND how
+            /// much of it the peer actually pulled. The old line fired at write time,
+            /// so it always said "peer read 0" and made a healthy link look dead.
+            /// </summary>
+            public void NotePeerRead()
+            {
+                long pend = Sock.TxPending;
+                if (pend == _lastPending && BytesOut == _lastOut && BytesIn == _lastIn) return;
+                _lastPending = pend; _lastOut = BytesOut; _lastIn = BytesIn;
+
+                if (++_logOut <= 8 || (_logOut & 31) == 0)
+                    LogLocal("wire #" + Sock.Handle +
+                             "  out " + BytesOut + " / peer read " + (BytesOut - pend) + " / pending " + pend +
+                             "   in " + BytesIn + " / unread " + Sock.RxPending);
             }
 
             // Build + encode + enqueue ONE frame message. Replaces SendFrameAsync.
@@ -422,7 +456,7 @@ namespace System.Windows.Forms
                 try { Sock?.Close(); } catch { }
                 if (Win == null) { lock (Sync) listWatchers.Remove(this); }
                 else { lock (Sync) Win.Clients.Remove(this); }
-                Log("client #" + (Sock?.Handle ?? 0) + " disconnected");
+                LogLocal("client #" + (Sock?.Handle ?? 0) + " disconnected");
             }
 
 
@@ -774,6 +808,7 @@ namespace System.Windows.Forms
                     }
 
                     if (!cc.Dead) cc.FlushOut();
+                    cc.NotePeerRead();
 
                     if (!cc.Sock.Connected && cc.Sock.Available == 0) cc.Kill();
                 }
