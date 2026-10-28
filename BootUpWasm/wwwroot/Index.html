@@ -2,839 +2,1511 @@
 <html>
 
 <head>
-  <title>XplatUISocketWasm — window viewer</title>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="preload" id="webassembly" />
-  <script type="importmap"></script>
-  <style>
-    :root {
-      color-scheme: dark;
-      --bg: #0e1116;
-      --panel: #161b22;
-      --panel2: #0b0e13;
-      --line: #26303d;
-      --fg: #d7e0ea;
-      --dim: #7d8b9c;
-      --acc: #4cc2ff;
-      --ok: #3fd68c;
-      --warn: #ffb454;
-      --bad: #ff6b6b;
-    }
+    <title>XplatUISocketWasm — viewer [ASYNC / MT EDITION]</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preload" id="webassembly" />
+    <script type="importmap"></script>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #0e1116;
+            --panel: #161b22;
+            --panel2: #0b0e13;
+            --line: #26303d;
+            --fg: #d7e0ea;
+            --dim: #7d8b9c;
+            --acc: #4cc2ff;
+            --ok: #3fd68c;
+            --warn: #ffb454;
+            --bad: #ff6b6b;
+        }
 
-    * { box-sizing: border-box; }
+        * {
+            box-sizing: border-box;
+        }
 
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--fg);
-      font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      display: flex;
-      height: 100vh;
-      overflow: hidden;
-    }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--fg);
+            font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
 
-    #sidebar {
-      width: 320px;
-      background: var(--panel);
-      border-right: 1px solid var(--line);
-      padding: 12px;
-      overflow: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
+        #sidebar {
+            width: 340px;
+            background: var(--panel);
+            border-right: 1px solid var(--line);
+            padding: 10px;
+            overflow: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
 
-    h1 { font-size: 15px; margin: 0; }
-    h2 {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: .1em;
-      color: var(--dim);
-      margin: 0 0 6px;
-    }
+        h1 {
+            font-size: 15px;
+            margin: 0;
+        }
 
-    .sub { color: var(--dim); font-size: 11px; }
-    .dim { color: var(--dim); }
-    .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-    .kv { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; padding: 2px 0; }
-    .kv b { font-weight: 600; color: var(--dim); }
-    .kv span { text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 175px; }
+        h2 {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: .1em;
+            color: var(--dim);
+            margin: 0 0 6px;
+        }
 
-    .tag {
-      padding: 1px 8px;
-      border-radius: 20px;
-      font-size: 11px;
-      border: 1px solid var(--line);
-      white-space: nowrap;
-    }
-    .tag.on { color: var(--ok); border-color: var(--ok); }
-    .tag.off { color: var(--bad); border-color: var(--bad); }
-    .tag.wait { color: var(--warn); border-color: var(--warn); }
+        .sub {
+            color: var(--dim);
+            font-size: 11px;
+        }
 
-    .panel {
-      background: var(--panel2);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 9px;
-    }
+        .dim {
+            color: var(--dim);
+        }
 
-    div.win {
-      padding: 6px 8px;
-      margin: 2px 0;
-      cursor: pointer;
-      border-radius: 5px;
-      border: 1px solid transparent;
-      font-size: 12px;
-    }
-    div.win:hover { background: #1c2430; }
-    div.win.active { background: #203247; border-color: var(--acc); }
-    div.win small { color: var(--dim); display: block; }
+        .row {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
 
-    label { display: block; margin: 5px 0; font-size: 12px; }
+        .kv {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: 11px;
+            padding: 2px 0;
+        }
 
-    input, button, select {
-      font: inherit;
-      color: var(--fg);
-      background: var(--panel2);
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      padding: 5px 9px;
-    }
-    button { cursor: pointer; background: #1c2430; }
-    button:hover { border-color: var(--acc); }
-    button.primary { background: var(--acc); color: #04121c; border-color: var(--acc); font-weight: 600; }
-    button.mini { padding: 2px 7px; font-size: 11px; }
+            .kv b {
+                font-weight: 600;
+                color: var(--dim);
+            }
 
-    /* The stage is the app surface — nothing may cover it or eat its clicks. */
-    #stage {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      position: relative;
-      background: #18181c;
-      outline: none;
-    }
-    #frame { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
-    #svgwrap { width: 100%; height: 100%; }
-    #svgwrap svg { width: 100%; height: 100%; }
+            .kv span {
+                text-align: right;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                max-width: 200px;
+            }
 
-    #bar {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      background: rgba(0, 0, 0, .55);
-      padding: 6px 10px;
-      border-radius: 6px;
-      font-family: monospace;
-      font-size: 11px;
-      max-width: 60%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      pointer-events: none;          /* never steal a click from the app */
-    }
+        .tag {
+            padding: 1px 8px;
+            border-radius: 20px;
+            font-size: 11px;
+            border: 1px solid var(--line);
+            white-space: nowrap;
+        }
 
-    /* Log lives in the sidebar now, so it can never cover the rendered window. */
-    #log {
-      height: 200px;
-      overflow: auto;
-      background: var(--panel2);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 6px 8px;
-      font: 11px/1.45 ui-monospace, monospace;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-    #log .t { color: #5b6b7c; }
-    #log .i { color: #9fd0ff; }
-    #log .w { color: var(--warn); }
-    #log .e { color: var(--bad); }
-    #log .s { color: var(--ok); }
-  </style>
+            .tag.on {
+                color: var(--ok);
+                border-color: var(--ok);
+            }
+
+            .tag.off {
+                color: var(--bad);
+                border-color: var(--bad);
+            }
+
+            .tag.wait {
+                color: var(--warn);
+                border-color: var(--warn);
+            }
+
+            .tag.edition {
+                color: #04121c;
+                background: var(--acc);
+                border-color: var(--acc);
+                font-weight: 700;
+            }
+
+        .panel {
+            background: var(--panel2);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 9px;
+        }
+
+        div.win {
+            padding: 6px 8px;
+            margin: 2px 0;
+            cursor: pointer;
+            border-radius: 5px;
+            border: 1px solid transparent;
+            font-size: 12px;
+        }
+
+            div.win:hover {
+                background: #1c2430;
+            }
+
+            div.win.active {
+                background: #203247;
+                border-color: var(--acc);
+            }
+
+            div.win small {
+                color: var(--dim);
+                display: block;
+            }
+
+        label {
+            display: block;
+            margin: 5px 0;
+            font-size: 12px;
+        }
+
+        input, button, select {
+            font: inherit;
+            color: var(--fg);
+            background: var(--panel2);
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 5px 9px;
+        }
+
+        button {
+            cursor: pointer;
+            background: #1c2430;
+        }
+
+            button:hover {
+                border-color: var(--acc);
+            }
+
+            button.primary {
+                background: var(--acc);
+                color: #04121c;
+                border-color: var(--acc);
+                font-weight: 600;
+            }
+
+            button.mini {
+                padding: 2px 7px;
+                font-size: 11px;
+            }
+
+        #stage {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+            background: #18181c;
+        }
+
+        #frame {
+            max-width: 100%;
+            max-height: 100%;
+            image-rendering: pixelated;
+        }
+
+        #svgwrap {
+            width: 100%;
+            height: 100%;
+        }
+
+            #svgwrap svg {
+                width: 100%;
+                height: 100%;
+            }
+
+        #bar {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, .55);
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 11px;
+            max-width: 60%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        #log {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 190px;
+            overflow: auto;
+            background: rgba(0, 0, 0, .78);
+            border-top: 1px solid var(--line);
+            padding: 6px 8px;
+            font: 11px/1.45 ui-monospace, monospace;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+            #log .t {
+                color: #5b6b7c;
+            }
+
+            #log .i {
+                color: #9fd0ff;
+            }
+
+            #log .w {
+                color: var(--warn);
+            }
+
+            #log .e {
+                color: var(--bad);
+            }
+
+            #log .s {
+                color: var(--ok);
+            }
+
+            #log .b {
+                color: var(--acc);
+                font-weight: 700;
+            }
+
+        pre.hex {
+            margin: 6px 0 0;
+            padding: 6px;
+            background: #07090d;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            font: 10.5px/1.45 ui-monospace, monospace;
+            color: #a8c7e0;
+            max-height: 170px;
+            overflow: auto;
+            white-space: pre;
+        }
+
+        .verdict {
+            margin-top: 6px;
+            font-size: 12px;
+            padding: 5px 8px;
+            border-radius: 6px;
+            border: 1px solid var(--line);
+        }
+
+            .verdict.ok {
+                color: var(--ok);
+                border-color: var(--ok);
+            }
+
+            .verdict.bad {
+                color: var(--bad);
+                border-color: var(--bad);
+            }
+    </style>
 </head>
 
 <body>
-  <div id="sidebar">
-    <div>
-      <h1>XplatUISocketWasm</h1>
-      <div class="sub">AF_UNIX over JS · newline-delimited JSON · base64 frames</div>
-      <div class="row" style="margin-top:8px">
-        <span id="status" class="tag wait">booting…</span>
-        <span class="sub" id="uiroot"></span>
-      </div>
+    <div id="sidebar">
+        <div>
+            <h1>XplatUISocketWasm</h1>
+            <div class="sub">AF_UNIX over JS · NDJSON · base64 frames</div>
+            <div class="row" style="margin-top:8px">
+                <span class="tag edition">ASYNC / MT EDITION</span>
+                <span id="status" class="tag wait">booting…</span>
+            </div>
+            <div class="row" style="margin-top:6px"><span class="sub" id="uiroot"></span></div>
+        </div>
+
+        <div class="panel">
+            <h2>runtime</h2>
+            <div class="kv"><b>viewer edition</b><span id="info-edition">async/mt v9 · viewer+echo</span></div>
+            <div class="kv"><b>main assembly</b><span id="info-main">—</span></div>
+            <div class="kv"><b>WetJs source</b><span id="info-wet">resolving…</span></div>
+            <div class="kv"><b>echo service</b><span id="info-echo">resolving…</span></div>
+            <div class="kv"><b>message pump</b><span id="info-pump">checking…</span></div>
+            <div class="kv"><b>frames</b><span id="info-frames">0</span></div>
+            <div class="kv"><b>throughput</b><span id="info-fps">0 fps</span></div>
+        </div>
+
+        <div class="panel">
+            <h2>transport test (echo)</h2>
+            <div class="row">
+                <button class="primary" id="e-start">start /echo</button>
+                <button id="e-stats">stats</button>
+                <button id="e-reset">reset</button>
+                <button id="e-stop">stop</button>
+            </div>
+            <div class="row" style="margin-top:8px">
+                <button id="e-connect">connect</button>
+                <button id="e-write">write</button>
+                <button id="e-tick">echo tick</button>
+                <button id="e-read">read all</button>
+                <button id="e-close">close</button>
+            </div>
+            <div class="row" style="margin-top:8px">
+                <label style="margin:0">size <input id="e-size" type="number" value="256" style="width:74px"></label>
+                <label style="margin:0">count <input id="e-count" type="number" value="100" style="width:74px"></label>
+                <button class="primary" id="e-echo">echo &amp; show bytes</button>
+                <button id="e-rt">round-trip</button>
+                <button id="e-flood">speed</button>
+            </div>
+            <div class="row" style="margin-top:8px">
+                <label style="margin:0;flex:1">text <input id="e-text" type="text" value="hello, wet-afunix" style="width:100%"></label>
+                <button id="e-sendtext">echo text</button>
+            </div>
+            <div class="verdict dim" id="e-verdict">no echo round-trip yet</div>
+            <pre class="hex" id="e-hex">— echoed bytes appear here —</pre>
+        </div>
+
+        <div class="panel">
+            <h2>windows <span class="dim" id="wincount"></span></h2>
+            <div id="winlist"><span class="dim">connecting to window-list…</span></div>
+        </div>
+
+        <div class="panel">
+            <h2>stream</h2>
+            <label>
+                format
+                <select id="fmt">
+                    <option>jpeg</option>
+                    <option>png</option>
+                    <option>svg</option>
+                    <option value="rawbgra">raw BGRA8</option>
+                    <option value="rawg8">raw Gray8</option>
+                    <option value="rawbgra332">raw 332</option>
+                    <option value="rawbgra1">raw 1bpp</option>
+                    <option value="rawycbcr322">raw YCbCr 4:2:2</option>
+                </select>
+            </label>
+            <label>quality <input type="range" id="q" min="1" max="100" value="75"></label>
+            <label>fps cap <input type="number" id="fps" min="0" max="60" value="0" style="width:70px"> <span class="dim">0 = uncapped</span></label>
+            <label><input type="checkbox" id="gray"> grayscale</label>
+            <label><input type="checkbox" id="live" checked> live (subscribe)</label>
+            <div class="row">
+                <button class="primary" id="refresh">refresh</button>
+                <button id="save">save frame</button>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>connection</h2>
+            <div class="kv"><b>window-list</b><span id="info-list">idle</span></div>
+            <div class="kv"><b>window</b><span id="info-win">not connected</span></div>
+            <div class="row" style="margin-top:6px">
+                <button class="mini" id="btn-reconnect">reconnect</button>
+                <button class="mini" id="btn-disconnect">disconnect</button>
+                <button class="mini" id="btn-ping">ping</button>
+                <button class="mini" id="btn-listeners">listeners()</button>
+                <button class="mini" id="btn-env">env</button>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>log</h2>
+            <div class="row">
+                <button class="mini" id="b-pause">pause output</button>
+                <button class="mini" id="clearlog">clear</button>
+                <button class="mini" id="copylog">copy</button>
+                <label style="margin:0"><input type="checkbox" id="autoscroll" checked> autoscroll</label>
+            </div>
+        </div>
     </div>
 
-    <div class="panel">
-      <h2>runtime</h2>
-      <div class="kv"><b>main assembly</b><span id="info-main">—</span></div>
-      <div class="kv"><b>WetJs source</b><span id="info-wet">resolving…</span></div>
-      <div class="kv"><b>message pump</b><span id="info-pump">checking…</span></div>
-      <div class="kv"><b>frames</b><span id="info-frames">0</span></div>
-      <div class="kv"><b>throughput</b><span id="info-fps">0 fps</span></div>
-      <div class="row" style="margin-top:6px">
-        <button class="mini" id="btn-listeners">listeners</button>
-        <button class="mini" id="btn-ping">ping</button>
-        <button class="mini" id="btn-die">simulate exit</button>
-      </div>
+    <div id="stage">
+        <div id="bar">not connected</div>
+        <img id="frame" style="display:none" alt="">
+        <div id="svgwrap" style="display:none"></div>
+        <div id="log"></div>
     </div>
 
-    <div class="panel">
-      <h2>windows <span class="dim" id="wincount"></span></h2>
-      <div id="winlist"><span class="dim">connecting to window-list…</span></div>
-    </div>
+    <script type="module">
+        // ══════════════════════════════════════════════════════════════════
+        //  XplatUISocketWasm viewer — ASYNC / MT EDITION (v9)
+        //  = v8 + echo round-trip that SHOWS the echoed bytes (hex + ascii),
+        //    listeners() diagnostic, plain (non-async) wet imports.
+        //
+        //  Rules for this runtime:
+        //   * JS→.NET: `async Task*` exports, args only — results arrive pushed
+        //     through the deliver() import (rpc() below).
+        //   * .NET→JS: fire-and-forget imports; handlers MUST be plain functions.
+        //   * no .stack/.message access off managed exception proxies.
+        // ══════════════════════════════════════════════════════════════════
+        const EDITION = 'async/mt v9 · viewer+echo';
+        import { dotnet } from './_framework/dotnet.js'
 
-    <div class="panel">
-      <h2>stream</h2>
-      <label>format
-        <select id="fmt">
-          <option>jpeg</option>
-          <option>png</option>
-          <option>svg</option>
-        </select>
-      </label>
-      <label>quality <input type="range" id="q" min="1" max="100" value="60"></label>
-      <label>fps cap <input type="number" id="fps" min="0" max="60" value="30" style="width:70px"> <span class="dim">0 = uncapped</span></label>
-      <label><input type="checkbox" id="gray"> grayscale</label>
-      <label><input type="checkbox" id="live" checked> live (subscribe)</label>
-      <div class="row">
-        <button class="primary" id="refresh">refresh</button>
-        <button id="save">save frame</button>
-      </div>
-    </div>
+        const $ = (s) => document.querySelector(s);
+        const enc = new TextEncoder();
+        const dec = new TextDecoder();
+        const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        const num = (v) => Number(v);
 
-    <div class="panel">
-      <h2>connection</h2>
-      <div class="kv"><b>window-list</b><span id="info-list">idle</span></div>
-      <div class="kv"><b>window</b><span id="info-win">not connected</span></div>
-      <div class="row" style="margin-top:6px">
-        <button class="mini" id="btn-reconnect">reconnect</button>
-        <button class="mini" id="btn-disconnect">disconnect</button>
-      </div>
-    </div>
-
-    <h2>log</h2>
-    <div class="row" style="margin-bottom:6px">
-      <button class="mini" id="clearlog">clear</button>
-      <button class="mini" id="copylog">copy</button>
-      <label style="margin:0"><input type="checkbox" id="autoscroll" checked> autoscroll</label>
-    </div>
-    <div id="log"></div>
-  </div>
-
-  <div id="stage" tabindex="-1">
-    <div id="bar">not connected</div>
-    <img id="frame" style="display:none" alt="">
-    <div id="svgwrap" style="display:none"></div>
-  </div>
-
-  <script type="module">
-    import { dotnet } from './_framework/dotnet.js'
-
-    // ══════════════════════════════════ 0. tiny helpers ══════════════════════════════════
-    const $ = (s) => document.querySelector(s);
-    const enc = new TextEncoder();
-    const dec = new TextDecoder();
-    const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-
-    const logBox = $('#log');
-    function log(level, msg) {
-      const t = new Date().toTimeString().slice(0, 8);
-      const cls = level === 'error' ? 'e' : level === 'warn' ? 'w' : level === 'ok' ? 's' : 'i';
-      // append, never innerHTML +=  (that re-parses the whole log each time)
-      logBox.insertAdjacentHTML('beforeend', `<div><span class="t">${t}</span> <span class="${cls}">${esc(msg)}</span></div>`);
-      while (logBox.childElementCount > 2000) logBox.removeChild(logBox.firstChild);
-      if ($('#autoscroll').checked) logBox.scrollTop = logBox.scrollHeight;
-    }
-    function setTag(kind, text) {
-      const s = $('#status');
-      s.className = 'tag ' + kind;
-      s.textContent = text;
-    }
-    function setBar(t) { $('#bar').textContent = t; }
-    function info(id, text) { const el = $(id); if (el) el.textContent = text; }
-
-    const UI_ROOT = new URLSearchParams(location.search).get('ui') || '/ui';
-    const LIST_PATH = UI_ROOT + '/window-list';
-    info('#uiroot', `unix:${UI_ROOT}/*`);
-    log('info', `page loaded · viewer for XplatUISocketWasm · socket root ${UI_ROOT}`);
-
-    // ══════════════════════════════════ 1. runtime + .NET → JS wire ══════════════════════════════════
-    const conns = new Map();      // handle -> conn
-    const services = new Map();   // path -> onAccept (JS-hosted AF_UNIX services)
-
-    const { setModuleImports, getAssemblyExports, getConfig } = await dotnet.create();
-    info('#info-main', getConfig().mainAssemblyName);
-    log('info', `dotnet runtime created · main assembly "${getConfig().mainAssemblyName}"`);
-
-    setModuleImports('wet', {
-      // .NET calls this when a WetSocket connects to a JS-hosted service
-      connect(path, handle) {
-        const onAccept = services.get(path);
-        if (!onAccept) return false;
-        log('info', `[js-service] accepted #${handle} on unix:${path}`);
-        onAccept(makeConn(handle));
-        return true;
-      },
-      // .NET calls this to signal readable / drained / closed
-      notify(handle, kind) {
-        const c = conns.get(handle);
-        if (!c) return;
-        if (kind === 'closed') {
-          conns.delete(handle);
-          c.closed = true;
-          c.onclose?.(c);
-          return;
+        function fmtErr(e) {
+            try {
+                if (e == null) return String(e);
+                if (typeof e === 'string') return e;
+                const m = e.message;
+                if (typeof m === 'string' && m) return m;
+                return String(e);
+            } catch {
+                return '<managed exception: properties not readable>';
+            }
         }
-        if (kind === 'drained') { c.onwritable?.(c); return; }
-        if (c.onreadable) { c.onreadable(c); return; }
-        if (c.ondata) {
-          let u8;
-          while ((u8 = c.read()).length) c.ondata(u8, c);
+
+        function b64ToU8(b64) {
+            const bin = atob(b64);
+            const u8 = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+            return u8;
         }
-      },
-    });
 
-    // ══════════════════════════════════ 2. WetJs export resolution ══════════════════════════════════
-    // WetJs lives in the WetAfunix class library; Pump lives in BootUpJs (main assembly).
-    // Both are resolved lazily: the assemblies only load once Main runs.
-    let wet = null;
-    let wetSource = null;
-    let pump = null;
-    let pumpTimer = null;
-    let runtimeDead = false;
-
-    function die(reason, level = 'error') {
-      if (runtimeDead) return;
-      runtimeDead = true;
-      log(level, 'runtime stopped: ' + reason);
-      setTag('off', 'runtime exited');
-      info('#info-pump', 'stopped');
-      if (pumpTimer) { clearInterval(pumpTimer); pumpTimer = null; }
-    }
-
-    async function tryResolveWet() {
-      const names = [getConfig().mainAssemblyName, 'WetAfunix', 'WetAfunix.dll', 'Wystem.Wet', 'System.Windows.Forms'];
-      for (const name of names) {
-        let root;
-        try { root = await getAssemblyExports(name); }
-        catch { continue; }
-        const w = root?.WetJs ?? root?.Wystem?.Wet?.WetJs ?? root?.Wystem?.WetJs;
-        const p = root?.BootUpJs?.Pump ?? root?.XplatUISocketWasm?.Pump
-               ?? root?.System?.Windows?.Forms?.XplatUISocketWasm?.Pump;
-        if (!pump && typeof p === 'function') pump = p;
-        if (w && typeof w.Write === 'function') {
-          if (!wetSource) { wetSource = name; log('ok', `WetJs exports found in assembly "${name}"`); }
-          return w;
+        function concatU8(parts, total) {
+            const out = new Uint8Array(total);
+            let off = 0;
+            for (const p of parts) { out.set(p, off); off += p.length; }
+            return out;
         }
-      }
-      return null;
-    }
 
-    async function initWet() {
-      try {
-        const boot = await getAssemblyExports(getConfig().mainAssemblyName);
-        boot?.BootUpJs?.LoadWet?.();          // force WetAfunix to load
-        if (boot?.BootUpJs?.LoadWet) log('info', 'LoadWet() called — WetAfunix forced to load');
-      } catch (e) { log('warn', 'LoadWet not available: ' + (e.message || e)); }
+        function firstDiff(a, b) {
+            const n = Math.min(a.length, b.length);
+            for (let i = 0; i < n; i++) if (a[i] !== b[i]) return i;
+            return a.length === b.length ? -1 : n;
+        }
 
-      for (let i = 0; i < 150 && !wet; i++) {
-        wet = await tryResolveWet();
-        if (!wet) await new Promise((r) => setTimeout(r, 200));
-      }
-      info('#info-wet', wet ? wetSource : 'NOT FOUND');
-      return wet;
-    }
+        function hexdump(u8, max = 96) {
+            const n = Math.min(u8.length, max);
+            const lines = [];
+            for (let off = 0; off < n; off += 16) {
+                const chunk = u8.subarray(off, Math.min(off + 16, n));
+                const hex = [...chunk].map((b) => b.toString(16).padStart(2, '0')).join(' ').padEnd(47, ' ');
+                const asc = [...chunk].map((b) => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('');
+                lines.push(off.toString(16).padStart(4, '0') + '  ' + hex + '  |' + asc + '|');
+            }
+            if (u8.length > n) lines.push('… ' + (u8.length - n) + ' more bytes');
+            return lines.join('\n');
+        }
 
-    function getWet() {
-      if (runtimeDead) throw new Error('.NET runtime already exited');
-      if (!wet) throw new Error('WetJs exports not ready yet');
-      return wet;
-    }
+        // ── log with pause ──────────────────────────────────────────────
+        const logBox = $('#log');
+        let paused = false, held = [];
 
-    function toU8(data) {
-      return typeof data === 'string' ? enc.encode(data) : (data instanceof Uint8Array ? data : new Uint8Array(data));
-    }
+        function log(level, msg) {
+            const t = new Date().toTimeString().slice(0, 8);
+            const cls = level === 'error' ? 'e' : level === 'warn' ? 'w' : level === 'ok' ? 's' : level === 'banner' ? 'b' : 'i';
+            const line = `<span class="t">${t}</span> <span class="${cls}">${esc(msg)}</span>\n`;
+            if (paused) {
+                held.push(line);
+                $('#b-pause').textContent = `pause output (${held.length})`;
+                return;
+            }
+            logBox.innerHTML += line;
+            if (logBox.textContent.length > 250000) logBox.textContent = logBox.textContent.slice(-120000);
+            if ($('#autoscroll').checked) logBox.scrollTop = logBox.scrollHeight;
+        }
 
-    function makeConn(id) {
-      const c = {
-        id, closed: false, ondata: null, onreadable: null, onwritable: null, onclose: null,
-        write(data) { return getWet().Write(id, toU8(data)); },     // partial: bytes accepted
-        async writeAll(data) {
-          data = toU8(data);
-          for (let off = 0; off < data.length;) {
-            const n = getWet().Write(id, data.subarray(off));
-            if (n < 0) throw new Error(`write: connection #${id} is gone`);
-            off += n;
-            if (off < data.length) await new Promise((r) => (this.onwritable = r));
-          }
-          return data.length;
-        },
-        read(max = 65536) { return getWet().Read(id, max); },
-        close() { try { return getWet().Close(id); } catch { return 0; } },
-      };
-      conns.set(id, c);
-      return c;
-    }
+        function setTag(kind, text) { const s = $('#status'); s.className = 'tag ' + kind; s.textContent = text; }
+        function setBar(t) { $('#bar').textContent = t; }
+        function info(id, text) { const el = $(id); if (el) el.textContent = text; }
 
-    const AF_UNIX = {
-      list: () => JSON.parse(getWet().List()),
-      listeners() {
-        return [
-          ...JSON.parse(getWet().Listening()).map((r) => ({ ...r, host: 'net' })),
-          ...[...services.keys()].map((path) => ({ id: 0, path, host: 'js', state: 'Listening', pending: 0, backlog: 0 })),
-        ];
-      },
-      connect(path) {
-        const id = getWet().Connect(path);
-        if (id < 0) throw new Error(`connect refused — nothing listening at unix:${path}`);
-        return makeConn(id);
-      },
-      read: (id, max = 65536) => getWet().Read(id, max),
-      write: (id, data) => getWet().Write(id, toU8(data)),
-      disconnect: (id) => getWet().Close(id),
-      listen: (path, onAccept) => services.set(path, onAccept),
-    };
-    globalThis.AF_UNIX = AF_UNIX;
+        const UI_ROOT = new URLSearchParams(location.search).get('ui') || '/ui';
+        const LIST_PATH = UI_ROOT + '/window-list';
+        info('#uiroot', `unix:${UI_ROOT}/*`);
+        log('banner', `═══ viewer ${EDITION} ═══`);
+        log('info', `socket root ${UI_ROOT} · list path ${LIST_PATH}`);
 
-    // ══════════════════════════════════ 3. newline-delimited JSON framing ══════════════════════════════════
-    class LineConn {
-      constructor(conn, label) {
-        this.conn = conn;
-        this.label = label;
-        this.buf = '';
-        this.onmessage = null;
-        this.onclose = null;
-        conn.ondata = (u8) => {
-          this.buf += dec.decode(u8, { stream: true });
-          let i;
-          while ((i = this.buf.indexOf('\n')) >= 0) {
-            const line = this.buf.slice(0, i);
-            this.buf = this.buf.slice(i + 1);
-            if (!line.trim()) continue;
-            try { this.onmessage?.(JSON.parse(line)); }
-            catch (e) { log('error', `${this.label}: bad JSON (${e.message}): ${line.slice(0, 120)}`); }
-          }
+        // ───────────────────── runtime + .NET → JS wire ─────────────────────
+        const conns = new Map();
+        const services = new Map();
+        let rpcSeq = 0;
+        const rpcPending = new Map();
+
+        function rpc(fn) {
+            return new Promise((resolve, reject) => {
+                const req = ++rpcSeq;
+                rpcPending.set(req, { resolve, reject });
+                try { fn(req); }
+                catch (e) { rpcPending.delete(req); reject(e); }
+                setTimeout(() => {
+                    if (rpcPending.delete(req)) reject(new Error('rpc timeout'));
+                }, 8000);
+            });
+        }
+
+        const { setModuleImports, getAssemblyExports, getConfig } = await dotnet.create();
+        info('#info-main', getConfig().mainAssemblyName);
+        log('info', `dotnet runtime created · main assembly "${getConfig().mainAssemblyName}"`);
+        log('info', `[env] crossOriginIsolated=${crossOriginIsolated} SharedArrayBuffer=${typeof SharedArrayBuffer} devicePixelRatio=${devicePixelRatio}`);
+
+        // NOTE: handlers are PLAIN functions. An async handler returns a Promise,
+        // and on this runtime an unfinished promise blocks every later import.
+        setModuleImports('wet', {
+            connect(path, handle) {
+                handle = num(handle);
+                const onAccept = services.get(path);
+                setTimeout(() => {
+                    if (onAccept) {
+                        log('info', `[js-service] accepted #${handle} on unix:${path}`);
+                        onAccept(makeConn(handle));
+                    }
+                }, 0);
+                return !!onAccept;
+            },
+
+            notify(handle, kind) {
+                setTimeout(() => onNotify(num(handle), kind), 0);
+            },
+
+            // results are PUSHED here — returned Task<string> values never arrive
+            deliver(req, payload) {
+                const key = num(req);
+                const p = rpcPending.get(key);
+                if (!p) {
+                    log('warn', `[deliver] unmatched req=${req} pending=[${[...rpcPending.keys()].join(',') || 'none'}]`);
+                    return;
+                }
+                rpcPending.delete(key);
+                p.resolve(payload ?? '');
+            },
+        });
+
+        function onNotify(key, kind) {
+            const c = conns.get(key);
+            if (!c) {
+                log('warn', `[notify] #${key} ${kind} — unknown conn (keys: ${[...conns.keys()].join(',') || 'none'})`);
+                return;
+            }
+            if (kind === 'closed') {
+                conns.delete(key);
+                c.closed = true;
+                c.onclose?.(c);
+                return;
+            }
+            if (kind === 'drained') { c.onwritable?.(c); return; }
+
+            if (c._draining) return;
+            c._draining = true;
+            (async () => {
+                try {
+                    let u8;
+                    while ((u8 = await c.read()).length) {
+                        if (c.ondata) c.ondata(u8, c);
+                        else c._pending.push(u8);
+                    }
+                } catch (e) {
+                    log('warn', 'read: ' + fmtErr(e));
+                } finally {
+                    c._draining = false;
+                }
+            })();
+        }
+
+        // ───────────────────── export resolution ─────────────────────
+        let wet = null, wetSource = null, echoJs = null, pump = null, runtimeDead = false;
+
+        function die(reason, level = 'error') {
+            if (runtimeDead) return;
+            runtimeDead = true;
+            log(level, 'runtime stopped: ' + reason);
+            setTag('off', 'runtime exited');
+        }
+
+        async function tryResolveExports() {
+            for (const name of [getConfig().mainAssemblyName, 'WetAfunix', 'WetAfunix.dll', 'Wystem.Wet', 'System.Windows.Forms']) {
+                let root;
+                try { root = await getAssemblyExports(name); } catch { continue; }
+
+                const w = root?.WetJs ?? root?.Wystem?.Wet?.WetJs ?? root?.Wystem?.WetJs;
+                const e = root?.WetEchoJs ?? root?.Wystem?.Wet?.WetEchoJs;
+                const p = root?.BootUpJs?.Pump ?? root?.BootUpJs?.PumpRpcAsync ?? root?.XplatUISocketWasm?.Pump;
+
+                if (!echoJs && typeof e?.StartEchoAsync === 'function') {
+                    echoJs = e;
+                    log('ok', `WetEchoJs found in "${name}"`);
+                }
+                if (!pump && typeof p === 'function') pump = p;
+
+                if (!wet && (typeof w?.WriteRpcAsync === 'function' || typeof w?.WriteAsync === 'function')) {
+                    wet = w;
+                    wetSource = name;
+                    log('ok', `WetJs found in "${name}"`);
+                }
+
+                if (wet && echoJs) break;
+            }
+        }
+
+        async function initExports() {
+            try {
+                const boot = await getAssemblyExports(getConfig().mainAssemblyName);
+                globalThis.boot = boot;
+                globalThis.bootName = getConfig().mainAssemblyName;
+                const r = boot?.BootUpJs?.LoadWet?.();
+                if (r) { await r; log('info', 'LoadWet() awaited — WetAfunix forced to load'); }
+            } catch (e) { log('warn', 'LoadWet: ' + fmtErr(e)); }
+
+            for (let i = 0; i < 150 && (!wet || !echoJs); i++) {
+                await tryResolveExports();
+                if (!wet || !echoJs) await new Promise((r) => setTimeout(r, 200));
+            }
+            info('#info-wet', wet ? wetSource : 'NOT FOUND');
+            info('#info-echo', echoJs ? 'ready' : 'NOT FOUND');
+            return !!wet;
+        }
+
+        function getWet() {
+            if (runtimeDead) throw new Error('.NET runtime already exited');
+            if (!wet) throw new Error('WetJs exports not ready yet');
+            return wet;
+        }
+
+        const toU8 = (d) => typeof d === 'string' ? enc.encode(d) : (d instanceof Uint8Array ? d : new Uint8Array(d));
+
+        // ───────────────────────── connections ─────────────────────────
+        function makeConn(id) {
+            id = num(id);
+            const c = {
+                id, closed: false, onreadable: null, onwritable: null, onclose: null,
+                _pending: [], _ondata: null, _draining: false,
+
+                get ondata() { return this._ondata; },
+                set ondata(fn) {
+                    this._ondata = fn;
+                    if (fn && this._pending.length) {
+                        const q = this._pending; this._pending = [];
+                        for (const u8 of q) fn(u8, this);
+                    }
+                },
+
+                async write(data) {
+                    return await rpc((req) => getWet().WriteRpcAsync(req, id, toU8(data))).then(num);
+                },
+
+                async writeAll(data) {
+                    data = toU8(data);
+                    for (let off = 0; off < data.length;) {
+                        const n = await rpc((req) => getWet().WriteRpcAsync(req, id, data.subarray(off))).then(num);
+                        if (n < 0) throw new Error(`write: connection #${id} is gone`);
+                        off += n;
+                        if (off < data.length) await new Promise((r) => (this.onwritable = r));
+                    }
+                    return data.length;
+                },
+
+                async read(max = 65536) {
+                    const b64 = await rpc((req) => getWet().ReadRpcAsync(req, id, max));
+                    return b64 ? b64ToU8(b64) : new Uint8Array(0);
+                },
+
+                async close() {
+                    try { await rpc((req) => getWet().CloseRpcAsync(req, id)).then(num); }
+                    catch (e) { log('warn', 'close: ' + fmtErr(e)); }
+                },
+            };
+            conns.set(id, c);
+            log('info', `[conn] makeConn #${id}`);
+            return c;
+        }
+
+        const AF_UNIX = {
+            list: async () => JSON.parse(await rpc((req) => getWet().ListRpcAsync(req))),
+
+            listeners: async () => {
+                const net = JSON.parse(await rpc((req) => getWet().ListeningRpcAsync(req)))
+                    .map((r) => ({ ...r, host: 'net' }));
+                const js = [...services.keys()].map((path) => ({ id: 0, path, host: 'js', state: 'Listening', pending: 0, backlog: 0 }));
+                return [...net, ...js];
+            },
+
+            connect: async (path) => {
+                const raw = await rpc((req) => getWet().ConnectRpcAsync(req, path));
+                const id = num(raw);
+                log('info', `[connect] unix:${path} -> raw=${raw} (${typeof raw}) id=${id}`);
+                if (!(id >= 0)) throw new Error(`connect refused — nothing is listening at unix:${path}`);
+                return makeConn(id);
+            },
+
+            read: (id, max) => rpc((req) => getWet().ReadRpcAsync(req, num(id), max))
+                .then((b64) => (b64 ? b64ToU8(b64) : new Uint8Array(0))),
+
+            write: (id, data) => rpc((req) => getWet().WriteRpcAsync(req, num(id), toU8(data))).then(num),
+
+            disconnect: (id) => rpc((req) => getWet().CloseRpcAsync(req, num(id))).then(num),
+
+            listen: (path, onAccept) => services.set(path, onAccept),
         };
-        conn.onclose = () => this.onclose?.();
-      }
-      send(obj) {
-        try { this.conn.writeAll(enc.encode(JSON.stringify(obj) + '\n')).catch((e) => log('warn', `${this.label}: write failed — ${e.message}`)); }
-        catch (e) { log('warn', `${this.label}: write failed — ${e.message || e}`); }
-      }
-      close() { try { this.conn.close(); } catch { } }
-    }
+        globalThis.AF_UNIX = AF_UNIX;
 
-    // ══════════════════════════════════ 4. window list ══════════════════════════════════
-    let listConn = null;
-    let windows = [];
-    let curWin = null;
-    let winConn = null;
-    let winEpoch = 0;
-
-    function redrawList() {
-      const c = $('#winlist');
-      c.innerHTML = '';
-      info('#wincount', windows.length ? `(${windows.length})` : '');
-      if (!windows.length) { c.innerHTML = '<span class="dim">no windows yet</span>'; return; }
-      windows.forEach((w) => {
-        const d = document.createElement('div');
-        d.className = 'win' + (curWin && w.handle === curWin.handle ? ' active' : '');
-        d.innerHTML = `${esc(w.title || '(untitled)')}${w.compositor ? ' ★ compositor' : ''}` +
-          `<small>${esc(w.handle)} · ${w.width}x${w.height} · ${esc(w.state || 'Normal')} · ${esc(w.socket || '')}</small>`;
-        d.onclick = () => connectWin(w);
-        c.appendChild(d);
-      });
-    }
-
-    function upsertWin(w) {
-      windows = windows.filter((x) => x.handle !== w.handle);
-      windows.push(w);
-      windows.sort((a, b) => (b.compositor ? 1 : 0) - (a.compositor ? 1 : 0) || String(a.handle).localeCompare(String(b.handle)));
-      redrawList();
-    }
-
-    function handleListMessage(m) {
-      switch (m.type) {
-        case 'list':
-          windows = (m.windows || []).slice();
-          redrawList();
-          info('#info-list', `#${listConn?.conn.id} · ${windows.length} window(s) · screen ${(m.screen || []).join('x')}`);
-          log('ok', `window list: ${windows.length} window(s), screen ${(m.screen || []).join('x')}`);
-          break;
-        case 'window-added':
-          upsertWin(m.window);
-          log('info', `window added: ${m.window.title || m.window.handle}`);
-          break;
-        case 'window-removed':
-          windows = windows.filter((x) => x.handle !== m.window.handle);
-          if (curWin && curWin.handle === m.window.handle) closeWin('window destroyed');
-          redrawList();
-          log('info', `window removed: ${m.window.handle}`);
-          break;
-        case 'window-updated': upsertWin(m.window); break;
-        case 'log': log('info', '[dotnet] ' + (m.text || '')); break;
-        case 'error': log('error', 'server: ' + (m.message || 'error')); break;
-        default: log('info', `list: unhandled "${m.type}"`); break;
-      }
-    }
-
-    function connectList() {
-      if (runtimeDead) return;
-      if (!wet) { setTimeout(connectList, 500); return; }
-      if (listConn) return;
-      let c;
-      try { c = AF_UNIX.connect(LIST_PATH); }
-      catch (e) {
-        info('#info-list', 'waiting for ' + LIST_PATH);
-        setTimeout(connectList, 700);
-        return;
-      }
-      listConn = new LineConn(c, 'window-list');
-      listConn.onmessage = handleListMessage;
-      listConn.onclose = () => {
-        log('warn', `window-list #${c.id} closed`);
-        listConn = null;
-        info('#info-list', 'disconnected — retrying');
-        setTimeout(connectList, 1000);
-      };
-      info('#info-list', `#${c.id} → unix:${LIST_PATH}`);
-      log('ok', `connected #${c.id} → unix:${LIST_PATH}`);
-    }
-
-    // ══════════════════════════════════ 5. one window ══════════════════════════════════
-    function clearWinUI() {
-      const img = $('#frame');
-      img.src = '';
-      img.style.display = 'none';
-      $('#svgwrap').style.display = 'none';
-      $('#svgwrap').innerHTML = '';
-    }
-
-    function closeWin(reason) {
-      winEpoch++;
-      if (winConn) { winConn.close(); winConn = null; }
-      curWin = null;
-      clearWinUI();
-      setBar('not connected' + (reason ? ` (${reason})` : ''));
-      info('#info-win', 'not connected');
-      redrawList();
-    }
-
-    function connectWin(w) {
-      winEpoch++;
-      if (winConn) { winConn.close(); winConn = null; }
-      const myEpoch = winEpoch;
-      curWin = w;
-      clearWinUI();
-      redrawList();
-      setBar(`window: ${w.title || w.handle} · ${w.width}x${w.height}`);
-      info('#info-win', `connecting → unix:${w.socket}`);
-
-      let c;
-      try { c = AF_UNIX.connect(w.socket); }
-      catch (e) {
-        log('error', `connect ${w.socket}: ${e.message || e}`);
-        info('#info-win', 'connect failed');
-        return;
-      }
-
-      winConn = new LineConn(c, 'window');
-      info('#info-win', `#${c.id} → unix:${w.socket}`);
-      log('ok', `connected #${c.id} → unix:${w.socket}`);
-
-      winConn.onmessage = (m) => {
-        if (myEpoch !== winEpoch) return;
-        switch (m.type) {
-          case 'hello':
-          case 'info':
-            if (m.window) setBar(`window: ${m.window.title || m.window.handle} · ${m.window.width}x${m.window.height}`);
-            break;
-          case 'frame': handleFrame(m); break;
-          case 'log': log('info', '[dotnet] ' + (m.text || '')); break;
-          case 'bye':
-            setBar('window closed by server');
-            log('warn', 'server said bye');
-            closeWin('bye');
-            break;
-          case 'pong': log('ok', 'pong'); break;
-          case 'error': log('error', 'server: ' + (m.message || 'error')); break;
-          default: log('info', `window: unhandled "${m.type}"`); break;
+        // ────────────────── newline-delimited JSON framing ──────────────────
+        class LineConn {
+            constructor(conn, label) {
+                this.conn = conn;
+                this.label = label;
+                this.buf = '';
+                this.onmessage = null;
+                this.onclose = null;
+                conn.ondata = (u8) => {
+                    this.buf += dec.decode(u8, { stream: true });
+                    let i;
+                    while ((i = this.buf.indexOf('\n')) >= 0) {
+                        const line = this.buf.slice(0, i);
+                        this.buf = this.buf.slice(i + 1);
+                        if (!line.trim()) continue;
+                        try { this.onmessage?.(JSON.parse(line)); }
+                        catch (e) { log('error', `${this.label}: bad JSON (${fmtErr(e)}): ${line.slice(0, 120)}`); }
+                    }
+                };
+                conn.onclose = () => this.onclose?.();
+            }
+            send(obj) {
+                try {
+                    this.conn.writeAll(enc.encode(JSON.stringify(obj) + '\n'))
+                        .catch((e) => log('warn', `${this.label}: write failed — ${fmtErr(e)}`));
+                } catch (e) { log('warn', `${this.label}: write failed — ${fmtErr(e)}`); }
+            }
+            close() { try { this.conn.close(); } catch (e) { log('warn', `${this.label}: close — ${fmtErr(e)}`); } }
         }
-      };
-      winConn.onclose = () => {
-        if (myEpoch !== winEpoch) return;
-        log('warn', `window socket #${c.id} closed`);
-        winConn = null;
-        info('#info-win', 'disconnected');
-        if (curWin) setTimeout(() => { if (myEpoch === winEpoch) connectWin(curWin); }, 1500);
-      };
 
-      resub();
-    }
+        // ───────────────────────── window list ─────────────────────────
+        let listConn = null, listBusy = false, listFails = 0;
+        let windows = [], curWin = null, winConn = null, winEpoch = 0;
 
-    function resub() {
-      if (!winConn) return;
-      const opts = {
-        format: $('#fmt').value,
-        quality: +$('#q').value,
-        gray: $('#gray').checked,
-        fps: +$('#fps').value || 0,
-      };
-      if ($('#live').checked) winConn.send({ type: 'subscribe', ...opts });
-      else winConn.send({ type: 'unsubscribe' });
-      winConn.send({ type: 'refresh', ...opts, full: true });
-      log('info', `stream: ${opts.format} q=${opts.quality}${opts.gray ? ' gray' : ''}${opts.fps ? ' @' + opts.fps + 'fps' : ' uncapped'}${$('#live').checked ? ' live' : ' manual'}`);
-    }
+        function redrawList() {
+            const c = $('#winlist');
+            c.innerHTML = '';
+            info('#wincount', windows.length ? `(${windows.length})` : '');
+            if (!windows.length) { c.innerHTML = '<span class="dim">no windows yet</span>'; return; }
+            windows.forEach((w) => {
+                const d = document.createElement('div');
+                d.className = 'win' + (curWin && w.handle === curWin.handle ? ' active' : '');
+                d.innerHTML = `${esc(w.title || '(untitled)')}${w.compositor ? ' ★ compositor' : ''}` +
+                    `<small>${esc(w.handle)} · ${w.width}x${w.height} · ${esc(w.state || 'Normal')} · ${esc(w.socket || '')}</small>`;
+                d.addEventListener('click', () => connectWin(w));
+                c.appendChild(d);
+            });
+        }
 
-    // ══════════════════════════════════ 6. frames ══════════════════════════════════
-    let frameCount = 0;
-    let lastFrame = null;
-    let fpsCount = 0, fpsMark = performance.now(), fpsShown = 0;
+        function upsertWin(w) {
+            windows = windows.filter((x) => x.handle !== w.handle);
+            windows.push(w);
+            windows.sort((a, b) => (b.compositor ? 1 : 0) - (a.compositor ? 1 : 0) || String(a.handle).localeCompare(String(b.handle)));
+            redrawList();
+        }
 
-    function handleFrame(m) {
-      frameCount++;
-      fpsCount++;
-      const now = performance.now();
-      if (now - fpsMark >= 1000) {
-        fpsShown = Math.round(fpsCount * 1000 / (now - fpsMark));
-        fpsCount = 0;
-        fpsMark = now;
-        info('#info-frames', String(frameCount));
-        info('#info-fps', `${fpsShown} fps`);
-      }
+        function handleListMessage(m) {
+            switch (m.type) {
+                case 'list':
+                    windows = (m.windows || []).slice();
+                    redrawList();
+                    info('#info-list', `#${listConn?.conn.id} · ${windows.length} window(s) · screen ${(m.screen || []).join('x')}`);
+                    log('ok', `window list: ${windows.length} window(s), screen ${(m.screen || []).join('x')}`);
+                    break;
+                case 'window-added': upsertWin(m.window); log('info', `window added: ${m.window.title || m.window.handle}`); break;
+                case 'window-removed':
+                    windows = windows.filter((x) => x.handle !== m.window.handle);
+                    if (curWin && curWin.handle === m.window.handle) closeWin('window destroyed');
+                    redrawList();
+                    log('info', `window removed: ${m.window.handle}`);
+                    break;
+                case 'window-updated': upsertWin(m.window); break;
+                case 'log': log('info', '[dotnet] ' + (m.text || '')); break;
+                case 'error': log('error', 'server: ' + (m.message || 'error')); break;
+                default: log('info', `list: unhandled "${m.type}"`); break;
+            }
+        }
 
-      if (m.format === 'svg') {
-        lastFrame = { format: 'svg', data: m.data };
-        $('#frame').style.display = 'none';
-        $('#svgwrap').style.display = 'block';
-        $('#svgwrap').innerHTML = m.data;
-      } else {
-        lastFrame = { format: m.format, data: m.data };
-        $('#svgwrap').style.display = 'none';
-        $('#svgwrap').innerHTML = '';
-        const img = $('#frame');
-        img.style.display = 'block';
-        img.src = 'data:image/' + m.format + ';base64,' + m.data;
-      }
-      setBar(`frame #${frameCount} · ${m.format} ${m.width}x${m.height} · ${fpsShown} fps`);
-    }
+        async function dumpListeners(tag) {
+            try {
+                const l = await AF_UNIX.listeners();
+                log('info', `[listeners:${tag}] ` + (l.length ? l.map((x) => `${x.host}:${x.path} (${x.state}${x.pending ? ', pending ' + x.pending : ''})`).join(' · ') : '(none)'));
+            } catch (e) { log('warn', 'listeners: ' + fmtErr(e)); }
+        }
 
-    // ══════════════════════════════════ 7. input (HTML → .NET) ══════════════════════════════════
-    function imgPos(e) {
-      const img = $('#frame');
-      if (img.style.display === 'none' || !img.naturalWidth) return null;
-      const r = img.getBoundingClientRect();
-      const scale = Math.min(r.width / img.naturalWidth, r.height / img.naturalHeight);
-      const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
-      const ox = r.left + (r.width - dw) / 2, oy = r.top + (r.height - dh) / 2;
-      const x = Math.floor((e.clientX - ox) / scale);
-      const y = Math.floor((e.clientY - oy) / scale);
-      if (x < 0 || y < 0 || x >= img.naturalWidth || y >= img.naturalHeight) return null;
-      return { x, y };
-    }
-    function svgPos(e) {
-      const svg = $('#svgwrap').querySelector('svg');
-      if (!svg) return null;
-      const r = svg.getBoundingClientRect();
-      const vb = svg.viewBox && svg.viewBox.baseVal;
-      const w = (vb && vb.width) || svg.width.baseVal.value;
-      const h = (vb && vb.height) || svg.height.baseVal.value;
-      const x = Math.floor((e.clientX - r.left) / r.width * w);
-      const y = Math.floor((e.clientY - r.top) / r.height * h);
-      if (x < 0 || y < 0 || x >= w || y >= h) return null;
-      return { x, y };
-    }
-    function pos(e) { return $('#frame').style.display !== 'none' ? imgPos(e) : svgPos(e); }
-    function btnName(b) { return b === 2 ? 'right' : b === 1 ? 'middle' : 'left'; }
-    function sendWin(obj) { if (winConn && !runtimeDead) winConn.send(obj); }
+        async function connectList() {
+            if (runtimeDead || listConn || listBusy) return;
+            if (!wet) { setTimeout(connectList, 500); return; }
+            listBusy = true;
+            try {
+                const c = await AF_UNIX.connect(LIST_PATH);
+                listFails = 0;
+                listConn = new LineConn(c, 'window-list');
+                listConn.onmessage = handleListMessage;
+                listConn.onclose = () => {
+                    log('warn', `window-list #${c.id} closed`);
+                    listConn = null;
+                    info('#info-list', 'disconnected — retrying');
+                    setTimeout(connectList, 1000);
+                };
+                info('#info-list', `#${c.id} → unix:${LIST_PATH}`);
+                log('ok', `connected #${c.id} → unix:${LIST_PATH}`);
+            } catch (e) {
+                info('#info-list', 'waiting for ' + LIST_PATH);
+                log('warn', `connectList(${LIST_PATH}): ${fmtErr(e)}`);
+                if (++listFails === 3 || listFails % 10 === 0) await dumpListeners('connectList');
+                setTimeout(connectList, 700);
+            } finally {
+                listBusy = false;
+            }
+        }
 
-    const stage = $('#stage');
+        // ───────────────────────── one window ─────────────────────────
+        function clearWinUI() {
+            const img = $('#frame');
+            img.src = '';
+            img.style.display = 'none';
+            $('#svgwrap').style.display = 'none';
+            $('#svgwrap').innerHTML = '';
+        }
 
-    // mousemove is coalesced to one message per animation frame: a browser fires
-    // 60-120+ move events per second, and each one costs a hit-test + repaint +
-    // JPEG encode on the .NET side. Coalescing keeps the UI responsive.
-    let movePending = null, moveScheduled = false;
-    function queueMove(e) {
-      const p = pos(e);
-      if (!p) return;
-      movePending = { type: 'mousemove', x: p.x, y: p.y, button: 'left', t: Date.now() };
-      if (moveScheduled) return;
-      moveScheduled = true;
-      requestAnimationFrame(() => {
-        moveScheduled = false;
-        if (movePending) { sendWin(movePending); movePending = null; }
-      });
-    }
+        function closeWin(reason) {
+            winEpoch++;
+            if (winConn) { winConn.close(); winConn = null; }
+            curWin = null;
+            clearWinUI();
+            setBar('not connected' + (reason ? ` (${reason})` : ''));
+            info('#info-win', 'not connected');
+            redrawList();
+        }
 
-    stage.addEventListener('mousedown', (e) => {
-      stage.focus();                       // keep keyboard focus on the app surface
-      const p = pos(e); if (!p) return;
-      sendWin({ type: 'mousemove', x: p.x, y: p.y, button: 'left', t: Date.now() });  // tell the app where we are first
-      sendWin({ type: 'mousedown', x: p.x, y: p.y, button: btnName(e.button), t: Date.now() });
-    });
-    stage.addEventListener('mouseup', (e) => {
-      const p = pos(e); if (!p) return;
-      sendWin({ type: 'mouseup', x: p.x, y: p.y, button: btnName(e.button), t: Date.now() });
-    });
-    stage.addEventListener('mousemove', queueMove);
-    stage.addEventListener('wheel', (e) => {
-      const p = pos(e); if (!p) return;
-      sendWin({ type: 'wheel', x: p.x, y: p.y, delta: e.deltaY });
-      e.preventDefault();
-    }, { passive: false });
-    stage.addEventListener('contextmenu', (e) => e.preventDefault());
-    stage.addEventListener('dragstart', (e) => e.preventDefault());
-    document.addEventListener('dragstart', (e) => e.preventDefault());
+        async function connectWin(w) {
+            const myEpoch = ++winEpoch;
+            if (winConn) { winConn.close(); winConn = null; }
+            curWin = w;
+            clearWinUI();
+            redrawList();
+            setBar(`window: ${w.title || w.handle} · ${w.width}x${w.height}`);
+            info('#info-win', `connecting → unix:${w.socket}`);
 
-    const codeToKey = {
-      Enter: 'Return', Backspace: 'Back', Tab: 'Tab', Escape: 'Escape', Space: 'Space',
-      ShiftLeft: 'LShiftKey', ShiftRight: 'RShiftKey',
-      ControlLeft: 'LControlKey', ControlRight: 'RControlKey',
-      AltLeft: 'LMenu', AltRight: 'RMenu',
-      MetaLeft: 'LWin', MetaRight: 'RWin',
-      CapsLock: 'CapitalLock', ScrollLock: 'Scroll', NumLock: 'NumLock', Pause: 'Pause',
-      Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown',
-      Insert: 'Insert', Delete: 'Delete', ContextMenu: 'Apps',
-      Semicolon: 'Oem1', Equal: 'Oemplus', Comma: 'Oemcomma', Minus: 'OemMinus',
-      Period: 'OemPeriod', Slash: 'OemQuestion', Backquote: 'Oem8',
-      BracketLeft: 'OemOpenBrackets', BracketRight: 'OemCloseBrackets',
-      Backslash: 'Oem5', Quote: 'Oem7',
-    };
-    function keyName(e) {
-      const c = e.code || '';
-      if (c.startsWith('Key')) return c.slice(3);
-      if (c.startsWith('Digit')) return c.slice(5);
-      if (c.startsWith('Arrow')) return c.slice(5);
-      if (c.startsWith('Numpad')) return 'NumPad' + c.slice(6);
-      if (/^F\d$/.test(c)) return c;
-      return codeToKey[c] || (e.key && e.key.length === 1 ? e.key.toUpperCase() : (e.key || ''));
-    }
+            let c;
+            try { c = await AF_UNIX.connect(w.socket); }
+            catch (e) {
+                log('error', `connect ${w.socket}: ${fmtErr(e)}`);
+                info('#info-win', 'connect failed');
+                return;
+            }
+            if (myEpoch !== winEpoch) { c.close(); return; }
 
-    document.addEventListener('keydown', (e) => {
-      if (e.ctrlKey && (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '0')) return;
-      if (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;   // sidebar stays usable
-      sendWin({ type: 'keydown', key: keyName(e) });
-      if (e.key && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey)
-        sendWin({ type: 'text', text: e.key });
-      if (['Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Backspace', ' '].includes(e.key)) e.preventDefault();
-    });
-    document.addEventListener('keyup', (e) => {
-      if (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
-      sendWin({ type: 'keyup', key: keyName(e) });
-    });
+            winConn = new LineConn(c, 'window');
+            info('#info-win', `#${c.id} → unix:${w.socket}`);
+            log('ok', `connected #${c.id} → unix:${w.socket}`);
 
-    // ══════════════════════════════════ 8. sidebar wiring ══════════════════════════════════
-    $('#refresh').onclick = () => resub();
-    $('#clearlog').onclick = () => { logBox.innerHTML = ''; };
-    $('#copylog').onclick = async () => {
-      try { await navigator.clipboard.writeText(logBox.textContent); log('ok', 'log copied to clipboard'); }
-      catch (e) { log('warn', 'copy failed: ' + (e.message || e)); }
-    };
-    $('#save').onclick = () => {
-      if (!lastFrame) { log('warn', 'no frame to save yet'); return; }
-      const a = document.createElement('a');
-      if (lastFrame.format === 'svg') {
-        a.href = URL.createObjectURL(new Blob([lastFrame.data], { type: 'image/svg+xml' }));
-        a.download = 'frame.svg';
-      } else {
-        a.href = 'data:image/' + lastFrame.format + ';base64,' + lastFrame.data;
-        a.download = 'frame.' + (lastFrame.format === 'jpeg' ? 'jpg' : lastFrame.format);
-      }
-      a.click();
-      log('ok', 'saved ' + a.download);
-    };
-    $('#fmt').onchange = () => resub();
-    $('#q').onchange = () => resub();
-    $('#gray').onchange = () => resub();
-    $('#fps').onchange = () => resub();
-    $('#live').onchange = () => resub();
+            winConn.onmessage = (m) => {
+                if (myEpoch !== winEpoch) return;
+                switch (m.type) {
+                    case 'hello':
+                    case 'info':
+                        if (m.window) setBar(`window: ${m.window.title || m.window.handle} · ${m.window.width}x${m.window.height}`);
+                        log('info', `${m.type}: ${m.window ? (m.window.title || m.window.handle) : ''}`);
+                        break;
+                    case 'frame': handleFrame(m); break;
+                    case 'log': log('info', '[dotnet] ' + (m.text || '')); break;
+                    case 'bye': setBar('window closed by server'); log('warn', 'server said bye'); closeWin('bye'); break;
+                    case 'pong': log('ok', 'pong'); break;
+                    case 'error': log('error', 'server: ' + (m.message || 'error')); break;
+                    default: log('info', `window: unhandled "${m.type}"`); break;
+                }
+            };
+            winConn.onclose = () => {
+                if (myEpoch !== winEpoch) return;
+                log('warn', `window socket #${c.id} closed`);
+                winConn = null;
+                info('#info-win', 'disconnected');
+                if (curWin) setTimeout(() => { if (myEpoch === winEpoch) connectWin(curWin); }, 1500);
+            };
 
-    $('#btn-reconnect').onclick = () => {
-      log('info', 'manual reconnect');
-      if (curWin) connectWin(curWin); else connectList();
-    };
-    $('#btn-disconnect').onclick = () => closeWin('manual');
-    $('#btn-ping').onclick = () => { log('info', 'ping →'); sendWin({ type: 'ping' }); };
-    $('#btn-die').onclick = () => die('manual (test)', 'warn');
-    $('#btn-listeners').onclick = () => {
-      try {
-        const rows = AF_UNIX.listeners();
-        log('info', `AF_UNIX listeners (${rows.length}):`);
-        rows.forEach((r) => log('info', `  ${r.host === 'js' ? '[js] ' : '[net]'} unix:${r.path}  ${r.state}  pending ${r.pending}/${r.backlog}`));
-      } catch (e) { log('error', 'listeners: ' + (e.message || e)); }
-    };
+            resub();
+        }
 
-    window.addEventListener('error', (e) => log('error', 'window.onerror: ' + (e.message || e)));
-    window.addEventListener('unhandledrejection', (e) =>
-      log('error', 'unhandledrejection: ' + ((e.reason && e.reason.message) || e.reason)));
-    window.addEventListener('beforeunload', () => {
-      try { winConn?.close(); listConn?.close(); } catch { }
-    });
+        function resub() {
+            if (!winConn) return;
+            const opts = { format: $('#fmt').value, quality: +$('#q').value, gray: $('#gray').checked, fps: +$('#fps').value || 0 };
+            if ($('#live').checked) winConn.send({ type: 'subscribe', ...opts });
+            else winConn.send({ type: 'unsubscribe' });
+            winConn.send({ type: 'refresh', ...opts, full: true });
+            log('info', `stream: ${opts.format} q=${opts.quality}${opts.gray ? ' gray' : ''}${opts.fps ? ' @' + opts.fps + 'fps' : ' uncapped'}${$('#live').checked ? ' live' : ' manual'}`);
+        }
 
-    // a JS-side AF_UNIX service, same trick as Test.html: proves the wire both ways
-    AF_UNIX.listen('/js-echo', (c) => {
-      log('info', `[js-echo] attached #${c.id}`);
-      c.ondata = (u8) => c.write(u8);
-    });
+        // ───────────────────────── frames ─────────────────────────
+        let frameCount = 0, lastFrame = null, fpsCount = 0, fpsMark = performance.now(), fpsShown = 0;
 
-    // ══════════════════════════════════ 9. pump (single, idempotent) ══════════════════════════════════
-    function startPump(when) {
-      if (pumpTimer) return;                       // never run two loops
-      info('#info-pump', `exported (${when}) · ${wetSource || '?'}`);
-      log('ok', 'message pump export found — driving the UI loop at ~60 Hz');
-      try { pump(); } catch (e) { die('pump threw: ' + (e.message || e)); return; }
-      pumpTimer = setInterval(() => {
-        if (runtimeDead) return;
-        try { pump(); }
-        catch (e) { die('pump threw: ' + (e.message || e)); }
-      }, 16);
-    }
+        const clamp255 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v | 0);
 
-    // ══════════════════════════════════ 10. boot ══════════════════════════════════
-    setTag('wait', 'resolving WetJs…');
-    const ok = await initWet();
-    if (!ok) {
-      setTag('off', 'WetJs not found');
-      info('#info-wet', 'NOT FOUND');
-      log('error', `WetJs exports never appeared (looked in: ${getConfig().mainAssemblyName}, WetAfunix, Wystem.Wet). ` +
-        'Check the assembly name, that WetAfunix is referenced, and that trimming has not removed it.');
-    } else {
-      setTag('on', 'runtime up');
-      log('ok', 'WetJs ready — connecting to window-list');
-    }
+        function renderRawFrame(m) {
+            let cv = document.getElementById('rawcanvas');
+            if (!cv) {
+                cv = document.createElement('canvas');
+                cv.id = 'rawcanvas';
+                cv.style.maxWidth = '100%';
+                cv.style.maxHeight = '100%';
+                cv.style.imageRendering = 'pixelated';
+                $('#stage').insertBefore(cv, $('#bar').nextSibling);
+            }
+            cv.width = m.width;
+            cv.height = m.height;
+            const ctx = cv.getContext('2d');
+            const img = ctx.createImageData(m.width, m.height);
+            const d = img.data;
+            const px = b64ToU8(m.data);
+            const w = m.width, h = m.height;
 
-    connectList();
-    setInterval(connectList, 1500);
+            switch (m.pixelformat) {
+                case 'bgra8':
+                    for (let i = 0, j = 0; i < px.length; i += 4, j += 4) {
+                        d[j] = px[i + 2]; d[j + 1] = px[i + 1]; d[j + 2] = px[i]; d[j + 3] = 255;
+                    }
+                    break;
+                case 'gray8':
+                    for (let i = 0, j = 0; i < px.length; i++, j += 4) {
+                        const v = px[i];
+                        d[j] = d[j + 1] = d[j + 2] = v; d[j + 3] = 255;
+                    }
+                    break;
+                case 'bgra332':
+                    for (let i = 0, j = 0; i < px.length; i++, j += 4) {
+                        const v = px[i];
+                        d[j] = clamp255(((v >> 5) & 7) * 255 / 7);
+                        d[j + 1] = clamp255(((v >> 2) & 7) * 255 / 7);
+                        d[j + 2] = clamp255((v & 3) * 255 / 3);
+                        d[j + 3] = 255;
+                    }
+                    break;
+                case 'bgra1':
+                    {
+                        const stride = m.stride;
+                        for (let y = 0; y < h; y++) {
+                            for (let x = 0; x < w; x++) {
+                                const bit = (px[y * stride + (x >> 3)] >> (7 - (x & 7))) & 1;
+                                const j = (y * w + x) * 4;
+                                const v = bit ? 255 : 0;
+                                d[j] = d[j + 1] = d[j + 2] = v; d[j + 3] = 255;
+                            }
+                        }
+                    }
+                    break;
+                case 'ycbcr422':
+                    {
+                        const cw = m.chromawidth;
+                        const cboff = w * h, croff = cboff + cw * h;
+                        for (let y = 0; y < h; y++) {
+                            for (let x = 0; x < w; x++) {
+                                const Y = px[y * w + x];
+                                const cx = x >> 1;
+                                const Cb = px[cboff + y * cw + cx] - 128;
+                                const Cr = px[croff + y * cw + cx] - 128;
+                                const j = (y * w + x) * 4;
+                                d[j] = clamp255(Y + 1.402 * Cr);
+                                d[j + 1] = clamp255(Y - 0.344136 * Cb - 0.714136 * Cr);
+                                d[j + 2] = clamp255(Y + 1.772 * Cb);
+                                d[j + 3] = 255;
+                            }
+                        }
+                    }
+                    break;
+            }
+            ctx.putImageData(img, 0, 0);
+            cv.style.display = 'block';
+            $('#frame').style.display = 'none';
+            $('#svgwrap').style.display = 'none';
+        }
 
-    if (pump) startPump('boot');
-    else {
-      info('#info-pump', 'NOT EXPORTED');
-      log('warn', 'no Pump export yet — add [JSExport] Pump() to BootUpJs (Application.DoEvents) to make input live');
-    }
+        function handleFrame(m) {
+            frameCount++;
+            fpsCount++;
+            const now = performance.now();
+            if (now - fpsMark >= 1000) {
+                fpsShown = Math.round(fpsCount * 1000 / (now - fpsMark));
+                fpsCount = 0; fpsMark = now;
+            }
+            info('#info-frames', String(frameCount));
+            info('#info-fps', `${fpsShown} fps`);
 
-    // run the C# Main(); in the ST pump model it returning is EXPECTED —
-    // the form is shown and this page keeps dispatching through Pump().
-    try {
-      await dotnet.runMain();
-      log('info', 'Main returned — UI keeps running under Pump()');
-      if (!pump) { await tryResolveWet(); if (pump) startPump('late'); }
-    } catch (e) {
-      die('Main threw: ' + ((e && e.stack) || e));
-    }
+            if (m.format === 'svg') {
+                lastFrame = { format: 'svg', data: m.data };
+                $('#frame').style.display = 'none';
+                $('#svgwrap').style.display = 'block';
+                $('#svgwrap').innerHTML = m.data;
+                setBar(`frame #${frameCount} · svg ${m.width}x${m.height} · ${fpsShown} fps`);
+            } else if (m.pixelformat) {
+                lastFrame = { format: m.format, data: m.data };
+                renderRawFrame(m);
+                setBar(`frame #${frameCount} · ${m.format} ${m.width}x${m.height} · ${fpsShown} fps`);
+            } else {
+                lastFrame = { format: m.format, data: m.data };
+                $('#svgwrap').style.display = 'none';
+                $('#svgwrap').innerHTML = '';
+                const img = $('#frame');
+                img.style.display = 'block';
+                img.src = 'data:image/' + m.format + ';base64,' + m.data;
+                setBar(`frame #${frameCount} · ${m.format} ${m.width}x${m.height} · ${fpsShown} fps`);
+            }
+        }
 
-    // last chance: the export can appear a moment after Main starts
-    if (!pump) {
-      setTimeout(async () => {
-        await tryResolveWet();
-        if (pump && !runtimeDead) startPump('late');
-        else if (!pump) log('warn', 'still no Pump export — clicks/keys will queue but not dispatch');
-      }, 2500);
-    }
-  </script>
+        // ───────────────────────── input (HTML → .NET) ─────────────────────────
+        function imgPos(e) {
+            const cv = document.getElementById('rawcanvas');
+            const target = (cv && cv.style.display !== 'none') ? cv : $('#frame');
+            if (target.tagName === 'CANVAS') {
+                const r = target.getBoundingClientRect();
+                const scale = Math.min(r.width / target.width, r.height / target.height);
+                const dw = target.width * scale, dh = target.height * scale;
+                const ox = r.left + (r.width - dw) / 2, oy = r.top + (r.height - dh) / 2;
+                const x = Math.floor((e.clientX - ox) / scale);
+                const y = Math.floor((e.clientY - oy) / scale);
+                return (x < 0 || y < 0 || x >= target.width || y >= target.height) ? null : { x, y };
+            }
+            if (target.style.display === 'none' || !target.naturalWidth) return null;
+            const r = target.getBoundingClientRect();
+            const scale = Math.min(r.width / target.naturalWidth, r.height / target.naturalHeight);
+            const dw = target.naturalWidth * scale, dh = target.naturalHeight * scale;
+            const ox = r.left + (r.width - dw) / 2, oy = r.top + (r.height - dh) / 2;
+            const x = Math.floor((e.clientX - ox) / scale);
+            const y = Math.floor((e.clientY - oy) / scale);
+            return (x < 0 || y < 0 || x >= target.naturalWidth || y >= target.naturalHeight) ? null : { x, y };
+        }
+
+        function svgPos(e) {
+            const svg = $('#svgwrap').querySelector('svg');
+            if (!svg) return null;
+            const r = svg.getBoundingClientRect();
+            const vb = svg.viewBox && svg.viewBox.baseVal;
+            const w = (vb && vb.width) || svg.width.baseVal.value;
+            const h = (vb && vb.height) || svg.height.baseVal.value;
+            const x = Math.floor((e.clientX - r.left) / r.width * w);
+            const y = Math.floor((e.clientY - r.top) / r.height * h);
+            return (x < 0 || y < 0 || x >= w || y >= h) ? null : { x, y };
+        }
+
+        const pos = (e) => imgPos(e) || svgPos(e);
+        const btnName = (b) => b === 2 ? 'right' : b === 1 ? 'middle' : 'left';
+        const sendWin = (o) => { if (winConn && !runtimeDead) winConn.send(o); };
+
+        const stage = $('#stage');
+        stage.addEventListener('mousedown', (e) => { const p = pos(e); if (p) sendWin({ type: 'mousedown', x: p.x, y: p.y, button: btnName(e.button), t: Date.now() }); });
+        stage.addEventListener('mouseup', (e) => { const p = pos(e); if (p) sendWin({ type: 'mouseup', x: p.x, y: p.y, button: btnName(e.button), t: Date.now() }); });
+        stage.addEventListener('mousemove', (e) => { const p = pos(e); if (p) sendWin({ type: 'mousemove', x: p.x, y: p.y, button: 'left', t: Date.now() }); });
+        stage.addEventListener('wheel', (e) => {
+            const p = pos(e);
+            if (p) { sendWin({ type: 'wheel', x: p.x, y: p.y, delta: e.deltaY }); e.preventDefault(); }
+        }, { passive: false });
+        stage.addEventListener('contextmenu', (e) => e.preventDefault());
+        stage.addEventListener('dragstart', (e) => e.preventDefault());
+        document.addEventListener('dragstart', (e) => e.preventDefault());
+
+        const codeToKey = {
+            Enter: 'Return', Backspace: 'Back', Tab: 'Tab', Escape: 'Escape', Space: 'Space',
+            ShiftLeft: 'LShiftKey', ShiftRight: 'RShiftKey', ControlLeft: 'LControlKey', ControlRight: 'RControlKey',
+            AltLeft: 'LMenu', AltRight: 'RMenu', MetaLeft: 'LWin', MetaRight: 'RWin',
+            CapsLock: 'CapitalLock', ScrollLock: 'Scroll', NumLock: 'NumLock', Pause: 'Pause',
+            Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown', Insert: 'Insert', Delete: 'Delete', ContextMenu: 'Apps',
+            Semicolon: 'Oem1', Equal: 'Oemplus', Comma: 'Oemcomma', Minus: 'OemMinus', Period: 'OemPeriod', Slash: 'OemQuestion',
+            Backquote: 'Oem8', BracketLeft: 'OemOpenBrackets', BracketRight: 'OemCloseBrackets', Backslash: 'Oem5', Quote: 'Oem7',
+        };
+
+        function keyName(e) {
+            const c = e.code || '';
+            if (c.startsWith('Key')) return c.slice(3);
+            if (c.startsWith('Digit')) return c.slice(5);
+            if (c.startsWith('Arrow')) return c.slice(5);
+            if (c.startsWith('Numpad')) return 'NumPad' + c.slice(6);
+            if (/^F\d$/.test(c)) return c;
+            return codeToKey[c] || (e.key && e.key.length === 1 ? e.key.toUpperCase() : (e.key || ''));
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '0')) return;
+            if (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+            sendWin({ type: 'keydown', key: keyName(e) });
+            if (e.key && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey)
+                sendWin({ type: 'text', text: e.key });
+            if (['Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Backspace', ' '].includes(e.key)) e.preventDefault();
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+            sendWin({ type: 'keyup', key: keyName(e) });
+        });
+
+        // ───────────────── sidebar wiring (addEventListener only) ─────────────────
+        const on = (sel, ev, fn) => {
+            const el = $(sel);
+            if (el) el.addEventListener(ev, fn);
+            else log('warn', `no element for ${sel}`);
+        };
+
+        // log controls
+        on('#b-pause', 'click', () => {
+            paused = !paused;
+            if (!paused) {
+                logBox.innerHTML += held.join('');
+                held = [];
+                $('#b-pause').textContent = 'pause output';
+                logBox.scrollTop = logBox.scrollHeight;
+                log('ok', 'output resumed');
+            } else {
+                log('warn', 'output paused (lines are held back)');
+                $('#b-pause').textContent = 'resume output (0)';
+            }
+        });
+        on('#clearlog', 'click', () => { logBox.textContent = ''; });
+        on('#copylog', 'click', async () => {
+            log('info', 'copy pressed');
+            try { await navigator.clipboard.writeText(logBox.textContent); log('ok', 'log copied to clipboard'); }
+            catch (e) { log('warn', 'copy failed: ' + fmtErr(e)); }
+        });
+
+        // window list / connection
+        on('#btn-reconnect', 'click', () => {
+            log('info', '↩ reconnect pressed');
+            if (curWin) connectWin(curWin);
+            else { listConn?.close(); listConn = null; connectList(); }
+        });
+        on('#btn-disconnect', 'click', () => { log('info', '⏹ disconnect pressed'); closeWin('manual'); });
+        on('#btn-ping', 'click', () => { log('info', 'ping →'); sendWin({ type: 'ping' }); });
+        on('#btn-listeners', 'click', () => dumpListeners('manual'));
+        on('#btn-env', 'click', () => log('info',
+            `[env] crossOriginIsolated=${crossOriginIsolated} SharedArrayBuffer=${typeof SharedArrayBuffer} ` +
+            `devicePixelRatio=${devicePixelRatio} edition=${EDITION}`));
+
+        // stream
+        on('#refresh', 'click', () => { log('info', '↻ refresh pressed'); resub(); });
+        on('#save', 'click', () => {
+            log('info', '💾 save pressed');
+            if (!lastFrame) { log('warn', 'no frame to save yet'); return; }
+            const a = document.createElement('a');
+            if (lastFrame.format === 'svg') {
+                a.href = URL.createObjectURL(new Blob([lastFrame.data], { type: 'image/svg+xml' }));
+                a.download = 'frame.svg';
+            } else {
+                a.href = 'data:image/' + lastFrame.format + ';base64,' + lastFrame.data;
+                a.download = 'frame.' + (lastFrame.format === 'jpeg' ? 'jpg' : lastFrame.format);
+            }
+            a.click();
+            log('ok', 'saved ' + a.download);
+        });
+        on('#fmt', 'change', () => { log('info', 'format → ' + $('#fmt').value); resub(); });
+        on('#q', 'change', () => { log('info', 'quality → ' + $('#q').value); resub(); });
+        on('#gray', 'change', () => { log('info', 'gray → ' + $('#gray').checked); resub(); });
+        on('#fps', 'change', () => { log('info', 'fps → ' + $('#fps').value); resub(); });
+        on('#live', 'change', () => { log('info', 'live → ' + $('#live').checked); resub(); });
+
+        // ───────────────── transport test (echo) ─────────────────
+        let echoConn = null;
+
+        const echoTick = () => rpc((req) => echoJs.EchoTickAsync(req));
+
+        // write everything, ticking the (poll-driven) echo service when the
+        // send window is full — no blocking, no continuations required.
+        async function writeFully(conn, data, tick, maxSpins = 20000) {
+            let off = 0, spins = 0;
+            while (off < data.length) {
+                if (spins++ > maxSpins) throw new Error(`writeFully: stalled at ${off}/${data.length}B`);
+                const n = await conn.write(data.subarray(off));
+                if (n > 0) off += n;
+                else await tick();
+            }
+            return off;
+        }
+
+        // read exactly `need` bytes (or until the stream goes idle).
+        async function readFully(conn, need, tick, maxIdle = 64) {
+            const parts = [];
+            let got = 0, idle = 0;
+            while (got < need && idle < maxIdle) {
+                const u8 = await conn.read(65536);
+                if (!u8.length) { await tick(); idle++; continue; }
+                idle = 0;
+                parts.push(u8);
+                got += u8.length;
+            }
+            return concatU8(parts, got);
+        }
+
+        function verdict(ok, text) {
+            const el = $('#e-verdict');
+            el.className = 'verdict ' + (ok ? 'ok' : 'bad');
+            el.textContent = text;
+        }
+
+        // ── the echo round-trip that SHOWS the bytes that came back ──
+        async function echoRoundTrip() {
+            const size = Math.max(1, Math.min(1 << 20, +$('#e-size').value || 256));
+            log('info', `echo & show bytes: ${size}B pattern`);
+            try {
+                await rpc((req) => echoJs.StartEchoAsync(req));
+                const c = await AF_UNIX.connect('/echo');
+
+                // deterministic pattern (NOT all 'A') so a byte-level check is meaningful
+                const sent = new Uint8Array(size);
+                for (let i = 0; i < size; i++) sent[i] = (i * 31 + 7) & 0xff;
+
+                const t0 = performance.now();
+                await writeFully(c, sent, echoTick);
+                await echoTick();
+                const back = await readFully(c, size, echoTick);
+                const ms = performance.now() - t0;
+
+                const bad = firstDiff(sent, back);
+                const ok = back.length === size && bad < 0;
+
+                $('#e-hex').textContent =
+                    `sent ${sent.length}B (pattern i*31+7)\n` + hexdump(sent) +
+                    `\n\nreceived ${back.length}B\n` + hexdump(back) +
+                    (back.length ? `\n\nascii: ${[...back.subarray(0, 96)].map((b) => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('')}` : '');
+
+                if (ok) {
+                    verdict(true, `✔ echoed back ${back.length}B in ${ms.toFixed(1)} ms · ` +
+                        `${(back.length / 1024 / (ms / 1000)).toFixed(1)} KiB/s · all bytes identical`);
+                    log('ok', `echo: ${back.length}B returned identical in ${ms.toFixed(1)}ms`);
+                } else {
+                    verdict(false, `✘ echo mismatch — got ${back.length}/${size}B` +
+                        (bad >= 0 ? ` · first difference at offset ${bad} (sent 0x${sent[bad]?.toString(16)} got 0x${back[bad]?.toString(16)})` : ''));
+                    log('error', `echo: MISMATCH got ${back.length}/${size}B, first diff @${bad}`);
+                }
+
+                await c.close();
+            } catch (e) {
+                verdict(false, '✘ ' + fmtErr(e));
+                log('error', 'echo round-trip: ' + fmtErr(e));
+            }
+        }
+
+        // ── text echo: show the decoded bytes that came back ──
+        async function echoText() {
+            const text = $('#e-text').value ?? '';
+            const sent = enc.encode(text);
+            if (!sent.length) { log('warn', 'echo text: nothing to send'); return; }
+            try {
+                await rpc((req) => echoJs.StartEchoAsync(req));
+                const c = await AF_UNIX.connect('/echo');
+                await writeFully(c, sent, echoTick);
+                await echoTick();
+                const back = await readFully(c, sent.length, echoTick);
+                const s = dec.decode(back);
+                $('#e-hex').textContent =
+                    `sent ${sent.length}B utf-8\n` + hexdump(sent) +
+                    `\n\nreceived ${back.length}B\n` + hexdump(back) +
+                    `\n\ndecoded: "${s}"`;
+                verdict(back.length === sent.length && firstDiff(sent, back) < 0,
+                    back.length === sent.length && firstDiff(sent, back) < 0
+                        ? `✔ text echoed back: "${s}"`
+                        : `✘ text echo mismatch (${back.length}/${sent.length}B)`);
+                log('ok', `text echo → "${s}"`);
+                await c.close();
+            } catch (e) {
+                verdict(false, '✘ ' + fmtErr(e));
+                log('error', 'echo text: ' + fmtErr(e));
+            }
+        }
+
+        on('#e-start', 'click', async () => {
+            log('info', '▶ start /echo');
+            try { log('ok', 'echo: ' + await rpc((req) => echoJs.StartEchoAsync(req))); }
+            catch (e) { log('error', 'start: ' + fmtErr(e)); }
+        });
+        on('#e-stop', 'click', async () => {
+            log('info', '■ stop /echo');
+            try { log('ok', 'echo: ' + await rpc((req) => echoJs.StopEchoAsync(req))); }
+            catch (e) { log('error', 'stop: ' + fmtErr(e)); }
+        });
+        on('#e-stats', 'click', async () => {
+            try { log('info', 'stats: ' + await rpc((req) => echoJs.StatsAsync(req))); }
+            catch (e) { log('error', 'stats: ' + fmtErr(e)); }
+        });
+        on('#e-reset', 'click', async () => {
+            try { log('info', await rpc((req) => echoJs.ResetAsync(req))); }
+            catch (e) { log('error', 'reset: ' + fmtErr(e)); }
+        });
+
+        on('#e-connect', 'click', async () => {
+            log('info', '→ connect /echo');
+            try {
+                echoConn = await AF_UNIX.connect('/echo');
+                log('ok', `echo connected #${echoConn.id}`);
+            } catch (e) { log('error', 'connect: ' + fmtErr(e)); }
+        });
+        on('#e-write', 'click', async () => {
+            const size = +$('#e-size').value;
+            try {
+                const payload = new Uint8Array(size);
+                for (let i = 0; i < size; i++) payload[i] = (i * 31 + 7) & 0xff;
+                const n = await echoConn.write(payload);
+                log('ok', `write ${n}B`);
+            } catch (e) { log('error', 'write: ' + fmtErr(e)); }
+        });
+        on('#e-tick', 'click', async () => {
+            try {
+                const n = await echoTick();
+                log('info', `echo tick handled ${n}`);
+            } catch (e) { log('error', 'tick: ' + fmtErr(e)); }
+        });
+        on('#e-read', 'click', async () => {
+            let total = 0; const parts = [];
+            try {
+                for (let i = 0; i < 100; i++) {
+                    const u8 = await echoConn.read(65536);
+                    if (!u8.length) break;
+                    parts.push(u8); total += u8.length;
+                }
+                const all = concatU8(parts, total);
+                $('#e-hex').textContent = `read ${total}B\n` + hexdump(all);
+                log('ok', `read ${total}B`);
+            } catch (e) { log('error', 'read: ' + fmtErr(e)); }
+        });
+        on('#e-close', 'click', async () => {
+            try { await echoConn.close(); log('ok', 'echo conn closed'); }
+            catch (e) { log('error', 'close: ' + fmtErr(e)); }
+        });
+
+        on('#e-echo', 'click', echoRoundTrip);
+        on('#e-sendtext', 'click', echoText);
+
+        on('#e-rt', 'click', async () => {
+            const size = +$('#e-size').value, count = +$('#e-count').value;
+            log('info', `round-trip: ${count} × ${size}B`);
+            try {
+                await rpc((req) => echoJs.StartEchoAsync(req));
+                const c = await AF_UNIX.connect('/echo');
+                const payload = new Uint8Array(size).fill(65);
+                const t0 = performance.now();
+                let got = 0;
+                for (let i = 0; i < count; i++) {
+                    await writeFully(c, payload, echoTick);
+                    await echoTick();
+                    got += (await readFully(c, size, echoTick)).length;
+                }
+                const ms = performance.now() - t0;
+                await c.close();
+                verdict(true, `✔ round-trip ${got}B in ${ms.toFixed(0)}ms`);
+                $('#e-hex').textContent = `round-trip ${count} × ${size}B · ${got}B total\n` +
+                    hexdump(payload);
+                log('ok', `round-trip: ${got}B in ${ms.toFixed(0)}ms → ${(got / 1024 / (ms / 1000)).toFixed(1)} KiB/s · ${(count / (ms / 1000)).toFixed(1)} ops/s`);
+            } catch (e) {
+                verdict(false, '✘ ' + fmtErr(e));
+                log('error', 'round-trip: ' + fmtErr(e));
+            }
+        });
+
+        on('#e-flood', 'click', async () => {
+            const size = +$('#e-size').value, count = +$('#e-count').value;
+            log('info', `speed test: ${count} × ${size}B (pause the log for clean numbers)`);
+            try {
+                await rpc((req) => echoJs.ResetAsync(req));
+                const c = await AF_UNIX.connect('/echo');
+                const payload = new Uint8Array(size).fill(65);
+                const t0 = performance.now();
+                let got = 0;
+                for (let i = 0; i < count; i++) {
+                    await c.write(payload);
+                    if ((i & 15) === 15) await echoTick();
+                }
+                await echoTick();
+                while (true) {
+                    const u8 = await c.read(65536);
+                    if (!u8.length) break;
+                    got += u8.length;
+                }
+                const ms = performance.now() - t0;
+                await c.close();
+                verdict(true, `✔ flood ${got}B in ${ms.toFixed(0)}ms`);
+                $('#e-hex').textContent = `flood ${count} × ${size}B · echoed back ${got}B`;
+                log('ok', `flood: ${got}B in ${ms.toFixed(0)}ms → ${(got / 1024 / (ms / 1000)).toFixed(1)} KiB/s`);
+            } catch (e) {
+                verdict(false, '✘ ' + fmtErr(e));
+                log('error', 'flood: ' + fmtErr(e));
+            }
+        });
+
+        window.addEventListener('error', (e) => log('error', 'window.onerror: ' + fmtErr(e.error || e.message)));
+        window.addEventListener('unhandledrejection', (e) => log('error', 'unhandledrejection: ' + fmtErr(e.reason)));
+        window.addEventListener('beforeunload', () => {
+            try { winConn?.close(); listConn?.close(); echoConn?.close(); } catch { }
+        });
+
+        AF_UNIX.listen('/js-echo', (c) => {
+            log('info', `[js-echo] attached #${c.id}`);
+            c.ondata = (u8) => {
+                $('#e-hex').textContent = `[js-echo] ${u8.length}B\n` + hexdump(u8);
+                c.write(u8).catch((e) => log('warn', 'js-echo: ' + fmtErr(e)));
+            };
+        });
+
+        // ─────────────── console surface ───────────────
+        globalThis.viewer = {
+            get wet() { return wet; }, get echoJs() { return echoJs; }, get pump() { return pump; },
+            get wetSource() { return wetSource; }, get runtimeDead() { return runtimeDead; },
+            conns, services, rpc, AF_UNIX, makeConn, LineConn, onNotify,
+            get windows() { return windows; }, get listConn() { return listConn; },
+            get winConn() { return winConn; }, get echoConn() { return echoConn; },
+            log, fmtErr, getWet, toU8, b64ToU8, hexdump, firstDiff, echoRoundTrip, echoText,
+            connectList, connectWin, closeWin, redrawList, upsertWin, handleListMessage,
+            resub, handleFrame, clearWinUI, edition: EDITION,
+        };
+        globalThis.rpc = rpc;
+        globalThis.getWet = getWet;
+        globalThis.fmtErr = fmtErr;
+        globalThis.getAssemblyExports = getAssemblyExports;
+        log('info', 'console hooks ready: viewer.*, rpc(), getWet(), fmtErr(), getAssemblyExports()');
+
+        // ───────────────────────── boot ─────────────────────────
+        setTag('wait', 'resolving exports…');
+        const ok = await initExports();
+        if (!ok) {
+            setTag('off', 'WetJs not found');
+            log('error', 'WetJs async exports never appeared — need WriteRpcAsync/ReadRpcAsync/CloseRpcAsync/ConnectRpcAsync/ListRpcAsync/ListeningRpcAsync/TakeEventsAsync.');
+        } else {
+            setTag('on', 'runtime up · ' + EDITION);
+            log('ok', `WetJs ready (${wetSource}) — ${EDITION}`);
+        }
+
+        log('info', 'waiting for the driver to start listening…');
+        connectList();
+        setInterval(connectList, 1500);
+        setInterval(() => dumpListeners('auto'), 10000);
+
+        // message pump (harmless on MT where Main drives it; required on ST)
+        if (pump) {
+            info('#info-pump', 'exported');
+            log('ok', 'message pump export found');
+            setInterval(async () => {
+                if (runtimeDead) return;
+                try { await pump(); }
+                catch (e) {
+                    const m = fmtErr(e);
+                    if (/already exited|Cannot call synchronous/.test(m)) return;
+                    log('warn', 'pump: ' + m);
+                }
+            }, 16);
+        } else {
+            info('#info-pump', 'NOT EXPORTED');
+            log('warn', 'no Pump export — required unless Main drives the loop');
+        }
+
+        // event pull (socket notifications queued by the driver) — this is also
+        // the tick that should be driving the poll-based I/O of the driver.
+        setInterval(async () => {
+            if (runtimeDead || !wet?.TakeEventsAsync) return;
+            try {
+                const raw = await rpc((req) => getWet().TakeEventsAsync(req));
+                const evs = JSON.parse(raw || '[]');
+                for (const e of evs) {
+                    if (e.kind === 'log') { log('info', '[dotnet] ' + (e.text || '')); continue; }
+                    if (e.kind === 'trace') { log('info', '[trace] ' + (e.text || '')); continue; }
+                    onNotify(num(e.handle), e.kind);
+                }
+            } catch (e) {
+                const m = fmtErr(e);
+                if (/already exited|Cannot call synchronous|rpc timeout/.test(m)) return;
+                log('warn', 'tick: ' + m);
+            }
+        }, 100);
+
+        try {
+            await dotnet.runMain();
+            log('warn', 'Main returned — UI keeps running under Pump()');
+        } catch (e) {
+            die('Main threw: ' + fmtErr(e));
+        }
+    </script>
 </body>
 
 </html>
