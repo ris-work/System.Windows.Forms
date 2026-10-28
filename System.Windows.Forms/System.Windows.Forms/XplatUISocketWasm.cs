@@ -53,6 +53,9 @@ using Wystem.Wet;
 
 namespace System.Windows.Forms
 {
+
+
+
     public class XplatUISocketWasm : XplatUIDriver
     {
         // ── Singleton ────────────────────────────────────────────────────
@@ -79,31 +82,11 @@ namespace System.Windows.Forms
 
         /// <summary>True when the runtime can block — i.e. a threaded wasm build
         /// or any desktop runtime. False on single-threaded browser-wasm.</summary>
-        public static bool ThreadsAvailable
-        {
-            get
-            {
-                if (!_threads.HasValue)
-                {
-                    try
-                    {
-                        using var probe = new ManualResetEventSlim(false);
-                        probe.Wait(1);
-                        _threads = true;
-                    }
-                    catch (PlatformNotSupportedException) { _threads = false; }
-                    Log("threading: " + (_threads.Value ? "available — blocking loop" : "NOT available — pump model"));
-                }
-                return _threads.Value;
-            }
-        }
+        // Threading is decided by ParallelExecutionUnit; never probed here with a
+        // WaitHandle (ManualResetEventSlim.Wait throws PlatformNotSupportedException).
+        public static bool ThreadsAvailable => ParallelExecutionUnit.ThreadingAvailable();
 
-        static void WaitForWork(SocketQueue q, int timeoutMs)
-        {
-            if (!ThreadsAvailable) return;   // single-threaded browser: never block
-            q.Evt.Wait(timeoutMs);
-            q.Evt.Reset();
-        }
+
         static readonly object Sync = new object();
         static string SockDir = "/ui";
         static bool serverStarted;
@@ -154,7 +137,17 @@ namespace System.Windows.Forms
         const int MaxLogLines = 500;
         static bool logBroadcast = true;
 
-        internal static void Log(string message)
+        /// <summary>Console + ring + BROADCAST to window-list watchers.</summary>
+        internal static void Log(string message) => Write(message, broadcast: true);
+
+        /// <summary>
+        /// Console + ring ONLY. Never broadcast. A broadcast becomes a message on
+        /// the very connection we are describing, and describing that write
+        /// broadcasts again — a self-feeding loop (BytesOut climbing 496→565→663→…).
+        /// </summary>
+        internal static void LogLocal(string message) => Write(message, broadcast: false);
+
+        static void Write(string message, bool broadcast)
         {
             if (message == null) return;
             var line = DateTime.Now.ToString("HH:mm:ss.fff") + "  " + message;
@@ -165,9 +158,7 @@ namespace System.Windows.Forms
             }
             try { Console.WriteLine("[XplatUISocketWasm] " + message); } catch { }
 
-            if (!logBroadcast) return;
-            // Log lines ride the *window-list* connection only, so the frame
-            // stream of a live window is never interleaved with log noise.
+            if (!broadcast || !logBroadcast) return;
             var msg = "{\"type\":\"log\",\"text\":\"" + JEsc(line) + "\"}";
             lock (Sync)
             {
@@ -190,16 +181,29 @@ namespace System.Windows.Forms
             public Thread Thread;
             public readonly Queue<MSG> Msgs = new Queue<MSG>();
             public readonly object Lock = new object();
-            public readonly ManualResetEventSlim Evt = new ManualResetEventSlim(false);
+
+            // NO ManualResetEventSlim: Wait() throws PlatformNotSupportedException on
+            // this runtime, and any blocking wait would freeze the interop thread on
+            // mt-wasm. This loop is pump-driven — a plain flag is all it needs.
+            public volatile bool Wake;
+
             public bool Quit;
             public int ExitCode;
-            public void Enqueue(MSG m) { lock (Lock) Msgs.Enqueue(m); Evt.Set(); }
+
+            public void Enqueue(MSG m)
+            {
+                lock (Lock) Msgs.Enqueue(m);
+                Wake = true;
+            }
+
             public bool TryDequeue(out MSG m)
             {
                 lock (Lock) { if (Msgs.Count > 0) { m = Msgs.Dequeue(); return true; } }
                 m = default;
                 return false;
             }
+
+            public void Signal() { Wake = true; }
         }
 
         class WinInfo
@@ -218,107 +222,262 @@ namespace System.Windows.Forms
             public bool IsDesktop;
         }
 
-        // One accepted AF_UNIX connection. Control messages are queued; frames are
-        // coalesced into a single "wanted" slot and encoded at send time on the
-        // writer task, so what goes out is always the freshest state.
-        class ClientConn
+        // ════════════════════════════════════════════════════════════════════
+        //  ClientConn — one accepted AF_UNIX connection. POLL-DRIVEN.
+        //
+        //  Everything here is synchronous and non-blocking and runs ONLY inside
+        //  TickIO(), which is only ever called from JS→.NET calls (PumpMessages /
+        //  BootUpJs.Pump). There is no Task, no await, no thread-pool
+        //  continuation anywhere in this type: on the browser RC continuations
+        //  get stranded, which is exactly why the old writer/reader loops never
+        //  resumed and /ui/window-list never answered.
+        // ════════════════════════════════════════════════════════════════════
+        sealed class ClientConn
         {
             public WetSocket Sock;
-            public WinInfo Win;
+            public WinInfo Win;                    // null == window-list watcher
             public bool Subscribed;
             public string Format = "jpeg";
             public int Quality = 80;
             public bool Gray;
-            public int MinFrameMs;              // 0 = uncapped (fps throttle)
-            public int LastFrameTick;           // Environment.TickCount of the last frame we wrote
+            public int MinFrameMs;                 // 0 = uncapped (fps throttle)
+            public int LastFrameTick;              // Environment.TickCount of the last frame we wrote
+            public long BytesIn, BytesOut, FramesOut;
             public volatile bool Dead;
 
-            public readonly object QueueLock = new object();
-            public readonly Queue<string> OutQueue = new Queue<string>();   // control msgs
-            public bool FrameWanted;                                        // coalesced frame slot
-            public readonly SemaphoreSlim Work = new SemaphoreSlim(0);
-            public Task Writer;
-            public Task Reader;
-            public long BytesIn, BytesOut, FramesOut;
-            const int MaxCtrl = 64;
+            readonly object QLock = new object();
+            readonly Queue<string> OutQueue = new Queue<string>();   // complete messages, not yet on the wire
+            byte[] Cur;                                              // message currently being pushed
+            int CurOff;
+            readonly StringBuilder Line = new StringBuilder();       // incoming newline framing
+            public bool FrameWanted;                                  // coalesced frame slot
 
-            public void StartWriter() => Writer = Task.Run(WriterLoopAsync);
+            int _logIn, _logOut;                        // log throttles
+            long _lastOut = -1, _lastIn = -1, _lastPending = -1;
 
-            // Control messages (hello/info/pong/bye/log) — queued, capped.
-            public void Send(string s)
+            public ClientConn(WetSocket sock, WinInfo win)
             {
-                if (Dead) return;
-                lock (QueueLock)
-                {
-                    if (OutQueue.Count >= MaxCtrl) { Dead = true; Work.Release(); return; } // hopeless client: cut it, don't OOM
-                    OutQueue.Enqueue(s);
-                }
-                Work.Release();
+                Sock = sock;
+                Win = win;
             }
 
-            // Frames — coalesced to a single "wanted" flag.
+            // ── outbound: queue one complete message ─────────────────────────
+            // Never blocks and never drops: backpressure lives in WetSocket's
+            // send window (Send returns 0 when it is full, we retry next tick).
+            // ── outbound: queue one complete NEWLINE-DELIMITED record ────────
+            // The '\n' is WIRE FRAMING, not decoration: LineConn on the JS side
+            // splits on '\n' and never emits a message without it. (The ClientConn
+            // rewrite dropped it — the bytes arrived, JS buffered them forever.)
+            public void Send(string s)
+            {
+                if (Dead || s == null) return;
+                if (s.Length == 0 || s[s.Length - 1] != '\n') s += "\n";
+                lock (QLock)
+                {
+                    if (OutQueue.Count > 5000) { LogLocal($"Queue size: {OutQueue.Count} > 5000"); return; }
+                    OutQueue.Enqueue(s);
+                }
+            }
+
+            // ── "encode a frame the next time the wire is idle" ─────────────
+            // Many requests before the flusher runs collapse into ONE frame,
+            // and that frame is encoded at flush time → always the freshest.
             public void RequestFrame()
             {
                 if (Dead) return;
-                lock (QueueLock) FrameWanted = true;
-                Work.Release();
+                FrameWanted = true;
             }
 
-            async Task WriterLoopAsync()
+            // ── inbound: bytes JS wrote to us → newline-delimited JSON ───────
+            public void OnBytes(byte[] data)
+            {
+                if (Dead || data == null || data.Length == 0) return;
+                BytesIn += data.Length;
+                if (++_logIn <= 8 || (_logIn & 31) == 0)
+                    LogLocal("wire #" + Sock.Handle + " <- +" + data.Length + "B  (in " + BytesIn +
+                             ", rx pending " + Sock.RxPending + ")");
+
+                string text;
+                try { text = Encoding.UTF8.GetString(data); }
+                catch { Kill(); return; }
+
+                foreach (var ch in text)
+                {
+                    if (ch == '\n')
+                    {
+                        var line = Line.ToString();
+                        Line.Clear();
+                        if (line.Length > 0) Dispatch(line);
+                    }
+                    else if (Line.Length < (1 << 20))     // guard: peer that never sends '\n'
+                        Line.Append(ch);
+                    else { Kill(); return; }
+                }
+            }
+
+            void Dispatch(string line)
             {
                 try
                 {
-                    while (!Dead)
+                    using (var doc = JsonDocument.Parse(line))
                     {
-                        bool signalled;
-                        try { signalled = await Work.WaitAsync(500).ConfigureAwait(false); }
-                        catch { break; }
-
-                        // Heartbeat: a live subscriber gets a frame even if nothing
-                        // invalidated — this is the "video output" path.
-                        if (!signalled && Subscribed && !Dead)
+                        var root = doc.RootElement;
+                        if (Win == null)
                         {
-                            lock (QueueLock) FrameWanted = true;
+                            // window-list watcher: the old ListClientLoopAsync did exactly this
+                            if (line.IndexOf("\"list\"", StringComparison.Ordinal) >= 0) Send(ListJson());
+                            else
+                            {
+                                var t = root.TryGetProperty("type", out var te) ? te.GetString() : "";
+                                if (t == "ping") Send("{\"type\":\"pong\"}");
+                                else Send(ListJson());
+                            }
+                        }
+                        else HandleClientMessage(this, root);
+                    }
+                }
+                catch (Exception e) { Log("bad client message: " + e.Message); }
+            }
+
+            // ── outbound: push whatever fits; the rest waits for the next tick ─
+            // ── outbound: push whatever fits; the rest waits for the next tick ──
+            public void FlushOut()
+            {
+                if (Dead) return;
+                long wrote = 0;
+
+                for (; ; )
+                {
+                    if (Cur == null)
+                    {
+                        lock (QLock)
+                        {
+                            if (OutQueue.Count > 0) { Cur = Encoding.UTF8.GetBytes(OutQueue.Dequeue()); CurOff = 0; }
                         }
 
-                        for (; ; )
+                        if (Cur == null)
                         {
-                            string msg = null;
-                            bool wantFrame = false;
-                            lock (QueueLock)
-                            {
-                                if (OutQueue.Count > 0) msg = OutQueue.Dequeue();
-                                else if (FrameWanted) { FrameWanted = false; wantFrame = true; }
-                            }
-                            if (msg != null) await WriteRawAsync(msg).ConfigureAwait(false);
-                            else if (wantFrame) await SendFrameAsync(this).ConfigureAwait(false);
-                            else break;
+                            // Wire idle → encode a frame NOW (freshest possible state).
+                            if (!FrameWanted) break;
+                            if (MinFrameMs > 0 && unchecked(Environment.TickCount - LastFrameTick) < MinFrameMs)
+                                break;                       // throttled; FrameWanted stays set
+                            FrameWanted = false;
+                            if (!GenerateFrame()) break;
+                            continue;
+                        }
+                    }
+
+                    int n;
+                    try { n = Sock.Send(Cur.AsSpan(CurOff)); }     // PARTIAL, non-blocking
+                    catch { Kill(); return; }
+                    if (n <= 0) break;                             // send window full → next tick
+
+                    CurOff += n;
+                    BytesOut += n;
+                    wrote += n;
+                    if (CurOff >= Cur.Length) { Cur = null; CurOff = 0; }
+                }
+
+
+            }
+
+            /// <summary>
+            /// Called once per tick. Logs the TRANSPORT TRUTH: what we wrote AND how
+            /// much of it the peer actually pulled. The old line fired at write time,
+            /// so it always said "peer read 0" and made a healthy link look dead.
+            /// </summary>
+            public void NotePeerRead()
+            {
+                long pend = Sock.TxPending;
+                if (pend == _lastPending && BytesOut == _lastOut && BytesIn == _lastIn) return;
+                _lastPending = pend; _lastOut = BytesOut; _lastIn = BytesIn;
+
+                if (++_logOut <= 8 || (_logOut & 31) == 0)
+                    LogLocal("wire #" + Sock.Handle +
+                             "  out " + BytesOut + " / peer read " + (BytesOut - pend) + " / pending " + pend +
+                             "   in " + BytesIn + " / unread " + Sock.RxPending);
+            }
+
+            // Build + encode + enqueue ONE frame message. Replaces SendFrameAsync.
+            bool GenerateFrame()
+            {
+                var wi = Win;
+                if (wi == null) return false;
+
+                if (Format == "svg" && !SvgSupport.Enabled) Format = "png";
+
+                string payload;
+                int w, h;
+
+                if (wi.IsDesktop)
+                {
+                    w = screenW; h = screenH;
+                    if (Format == "svg")
+                        payload = JEsc(BuildDesktopSvg());
+                    else
+                    {
+                        using (var desk = BuildDesktopFrame())
+                        {
+                            var dbytes = EncodeFrame(desk, Format, Quality, Gray);
+                            payload = dbytes != null ? Convert.ToBase64String(dbytes) : "";
                         }
                     }
                 }
-                catch { }
-                Dead = true;
+                else if (Format == "svg")
+                {
+                    w = wi.Hwnd != null ? wi.Hwnd.width : 0;
+                    h = wi.Hwnd != null ? wi.Hwnd.height : 0;
+                    payload = JEsc(BuildTopFrameSvg(wi));
+                }
+                else
+                {
+                    w = wi.Hwnd != null ? wi.Hwnd.width : 0;
+                    h = wi.Hwnd != null ? wi.Hwnd.height : 0;
+                    var bytes = EncodeWindowFrame(wi, Format, Quality, Gray);
+                    if (bytes != null)
+                    {
+                        lock (wi.BufLock)
+                            if (wi.Buffer != null) { w = wi.Buffer.Width; h = wi.Buffer.Height; }
+                    }
+                    payload = bytes != null ? Convert.ToBase64String(bytes) : "";
+                }
+
+                Send(FrameJson(Format, w, h, payload));
+                LastFrameTick = Environment.TickCount;
+                FramesOut++;
+                return true;
             }
 
-            // One newline-terminated message. WetSocket.SendAsync accepts as much as
-            // the JS window allows and returns the byte count (0 == window full,
-            // <0 == gone), so loop until the message is out. AWAITED — never blocks,
-            // which is essential on single-threaded browser-wasm. Only the writer
-            // task calls this, so writes stay ordered without a lock.
-            public async Task WriteRawAsync(string s)
+            // ── drop this connection: idempotent, safe from any thread ────────
+            public void Kill()
             {
                 if (Dead) return;
-                var b = Encoding.UTF8.GetBytes(s + "\n");
-                int off = 0;
-                while (off < b.Length)
-                {
-                    int n;
-                    try { n = await Sock.SendAsync(b.AsMemory(off)).ConfigureAwait(false); }
-                    catch { Dead = true; return; }
-                    if (n <= 0) { Dead = true; return; }
-                    off += n;
-                    BytesOut += n;
-                }
+                Dead = true;
+                try { Sock?.Close(); } catch { }
+                if (Win == null) { lock (Sync) listWatchers.Remove(this); }
+                else { lock (Sync) Win.Clients.Remove(this); }
+                LogLocal("client #" + (Sock?.Handle ?? 0) + " disconnected");
+            }
+
+
+            /// <summary>One link's accounting. "delivered" is what the peer actually pulled.</summary>
+            public string Json()
+            {
+                string peer = Win == null ? "window-list"
+                            : Win.IsDesktop ? "compositor"
+                            : "0x" + Win.Handle.ToInt64().ToString("X");
+                long pendingOut = Sock.TxPending;
+                return "{\"id\":" + Sock.Handle +
+                       ",\"peer\":\"" + peer + "\"" +
+                       ",\"sub\":" + (Subscribed ? "true" : "false") +
+                       ",\"fmt\":\"" + Format + "\"" +
+                       ",\"in\":" + BytesIn +
+                       ",\"out\":" + BytesOut +
+                       ",\"delivered\":" + (BytesOut - pendingOut) +
+                       ",\"pendingOut\":" + pendingOut +
+                       ",\"pendingIn\":" + Sock.RxPending +
+                       ",\"frames\":" + FramesOut +
+                       ",\"dead\":" + (Dead ? "true" : "false") + "}";
             }
         }
 
@@ -354,7 +513,11 @@ namespace System.Windows.Forms
         static void EnsureServer()
         {
             if (serverStarted) return;
-            serverStarted = true;
+            if (listListener != null && desktopWi != null && desktopWi.Listener != null)
+            {
+                serverStarted = true;
+                return;
+            }
 
             var dir = Environment.GetEnvironmentVariable("XPLAT_UI_SOCKET_DIR");
             if (!string.IsNullOrEmpty(dir))
@@ -365,12 +528,16 @@ namespace System.Windows.Forms
             }
 
             listListener = ListenWet(PathFor("window-list"));
-            _ = ListAcceptLoopAsync(listListener);
 
-            desktopWi = new WinInfo { IsDesktop = true, SockPath = PathFor("compositor") };
-            desktopWi.Listener = ListenWet(desktopWi.SockPath);
-            _ = WinAcceptLoopAsync(desktopWi);
+            if (desktopWi == null)
+            {
+                desktopWi = new WinInfo { IsDesktop = true, SockPath = PathFor("compositor") };
+                desktopWi.Listener = ListenWet(desktopWi.SockPath);
+            }
 
+            // Only latch once BOTH listeners are real, so a failed bind is retried
+            // on the next window creation instead of being lost forever.
+            serverStarted = (listListener != null && desktopWi.Listener != null);
             Log("serving windows on unix:" + SockDir + "/* (screen " + screenW + "x" + screenH + ")");
         }
 
@@ -381,10 +548,15 @@ namespace System.Windows.Forms
                 lock (Sync)
                 {
                     foreach (var wi in topWindows.Values) CloseWinSockets(wi);
-                    foreach (var w in listWatchers.ToArray()) { w.Dead = true; try { w.Sock.Close(); } catch { } }
+                    foreach (var w in listWatchers.ToArray())
+                    {
+                        w.Dead = true;
+                        try { w.Sock.Close(); } catch { }
+                    }
                     listWatchers.Clear();
                 }
                 try { listListener?.Close(); } catch { }
+                listListener = null;
                 if (desktopWi != null) CloseWinSockets(desktopWi);
             }
             catch { }
@@ -392,6 +564,7 @@ namespace System.Windows.Forms
 
         static void CloseWinSockets(WinInfo wi)
         {
+            if (wi == null) return;
             ClientConn[] cs;
             lock (Sync)
             {
@@ -400,8 +573,8 @@ namespace System.Windows.Forms
             }
             foreach (var c in cs)
             {
+                try { c.Send("{\"type\":\"bye\"}"); c.FlushOut(); } catch { }
                 c.Dead = true;
-                c.Send("{\"type\":\"bye\"}");
                 try { c.Sock.Close(); } catch { }
             }
             try { wi.Listener?.Close(); } catch { }
@@ -418,7 +591,7 @@ namespace System.Windows.Forms
                 Log("listening unix:" + path);
                 return s;
             }
-            catch (WetException e)
+            catch (Exception e)
             {
                 Log("listen failed for unix:" + path + " — " + e.Message);
                 return null;
@@ -450,9 +623,41 @@ namespace System.Windows.Forms
             return mainQueue ?? ThreadQueue(Thread.CurrentThread);
         }
 
+        // ── event-driven message pump ───────────────────────────────────
+        // The UI loop is driven by the messages themselves: whenever something is
+        // enqueued we run one DoEvents pass on the execution unit. No JS timer.
+        static int pumpScheduled;
+
+        // NOTE: no latch here on purpose. A latch that is only cleared when the work
+        // actually runs is a one-way ticket to a dead pump — if the pool item is
+        // delayed (or stranded on this RC) every later SchedulePump() returns
+        // immediately and the transport never gets another tick. PumpMessages()
+        // itself refuses re-entry (pumpRunning), which is the only guard we need.
+        public static void SchedulePump()
+        {
+            ParallelExecutionUnit.Run(() => PumpMessages(), "pump");
+        }
+
+
         static void EnqueueMsg(IntPtr target, Msg m, IntPtr w, IntPtr l)
         {
             QueueForHandle(target).Enqueue(new MSG { hwnd = target, message = m, wParam = w, lParam = l });
+            SchedulePump();                       // work arrived → run the loop
+        }
+
+
+        // Coarse heartbeat: only while a WinForms timer is armed. Without this the
+        // loop only runs when messages arrive, and System.Windows.Forms.Timer would
+        // never tick. 250 ms is plenty for UI timers and costs nothing otherwise.
+        static System.Threading.Timer timerPump;
+
+        static void EnsureTimerPump()
+        {
+            /*if (timerPump != null) return;
+            timerPump = new System.Threading.Timer(_ =>
+            {
+                if (timers.Count > 0) SchedulePump();
+            }, null, 250, 250);*/
         }
 
         // ── JSON helpers ─────────────────────────────────────────────────
@@ -525,138 +730,158 @@ namespace System.Windows.Forms
         }
 
         // ── AF_UNIX accept loops (async, no threads) ─────────────────────
-        static async Task ListAcceptLoopAsync(WetSocket listener)
+        // ── AF_UNIX accept — POLLED, synchronous, no continuations ───────────
+        static void AcceptPendingOn(WetSocket listener, WinInfo wi)
         {
             if (listener == null) return;
-            try
-            {
-                for (; ; )
-                {
-                    WetSocket s;
-                    try { s = await listener.AcceptAsync().ConfigureAwait(false); }
-                    catch (WetException) { break; }
-                    if (s == null) break;
-
-                    var cc = new ClientConn { Sock = s };
-                    lock (Sync) listWatchers.Add(cc);
-                    cc.StartWriter();
-                    cc.Send(ListJson());
-                    cc.Reader = Task.Run(() => ListClientLoopAsync(cc));
-                    Log("window-list client #" + s.Handle + " connected");
-                }
-            }
-            catch (Exception e) { Log("window-list accept loop: " + e.Message); }
-        }
-
-        static async Task ListClientLoopAsync(ClientConn cc)
-        {
-            try
-            {
-                await foreach (var text in ReadLinesAsync(cc).ConfigureAwait(false))
-                {
-                    if (text == null) break;
-                    if (text.IndexOf("\"list\"", StringComparison.Ordinal) >= 0) cc.Send(ListJson());
-                }
-            }
-            catch { }
-            cc.Dead = true;
-            lock (Sync) listWatchers.Remove(cc);
-            try { cc.Sock.Close(); } catch { }
-            Log("window-list client disconnected");
-        }
-
-        static async Task WinAcceptLoopAsync(WinInfo wi)
-        {
-            if (wi.Listener == null) return;
-            try
-            {
-                for (; ; )
-                {
-                    WetSocket s;
-                    try { s = await wi.Listener.AcceptAsync().ConfigureAwait(false); }
-                    catch (WetException) { break; }
-                    if (s == null) break;
-
-                    var cc = new ClientConn { Sock = s, Win = wi };
-                    lock (Sync) wi.Clients.Add(cc);
-                    cc.StartWriter();
-                    cc.Send("{\"type\":\"hello\",\"protocol\":1,\"screen\":[" + screenW + "," + screenH +
-                            "],\"window\":" + (wi.IsDesktop ? DesktopJson() : WindowJson(wi)) + "}");
-                    cc.Reader = Task.Run(() => WinClientLoopAsync(cc));
-                    Log("client #" + s.Handle + " attached to " + (wi.IsDesktop ? "compositor" : "0x" + wi.Handle.ToInt64().ToString("X")));
-                }
-            }
-            catch (Exception e) { Log("accept loop (" + wi.SockPath + "): " + e.Message); }
-        }
-
-        static async Task WinClientLoopAsync(ClientConn cc)
-        {
-            try
-            {
-                await foreach (var text in ReadLinesAsync(cc).ConfigureAwait(false))
-                {
-                    if (text == null) break;
-                    if (text.Length == 0) continue;
-                    try
-                    {
-                        using (var doc = JsonDocument.Parse(text))
-                            HandleClientMessage(cc, doc.RootElement);
-                    }
-                    catch (Exception e)
-                    {
-                        Log("bad client message: " + e.Message);
-                    }
-                }
-            }
-            catch { }
-            cc.Dead = true;
-            lock (Sync) cc.Win?.Clients.Remove(cc);
-            try { cc.Sock.Close(); } catch { }
-            Log("client #" + (cc.Sock?.Handle ?? 0) + " disconnected");
-        }
-
-        // Newline-delimited UTF-8 framing over a raw WetSocket byte stream.
-        // Fully async: receives are awaited, never blocked on — the JS interop is
-        // what completes them, and a blocking wait here would starve it.
-        static async IAsyncEnumerable<string> ReadLinesAsync(ClientConn cc)
-        {
-            var pending = new List<byte>(8 * 1024);
-            var chunk = new byte[16 * 1024];
             for (; ; )
             {
-                int n;
-                try { n = await cc.Sock.ReceiveAsync(chunk).ConfigureAwait(false); }
-                catch { n = 0; }
-                if (n <= 0) yield break;
-                cc.BytesIn += n;
-                for (int i = 0; i < n; i++) pending.Add(chunk[i]);
+                WetSocket s;
+                try { s = listener.AcceptPending(); } catch { return; }
+                if (s == null) return;
 
-                int cut;
-                while ((cut = pending.IndexOf((byte)'\n')) >= 0)
+                var cc = new ClientConn(s, wi);
+                Accepted++;
+                if (wi == null)
                 {
-                    var line = Encoding.UTF8.GetString(pending.GetRange(0, cut).ToArray());
-                    pending.RemoveRange(0, cut + 1);
-                    if (line.Length > 0) yield return line;
+                    lock (Sync) listWatchers.Add(cc);
+                    cc.Send(ListJson());
+                    Log("window-list client #" + s.Handle + " connected");
+                }
+                else
+                {
+                    lock (Sync) wi.Clients.Add(cc);
+                    cc.Send("{\"type\":\"hello\",\"protocol\":1,\"screen\":[" + screenW + "," + screenH +
+                            "],\"window\":" + (wi.IsDesktop ? DesktopJson() : WindowJson(wi)) + "}");
+                    Log("client #" + s.Handle + " attached to " +
+                        (wi.IsDesktop ? "compositor" : "0x" + wi.Handle.ToInt64().ToString("X")));
                 }
             }
         }
 
-        // ── Frame encoding / pushing ─────────────────────────────────────
+        static int tickRunning;
+
+        /// <summary>
+        /// One non-blocking pass over the whole transport: accept → read → handle →
+        /// write. Fully synchronous; must only be called from JS→.NET entry points
+        /// (PumpMessages / BootUpJs.Pump). Re-entrant calls are dropped, not queued.
+        /// </summary>
+        public static void TickIO()
+        {
+            if (Interlocked.CompareExchange(ref tickRunning, 1, 0) != 0) return;
+            try { TickIOCore(); }
+            finally { Interlocked.Exchange(ref tickRunning, 0); }
+        }
+
+
+
+        static void TickIOCore()
+        {
+            // 1) accepts
+            AcceptPendingOn(listListener, null);
+            AcceptPendingOn(desktopWi != null ? desktopWi.Listener : null, desktopWi);
+
+            List<WinInfo> tops;
+            lock (Sync) tops = topWindows.Values.ToList();
+            foreach (var t in tops) AcceptPendingOn(t.Listener, t);
+
+            // 2) snapshot of every live connection
+            var all = new List<ClientConn>();
+            lock (Sync)
+            {
+                all.AddRange(listWatchers);
+                foreach (var t in tops) all.AddRange(t.Clients);
+                if (desktopWi != null) all.AddRange(desktopWi.Clients);
+            }
+
+            // 3) read + handle + write
+            foreach (var cc in all)
+            {
+                if (cc.Dead) continue;
+                try
+                {
+                    int avail = cc.Sock.Available;
+                    if (avail > 0)
+                    {
+                        var b = cc.Sock.DrainRx(avail);
+                        if (b.Length > 0) cc.OnBytes(b);
+                    }
+
+                    if (!cc.Dead) cc.FlushOut();
+                    cc.NotePeerRead();
+
+                    if (!cc.Sock.Connected && cc.Sock.Available == 0) cc.Kill();
+                }
+                catch (Exception e)
+                {
+                    Log("io tick #" + cc.Sock.Handle + ": " + e.Message);
+                    cc.Kill();
+                }
+            }
+            Ticks++;
+            long bin = 0, bout = 0, fr = 0;
+            foreach (var cc in all) { bin += cc.BytesIn; bout += cc.BytesOut; fr += cc.FramesOut; }
+            BytesIn = bin; BytesOut = bout; FramesOut = fr;
+        }
+
+
+        // ── tick counters, so a manual pump can prove it did something ──────
+        public static long Ticks, Accepted, BytesIn, BytesOut, FramesOut;
+
+        public static string StatsJson()
+        {
+            var all = new List<ClientConn>();
+            int listeners = 0, pending = 0;
+            lock (Sync)
+            {
+                all.AddRange(listWatchers);
+                if (desktopWi != null) all.AddRange(desktopWi.Clients);
+                foreach (var t in topWindows.Values) all.AddRange(t.Clients);
+            }
+            foreach (var s in WetRegistry.Listeners) { listeners++; pending += s.PendingAccepts; }
+
+            long bin = 0, bout = 0, fr = 0;
+            var links = new StringBuilder();
+            foreach (var cc in all)
+            {
+                if (links.Length > 0) links.Append(',');
+                links.Append(cc.Json());
+                bin += cc.BytesIn; bout += cc.BytesOut; fr += cc.FramesOut;
+            }
+
+            return "{\"ticks\":" + Ticks + ",\"accepted\":" + Accepted +
+                   ",\"bytesIn\":" + bin + ",\"bytesOut\":" + bout + ",\"frames\":" + fr +
+                   ",\"listeners\":" + listeners + ",\"pending\":" + pending +
+                   ",\"links\":[" + links + "]}";
+        }
+
+        // ── RAW formats (no codec — memcpy / one integer pass per pixel) ──
+        //   rawbgra      BGRA8888, 4 B/px, compact rows
+        //   rawbgra332   R3G3B2 packed, 1 B/px
+        //   rawbgra1     1 bpp (luma threshold), MSB-first, stride=(w+7)/8
+        //   rawg8        Gray8, 1 B/px
+        //   rawycbcr322  planar 4:2:2: Y (w*h) | Cb (ceil(w/2)*h) | Cr (ceil(w/2)*h)
+        static bool IsRawFormat(string fmt) =>
+            fmt == "rawbgra" || fmt == "rawbgra332" || fmt == "rawbgra1" ||
+            fmt == "rawg8" || fmt == "rawycbcr322";
+
         static byte[] EncodeFrame(Bitmap bmp, string fmt, int quality, bool gray)
         {
             var src = bmp._skBitmap;
+
+            if (IsRawFormat(fmt))
+                return EncodeRawPixels(src, fmt);
+
             SKBitmap use = src;
             if (gray)
             {
                 use = new SKBitmap(src.Width, src.Height, SKColorType.Gray8, SKAlphaType.Opaque);
                 unsafe
                 {
-                    byte* s = (byte*)src.GetPixels();
-                    byte* d = (byte*)use.GetPixels();
+                    byte* s = (byte*)src.GetPixels(); byte* d = (byte*)use.GetPixels();
                     for (int y = 0; y < src.Height; y++)
                     {
-                        byte* sr = s + y * src.RowBytes;
-                        byte* dr = d + y * use.RowBytes;
+                        byte* sr = s + y * src.RowBytes; byte* dr = d + y * use.RowBytes;
                         for (int x = 0; x < src.Width; x++)
                         {
                             int b = sr[x * 4], g = sr[x * 4 + 1], r = sr[x * 4 + 2];
@@ -675,6 +900,122 @@ namespace System.Windows.Forms
             return result;
         }
 
+        /// <summary>One pass over the source pixels, no Skia codec. Rows are compact
+        /// (stride == bpp*w) except rawbgra1 where stride = ceil(w/8).</summary>
+        static unsafe byte[] EncodeRawPixels(SKBitmap src, string fmt)
+        {
+            int w = src.Width, h = src.Height;
+            if (w <= 0 || h <= 0) return Array.Empty<byte>();
+            byte* s = (byte*)src.GetPixels();
+
+            switch (fmt)
+            {
+                case "rawbgra":
+                    {
+                        var raw = new byte[(long)w * h * 4];
+                        fixed (byte* dst = raw)
+                            for (int y = 0; y < h; y++)
+                                Buffer.MemoryCopy(s + (long)y * src.RowBytes, dst + (long)y * w * 4, w * 4, w * 4);
+                        return raw;
+                    }
+
+                case "rawbgra332":
+                    {
+                        var raw = new byte[(long)w * h];
+                        fixed (byte* dst = raw)
+                            for (int y = 0; y < h; y++)
+                            {
+                                byte* sr = s + (long)y * src.RowBytes;
+                                byte* dr = dst + (long)y * w;
+                                for (int x = 0; x < w; x++)
+                                {
+                                    int b = sr[x * 4], g = sr[x * 4 + 1], r = sr[x * 4 + 2];
+                                    dr[x] = (byte)(((r >> 5) << 5) | ((g >> 5) << 2) | (b >> 6));
+                                }
+                            }
+                        return raw;
+                    }
+
+                case "rawbgra1":
+                    {
+                        int stride = (w + 7) / 8;
+                        var raw = new byte[(long)stride * h];
+                        fixed (byte* dst = raw)
+                            for (int y = 0; y < h; y++)
+                            {
+                                byte* sr = s + (long)y * src.RowBytes;
+                                byte* dr = dst + (long)y * stride;
+                                for (int x = 0; x < w; x++)
+                                {
+                                    int b = sr[x * 4], g = sr[x * 4 + 1], r = sr[x * 4 + 2];
+                                    int luma = (r * 77 + g * 150 + b * 29) >> 8;
+                                    if (luma >= 128) dr[x >> 3] |= (byte)(0x80 >> (x & 7));
+                                }
+                            }
+                        return raw;
+                    }
+
+                case "rawg8":
+                    {
+                        var raw = new byte[(long)w * h];
+                        fixed (byte* dst = raw)
+                            for (int y = 0; y < h; y++)
+                            {
+                                byte* sr = s + (long)y * src.RowBytes;
+                                byte* dr = dst + (long)y * w;
+                                for (int x = 0; x < w; x++)
+                                {
+                                    int b = sr[x * 4], g = sr[x * 4 + 1], r = sr[x * 4 + 2];
+                                    dr[x] = (byte)((r * 77 + g * 150 + b * 29) >> 8);
+                                }
+                            }
+                        return raw;
+                    }
+
+                case "rawycbcr322":
+                    {
+                        // BT.601 integer math; chroma averaged over each horizontal pair.
+                        int cw = (w + 1) / 2;
+                        var raw = new byte[(long)w * h + 2L * cw * h];
+                        fixed (byte* dst = raw)
+                        {
+                            byte* yp = dst;
+                            byte* cbp = dst + (long)w * h;
+                            byte* crp = cbp + (long)cw * h;
+                            for (int y = 0; y < h; y++)
+                            {
+                                byte* sr = s + (long)y * src.RowBytes;
+                                byte* yr = yp + (long)y * w;
+                                byte* cbr = cbp + (long)y * cw;
+                                byte* crr = crp + (long)y * cw;
+
+                                for (int x = 0; x < w; x++)
+                                {
+                                    int b = sr[x * 4], g = sr[x * 4 + 1], r = sr[x * 4 + 2];
+                                    yr[x] = (byte)((77 * r + 150 * g + 29 * b) >> 8);
+                                }
+                                for (int cx = 0; cx < cw; cx++)
+                                {
+                                    int x0 = cx * 2;
+                                    int x1 = x0 + 1 < w ? x0 + 1 : x0;
+                                    int b = (sr[x0 * 4] + sr[x1 * 4]) / 2;
+                                    int g = (sr[x0 * 4 + 1] + sr[x1 * 4 + 1]) / 2;
+                                    int r = (sr[x0 * 4 + 2] + sr[x1 * 4 + 2]) / 2;
+                                    int cb = 128 + ((-43 * r - 85 * g + 128 * b) >> 8);
+                                    int cr = 128 + ((128 * r - 107 * g - 21 * b) >> 8);
+                                    cbr[cx] = (byte)(cb < 0 ? 0 : (cb > 255 ? 255 : cb));
+                                    crr[cx] = (byte)(cr < 0 ? 0 : (cr > 255 ? 255 : cr));
+                                }
+                            }
+                        }
+                        return raw;
+                    }
+
+                default:
+                    return Array.Empty<byte>();
+            }
+        }
+
         static byte[] EncodeWindowFrame(WinInfo wi, string fmt, int q, bool gray)
         {
             Bitmap src = BuildCompositedFrame(wi);
@@ -684,71 +1025,47 @@ namespace System.Windows.Forms
             return bytes;
         }
 
-        // Called on the connection's writer task: build + encode + write here,
-        // off the UI path.
-        static async Task SendFrameAsync(ClientConn cc)
+        /// <summary>
+        /// One frame message. Raw formats carry their pixel description so the
+        /// client can write the bytes straight into memory — no decoding.
+        /// </summary>
+        static string FrameJson(string fmt, int w, int h, string data)
         {
-            var wi = cc.Win;
-            if (wi == null || cc.Dead) return;
+            if (!IsRawFormat(fmt))
+                return "{\"type\":\"frame\",\"format\":\"" + fmt + "\",\"width\":" + w +
+                       ",\"height\":" + h + ",\"data\":\"" + data + "\"}";
 
-            // live throttle (optional): pace the writer instead of dropping frames
-            if (cc.MinFrameMs > 0)
+            int cw = (w + 1) / 2;
+            string pix;
+            int stride;
+            switch (fmt)
             {
-                int wait = cc.MinFrameMs - unchecked(Environment.TickCount - cc.LastFrameTick);
-                if (wait > 0) await Task.Delay(wait).ConfigureAwait(false);
+                case "rawbgra": pix = "bgra8"; stride = w * 4; break;
+                case "rawbgra332": pix = "bgra332"; stride = w; break;
+                case "rawbgra1": pix = "bgra1"; stride = (w + 7) / 8; break;
+                case "rawg8": pix = "gray8"; stride = w; break;
+                default: pix = "ycbcr422"; stride = w; break;
             }
 
-            // SVG requested but server-side SVG is off: negotiate down to PNG
-            if (cc.Format == "svg" && !SvgSupport.Enabled)
-                cc.Format = "png";
+            string extra = fmt == "rawycbcr322"
+                ? ",\"chromawidth\":" + cw + ",\"layout\":\"Y|Cb|Cr\""
+                : "";
 
-            string payload;
-            int w, h;
-
-            if (wi.IsDesktop)
-            {
-                w = screenW; h = screenH;
-                if (cc.Format == "svg")
-                {
-                    payload = BuildDesktopSvg();
-                }
-                else
-                {
-                    var desk = BuildDesktopFrame();
-                    var dbytes = EncodeFrame(desk, cc.Format, cc.Quality, cc.Gray);
-                    desk.Dispose();
-                    payload = dbytes != null ? Convert.ToBase64String(dbytes) : "";
-                }
-            }
-            else if (cc.Format == "svg")
-            {
-                w = wi.Hwnd != null ? wi.Hwnd.width : 0;
-                h = wi.Hwnd != null ? wi.Hwnd.height : 0;
-                payload = BuildTopFrameSvg(wi);
-            }
-            else
-            {
-                w = wi.Hwnd != null ? wi.Hwnd.width : 0;
-                h = wi.Hwnd != null ? wi.Hwnd.height : 0;
-                var bytes = EncodeWindowFrame(wi, cc.Format, cc.Quality, cc.Gray);
-                if (bytes != null && wi.Buffer != null) { w = wi.Buffer.Width; h = wi.Buffer.Height; }
-                payload = bytes != null ? Convert.ToBase64String(bytes) : "";
-            }
-
-            await cc.WriteRawAsync("{\"type\":\"frame\",\"format\":\"" + cc.Format +
-                                   "\",\"width\":" + w + ",\"height\":" + h +
-                                   ",\"data\":\"" + (cc.Format == "svg" ? JEsc(payload) : payload) + "\"}").ConfigureAwait(false);
-
-            cc.LastFrameTick = Environment.TickCount;
-            cc.FramesOut++;
+            return "{\"type\":\"frame\",\"format\":\"" + fmt + "\",\"width\":" + w + ",\"height\":" + h +
+                   ",\"pixelformat\":\"" + pix + "\",\"stride\":" + stride + extra +
+                   ",\"data\":\"" + data + "\"}";
         }
+
+
 
         static void PushFrames(WinInfo wi)
         {
             if (wi == null) return;
             ClientConn[] subs;
             lock (Sync) subs = wi.Clients.FindAll(c => c.Subscribed && !c.Dead).ToArray();
+            if (subs.Length == 0) return;
             foreach (var c in subs) c.RequestFrame();
+            SchedulePump();        // make TickIO() run so the frames actually go out
         }
 
         void FullRedraw(WinInfo topWi)
@@ -845,6 +1162,7 @@ namespace System.Windows.Forms
         {
             var wi = cc.Win;
             string type = root.TryGetProperty("type", out var te) ? te.GetString() : "";
+            WetTrace.Mark("client-msg #" + cc.Sock.Handle + " '" + type + "'");
             int t = (int)(root.TryGetProperty("t", out var timeEl) ? timeEl.GetInt64() : Environment.TickCount);
             switch (type)
             {
@@ -870,7 +1188,8 @@ namespace System.Windows.Forms
                     if (root.TryGetProperty("format", out var f))
                     {
                         var fs = f.GetString();
-                        cc.Format = (fs == "png" || fs == "jpeg" || fs == "svg") ? fs : "jpeg";
+                        cc.Format = (fs == "png" || fs == "jpeg" || fs == "svg"
+                                     || IsRawFormat(fs)) ? fs : "jpeg";
                     }
                     if (root.TryGetProperty("quality", out var q)) cc.Quality = Math.Max(1, Math.Min(100, q.GetInt32()));
                     if (root.TryGetProperty("gray", out var ge)) cc.Gray = ge.GetBoolean();
@@ -1210,7 +1529,6 @@ namespace System.Windows.Forms
                 EnsureServer();
                 wi.SockPath = PathFor("win-" + wi.Handle.ToInt64().ToString("X"));
                 wi.Listener = ListenWet(wi.SockPath);
-                _ = WinAcceptLoopAsync(wi);
                 BroadcastList("window-added", wi);
                 Log("window 0x" + wi.Handle.ToInt64().ToString("X") + " '" + wi.Title + "' -> unix:" + wi.SockPath);
             }
@@ -1955,6 +2273,14 @@ namespace System.Windows.Forms
 
         internal static Action JsYield;
 
+        // NEVER blocks. A blocking wait (ManualResetEventSlim.Wait) throws
+        // PlatformNotSupportedException here, and on mt-wasm it would freeze the
+        // interop thread. When the queue is empty this Run loop is over — the page
+        // keeps dispatching through BootUpJs.Pump -> PumpMessages().
+        // NEVER blocks. A blocking wait (ManualResetEventSlim.Wait) throws
+        // PlatformNotSupportedException here, and on mt-wasm it would freeze the
+        // interop thread. When the queue is empty this Run loop is over — the page
+        // keeps dispatching through BootUpJs.Pump -> PumpMessages().
         internal override bool GetMessage(object queue_id, ref MSG msg, IntPtr hWnd, int wFilterMin, int wFilterMax)
         {
             var q = (SocketQueue)queue_id;
@@ -1980,21 +2306,12 @@ namespace System.Windows.Forms
                     return false;
                 }
                 RaiseIdle(EventArgs.Empty);
-                JsYield?.Invoke();
 
-                WaitForWork(q, NextTimeout(250));
-
-                if (!canBlock)
-                {
-                    // Single-threaded browser-wasm: we cannot wait here. End the
-                    // Run loop cleanly and let the browser host keep dispatching
-                    // through PumpMessages()/DoEvents() (form.Show() + [JSExport] Pump).
-                    msg.hwnd = IntPtr.Zero;
-                    msg.message = Msg.WM_QUIT;
-                    msg.wParam = IntPtr.Zero;
-                    msg.lParam = IntPtr.Zero;
-                    return false;
-                }
+                msg.hwnd = IntPtr.Zero;
+                msg.message = Msg.WM_QUIT;
+                msg.wParam = IntPtr.Zero;
+                msg.lParam = IntPtr.Zero;
+                return false;
             }
         }
 
@@ -2017,7 +2334,7 @@ namespace System.Windows.Forms
         internal override void DoEvents()
         {
             MSG msg = new MSG();
-            var q = ThreadQueue(Thread.CurrentThread);
+            var q = mainQueue ?? ThreadQueue(Thread.CurrentThread);   // ← mainQueue
             in_doevents = true;
             while (PeekMessage(q, ref msg, IntPtr.Zero, 0, 0, (uint)PeekMessageFlags.PM_REMOVE))
             {
@@ -2034,9 +2351,24 @@ namespace System.Windows.Forms
         /// Export this to JS ([JSExport] Pump) and call it from a timer
         /// (requestAnimationFrame / setInterval) — that is the ST message loop.
         /// </summary>
+        static int pumpRunning;
+
+        /// <summary>
+        /// Cooperative pump: run the transport tick, drain the WinForms queue once,
+        /// tick again so anything painted by that pass goes out immediately.
+        /// Re-entrant calls return at once (a nested DoEvents would corrupt framing).
+        /// </summary>
         public static void PumpMessages()
         {
-            try { Instance?.DoEvents(); } catch { }
+            if (Interlocked.CompareExchange(ref pumpRunning, 1, 0) != 0) return;
+            try
+            {
+                TickIO();
+                Instance?.DoEvents();
+                TickIO();
+            }
+            catch (Exception e) { Log("pump: " + e.Message); }
+            finally { Interlocked.Exchange(ref pumpRunning, 0); }
         }
 
         internal override bool TranslateMessage(ref MSG msg) => false;
@@ -2054,7 +2386,7 @@ namespace System.Windows.Forms
             var q = ThreadQueue(Thread.CurrentThread);
             q.ExitCode = exitCode;
             q.Quit = true;
-            q.Evt.Set();
+            q.Signal();
         }
 
         internal override void SendAsyncMethod(AsyncMethodData method)
@@ -2586,7 +2918,8 @@ namespace System.Windows.Forms
         internal override void SetTimer(Timer timer)
         {
             lock (Sync) if (!timers.Contains(timer)) timers.Add(timer);
-            lock (Sync) foreach (var q in queues.Values) q.Evt.Set();
+            lock (Sync) foreach (var q in queues.Values) q.Signal();
+            SchedulePump();
         }
 
         internal override void KillTimer(Timer timer)
@@ -2601,7 +2934,7 @@ namespace System.Windows.Forms
         internal override void DrawReversibleFrame(Rectangle rectangle, Color backColor, FrameStyle style) { }
 
         // ── Driver: misc stubs ───────────────────────────────────────────
-        internal override void AudibleAlert(AlertType alert) { try { Console.Beep(); } catch { } }
+        internal override void AudibleAlert(AlertType alert) { try { if (OperatingSystem.IsBrowser()) return; Console.Beep(); } catch { } }
         internal override void BeginMoveResize(IntPtr handle) { }
         internal override void EnableThemes() => themes_enabled = true;
         internal override void HandleException(Exception e)
