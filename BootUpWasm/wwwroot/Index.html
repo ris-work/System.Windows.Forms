@@ -585,6 +585,11 @@
                 return;
             }
             if (kind === 'drained') { c.onwritable?.(c); return; }
+            // Only auto-drain for PUSH consumers (ondata set). A PULL consumer
+            // (conn.read()) must see the bytes itself — draining here parks them in
+            // _pending and its read() then returns "" forever. That is why the echo
+            // tests "send but never receive".
+            if (!c.ondata) return;
 
             if (c._draining) return;
             c._draining = true;
@@ -696,6 +701,15 @@
                 },
 
                 async read(max = 65536) {
+                    // Anything the notify drain already pulled lives in _pending.
+                    // Serve it first, otherwise ReadRpcAsync returns "" and the
+                    // caller thinks the stream is dry.
+                    if (this._pending.length) {
+                        const first = this._pending[0];
+                        if (first.length <= max) { this._pending.shift(); return first; }
+                        this._pending[0] = first.subarray(max);
+                        return first.subarray(0, max);
+                    }
                     const b64 = await rpc((req) => getWet().ReadRpcAsync(req, id, max));
                     return b64 ? b64ToU8(b64) : new Uint8Array(0);
                 },
@@ -1330,6 +1344,7 @@
         on('#e-connect', 'click', async () => {
             log('info', '→ connect /echo');
             try {
+                await rpc((req) => echoJs.StartEchoAsync(req));   // without this: "connect refused"
                 echoConn = await AF_UNIX.connect('/echo');
                 log('ok', `echo connected #${echoConn.id}`);
             } catch (e) { log('error', 'connect: ' + fmtErr(e)); }

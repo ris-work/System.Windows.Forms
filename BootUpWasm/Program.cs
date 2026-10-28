@@ -1806,19 +1806,21 @@ else
     await Task.Run(() => form.Show());
     //Task.Run(() => Application.Run(form));
     Console.WriteLine("[boot] browser: fed-and-yielding pump loop");
-    var x = () =>
+    var x = async () =>
     {
         while (true)
         {
-            //await Task.Run(() => { });                 // feeds the pool (continuations drain)
+            await Task.Run(() => { });                 // feeds the pool (continuations drain)
             // AND suspends Main (interop thread is free)
+            //Wystem.Wet.WetWire.JsCall();
             System.Windows.Forms.XplatUISocketWasm.SchedulePump();
-            Task.Yield();
+            
+            await Task.Yield();
         }
     };
     Task.Run(x);
-    Task.Run(x);
-    Task.Run(x);
+    //Task.Run(x);
+    //Task.Run(x);
 }
 
 /*if (await BootUpJs.ThreadingAvailable())
@@ -1922,8 +1924,8 @@ public static partial class BootUpJs
     public static async Task Pump()
     {
         using var _ = Wystem.Wet.WetWire.JsCall();
-        try { System.Windows.Forms.XplatUISocketWasm.PumpMessages(); }
-        catch (Exception e) { Console.WriteLine("[Pump] " + e); }
+        //try { System.Windows.Forms.XplatUISocketWasm.PumpMessages(); }
+        //catch (Exception e) { Console.WriteLine("[Pump] " + e); }
     }
 
     /// <summary>Pump + stats. Result is PUSHED through deliver — never returned.</summary>
