@@ -1870,11 +1870,30 @@ public enum PaintTool { Pencil, Brush, Eraser, Line, Rectangle, Ellipse }
 #pragma warning disable CS1998
 public static partial class BootUpJs
 {
+    // ════════════════════════════════════════════════════════════════════
+    //  RULE for this runtime (mt-wasm):
+    //   * EVERY [JSExport] returns Task or Task<T>. A synchronous export throws
+    //     "Cannot call synchronous C# methods" the instant JS calls it.
+    //   * Task<string> / Task<byte[]> results are DROPPED by the marshaller —
+    //     the promise never settles. Payloads therefore travel through the
+    //     deliver() import: request id in, JSON out (that is the *RpcAsync shape).
+    //   * Task<int> and Task are safe to return.
+    // ════════════════════════════════════════════════════════════════════
+
+    /// <summary>Page tells us which build this is: ConfigureAsync(crossOriginIsolated).</summary>
     [JSExport]
-    public static async Task<bool> ThreadingAvailable()
+    public static async Task ConfigureAsync(bool multithreaded)
     {
-        try { return true; }
-        catch (PlatformNotSupportedException) { return false; }
+        Wystem.Wet.ParallelExecutionUnit.Multithreaded = multithreaded;
+        Console.WriteLine("[boot] multithreaded = " + multithreaded);
+    }
+
+    [JSExport]
+    public static async Task<int> ThreadingAvailableAsync(int req)
+    {
+        int v = Wystem.Wet.ParallelExecutionUnit.ThreadingAvailable() ? 1 : 0;
+        Wystem.Wet.WetWire.Deliver(req, v.ToString());
+        return v;
     }
 
     [JSExport]
@@ -1883,30 +1902,64 @@ public static partial class BootUpJs
         _ = typeof(Wystem.Wet.WetSocket);
     }
 
-    /// <summary>
-    /// THE tick the page drives. Runs XplatUISocketWasm.TickIO() (accept/read/write)
-    /// plus one WinForms message pass. Parameterless on purpose: the page calls it
-    /// as pump() every frame, and there is nothing to deliver back.
-    /// </summary>
+    // ── the steady-state pump the page calls on a timer ──────────────────
+    // setInterval(() => boot.BootUpJs.Pump().catch(() => {}), 16)
     [JSExport]
     public static async Task Pump()
     {
-        try { System.Windows.Forms.XplatUISocketWasm.SchedulePump(); }
-        catch (Exception e) { Console.WriteLine("[Pump] " + e.Message); }
+        using var _ = Wystem.Wet.WetWire.JsCall();
+        try { System.Windows.Forms.XplatUISocketWasm.PumpMessages(); }
+        catch (Exception e) { Console.WriteLine("[Pump] " + e); }
     }
 
-    /// <summary>Same, with an RPC request id (result is pushed through deliver).</summary>
+    /// <summary>Pump + stats. Result is PUSHED through deliver — never returned.</summary>
     [JSExport]
-    public static async Task PumpRpcAsync(int req)
+    public static async Task<int> PumpRpcAsync(int req)
     {
-        try { System.Windows.Forms.XplatUISocketWasm.SchedulePump(); }
-        catch (Exception e) { Console.WriteLine("[PumpRpc] " + e.Message); }
-        if (req > 0) Wystem.Wet.WetWire.Deliver(req, "1");
+        using var _ = Wystem.Wet.WetWire.JsCall();
+        string json;
+        try
+        {
+            System.Windows.Forms.XplatUISocketWasm.PumpMessages();
+            json = System.Windows.Forms.XplatUISocketWasm.StatsJson();
+        }
+        catch (Exception e) { json = "{\"error\":\"" + e.Message.Replace("\"", "'") + "\"}"; }
+        Wystem.Wet.WetWire.Deliver(req, json);
+        return json.Length;
     }
 
-    [JSExport] public static async Task PingStrAsync(int req) => Wystem.Wet.WetWire.Deliver(req, "pong");
-    [JSExport] public static async Task PingIntAsync(int req) => Wystem.Wet.WetWire.Deliver(req, "42");
+    /// <summary>Transport only (accept/read/write) + stats, pushed through deliver.</summary>
+    [JSExport]
+    public static async Task<int> TickRpcAsync(int req)
+    {
+        using var _ = Wystem.Wet.WetWire.JsCall();
+        string json;
+        try
+        {
+            System.Windows.Forms.XplatUISocketWasm.TickIO();
+            json = System.Windows.Forms.XplatUISocketWasm.StatsJson();
+        }
+        catch (Exception e) { json = "{\"error\":\"" + e.Message.Replace("\"", "'") + "\"}"; }
+        Wystem.Wet.WetWire.Deliver(req, json);
+        return json.Length;
+    }
+
+    // Console-friendly aliases:  await rpc(r => boot.BootUpJs.PumpNowAsync(r))
+    [JSExport] public static Task<int> PumpNowAsync(int req) => PumpRpcAsync(req);
+    [JSExport] public static Task<int> TickNowAsync(int req) => TickRpcAsync(req);
+
+    [JSExport] public static async Task<int> PingStrAsync(int req) { Wystem.Wet.WetWire.Deliver(req, "pong"); return 3; }
+    [JSExport] public static async Task<int> PingIntAsync(int req) { Wystem.Wet.WetWire.Deliver(req, "42"); return 2; }
     [JSExport] public static async Task PingVoidAsync(int req) { }
+
+    /// <summary>Just the link table, no pumping.</summary>
+    [JSExport]
+    public static async Task<int> ConnsRpcAsync(int req)
+    {
+        var j = System.Windows.Forms.XplatUISocketWasm.StatsJson();
+        Wystem.Wet.WetWire.Deliver(req, j);
+        return j.Length;
+    }
 }
 #pragma warning restore CS1998
 

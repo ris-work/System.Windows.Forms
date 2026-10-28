@@ -82,31 +82,11 @@ namespace System.Windows.Forms
 
         /// <summary>True when the runtime can block — i.e. a threaded wasm build
         /// or any desktop runtime. False on single-threaded browser-wasm.</summary>
-        public static bool ThreadsAvailable
-        {
-            get
-            {
-                if (!_threads.HasValue)
-                {
-                    try
-                    {
-                        using var probe = new ManualResetEventSlim(false);
-                        probe.Wait(1);
-                        _threads = true;
-                    }
-                    catch (PlatformNotSupportedException) { _threads = false; }
-                    Log("threading: " + (_threads.Value ? "available — blocking loop" : "NOT available — pump model"));
-                }
-                return _threads.Value;
-            }
-        }
+        // Threading is decided by ParallelExecutionUnit; never probed here with a
+        // WaitHandle (ManualResetEventSlim.Wait throws PlatformNotSupportedException).
+        public static bool ThreadsAvailable => ParallelExecutionUnit.ThreadingAvailable();
 
-        static void WaitForWork(SocketQueue q, int timeoutMs)
-        {
-            if (!ThreadsAvailable) return;   // single-threaded browser: never block
-            q.Evt.Wait(timeoutMs);
-            q.Evt.Reset();
-        }
+
         static readonly object Sync = new object();
         static string SockDir = "/ui";
         static bool serverStarted;
@@ -193,16 +173,29 @@ namespace System.Windows.Forms
             public Thread Thread;
             public readonly Queue<MSG> Msgs = new Queue<MSG>();
             public readonly object Lock = new object();
-            public readonly ManualResetEventSlim Evt = new ManualResetEventSlim(false);
+
+            // NO ManualResetEventSlim: Wait() throws PlatformNotSupportedException on
+            // this runtime, and any blocking wait would freeze the interop thread on
+            // mt-wasm. This loop is pump-driven — a plain flag is all it needs.
+            public volatile bool Wake;
+
             public bool Quit;
             public int ExitCode;
-            public void Enqueue(MSG m) { lock (Lock) Msgs.Enqueue(m); Evt.Set(); }
+
+            public void Enqueue(MSG m)
+            {
+                lock (Lock) Msgs.Enqueue(m);
+                Wake = true;
+            }
+
             public bool TryDequeue(out MSG m)
             {
                 lock (Lock) { if (Msgs.Count > 0) { m = Msgs.Dequeue(); return true; } }
                 m = default;
                 return false;
             }
+
+            public void Signal() { Wake = true; }
         }
 
         class WinInfo
@@ -251,6 +244,8 @@ namespace System.Windows.Forms
             readonly StringBuilder Line = new StringBuilder();       // incoming newline framing
             public bool FrameWanted;                                  // coalesced frame slot
 
+            int _logIn, _logOut;                        // log throttles
+
             public ClientConn(WetSocket sock, WinInfo win)
             {
                 Sock = sock;
@@ -280,6 +275,9 @@ namespace System.Windows.Forms
             {
                 if (Dead || data == null || data.Length == 0) return;
                 BytesIn += data.Length;
+                if (++_logIn <= 8 || (_logIn & 31) == 0)
+                    Log("wire #" + Sock.Handle + " <- " + data.Length + "B  (in " + BytesIn +
+                        "B, rx pending " + Sock.RxPending + "B)");
 
                 string text;
                 try { text = Encoding.UTF8.GetString(data); }
@@ -355,7 +353,14 @@ namespace System.Windows.Forms
 
                     CurOff += n;
                     BytesOut += n;
-                    if (CurOff >= Cur.Length) { Cur = null; CurOff = 0; }
+                    if (CurOff >= Cur.Length)
+                    {
+                        Cur = null; CurOff = 0;
+                        if (++_logOut <= 8 || (_logOut & 31) == 0)
+                            Log("wire #" + Sock.Handle + " -> " + BytesOut + "B written, " +
+                                (BytesOut - Sock.TxPending) + "B read by peer, " +
+                                Sock.TxPending + "B STILL PENDING");
+                    }
                 }
             }
 
@@ -418,6 +423,27 @@ namespace System.Windows.Forms
                 if (Win == null) { lock (Sync) listWatchers.Remove(this); }
                 else { lock (Sync) Win.Clients.Remove(this); }
                 Log("client #" + (Sock?.Handle ?? 0) + " disconnected");
+            }
+
+
+            /// <summary>One link's accounting. "delivered" is what the peer actually pulled.</summary>
+            public string Json()
+            {
+                string peer = Win == null ? "window-list"
+                            : Win.IsDesktop ? "compositor"
+                            : "0x" + Win.Handle.ToInt64().ToString("X");
+                long pendingOut = Sock.TxPending;
+                return "{\"id\":" + Sock.Handle +
+                       ",\"peer\":\"" + peer + "\"" +
+                       ",\"sub\":" + (Subscribed ? "true" : "false") +
+                       ",\"fmt\":\"" + Format + "\"" +
+                       ",\"in\":" + BytesIn +
+                       ",\"out\":" + BytesOut +
+                       ",\"delivered\":" + (BytesOut - pendingOut) +
+                       ",\"pendingOut\":" + pendingOut +
+                       ",\"pendingIn\":" + Sock.RxPending +
+                       ",\"frames\":" + FramesOut +
+                       ",\"dead\":" + (Dead ? "true" : "false") + "}";
             }
         }
 
@@ -568,15 +594,14 @@ namespace System.Windows.Forms
         // enqueued we run one DoEvents pass on the execution unit. No JS timer.
         static int pumpScheduled;
 
+        // NOTE: no latch here on purpose. A latch that is only cleared when the work
+        // actually runs is a one-way ticket to a dead pump — if the pool item is
+        // delayed (or stranded on this RC) every later SchedulePump() returns
+        // immediately and the transport never gets another tick. PumpMessages()
+        // itself refuses re-entry (pumpRunning), which is the only guard we need.
         public static void SchedulePump()
         {
-            if (Interlocked.CompareExchange(ref pumpScheduled, 1, 0) != 0) return;
-            ParallelExecutionUnit.Run(() =>
-            {
-                try { PumpMessages(); }
-                catch (Exception e) { Log("pump: " + e.Message); }
-                finally { Interlocked.Exchange(ref pumpScheduled, 0); }
-            }, "pump");
+            ParallelExecutionUnit.Run(() => PumpMessages(), "pump");
         }
 
 
@@ -682,6 +707,7 @@ namespace System.Windows.Forms
                 if (s == null) return;
 
                 var cc = new ClientConn(s, wi);
+                Accepted++;
                 if (wi == null)
                 {
                     lock (Sync) listWatchers.Add(cc);
@@ -712,6 +738,8 @@ namespace System.Windows.Forms
             try { TickIOCore(); }
             finally { Interlocked.Exchange(ref tickRunning, 0); }
         }
+
+
 
         static void TickIOCore()
         {
@@ -755,6 +783,41 @@ namespace System.Windows.Forms
                     cc.Kill();
                 }
             }
+            Ticks++;
+            long bin = 0, bout = 0, fr = 0;
+            foreach (var cc in all) { bin += cc.BytesIn; bout += cc.BytesOut; fr += cc.FramesOut; }
+            BytesIn = bin; BytesOut = bout; FramesOut = fr;
+        }
+
+
+        // ── tick counters, so a manual pump can prove it did something ──────
+        public static long Ticks, Accepted, BytesIn, BytesOut, FramesOut;
+
+        public static string StatsJson()
+        {
+            var all = new List<ClientConn>();
+            int listeners = 0, pending = 0;
+            lock (Sync)
+            {
+                all.AddRange(listWatchers);
+                if (desktopWi != null) all.AddRange(desktopWi.Clients);
+                foreach (var t in topWindows.Values) all.AddRange(t.Clients);
+            }
+            foreach (var s in WetRegistry.Listeners) { listeners++; pending += s.PendingAccepts; }
+
+            long bin = 0, bout = 0, fr = 0;
+            var links = new StringBuilder();
+            foreach (var cc in all)
+            {
+                if (links.Length > 0) links.Append(',');
+                links.Append(cc.Json());
+                bin += cc.BytesIn; bout += cc.BytesOut; fr += cc.FramesOut;
+            }
+
+            return "{\"ticks\":" + Ticks + ",\"accepted\":" + Accepted +
+                   ",\"bytesIn\":" + bin + ",\"bytesOut\":" + bout + ",\"frames\":" + fr +
+                   ",\"listeners\":" + listeners + ",\"pending\":" + pending +
+                   ",\"links\":[" + links + "]}";
         }
 
         // ── RAW formats (no codec — memcpy / one integer pass per pixel) ──
@@ -2175,6 +2238,14 @@ namespace System.Windows.Forms
 
         internal static Action JsYield;
 
+        // NEVER blocks. A blocking wait (ManualResetEventSlim.Wait) throws
+        // PlatformNotSupportedException here, and on mt-wasm it would freeze the
+        // interop thread. When the queue is empty this Run loop is over — the page
+        // keeps dispatching through BootUpJs.Pump -> PumpMessages().
+        // NEVER blocks. A blocking wait (ManualResetEventSlim.Wait) throws
+        // PlatformNotSupportedException here, and on mt-wasm it would freeze the
+        // interop thread. When the queue is empty this Run loop is over — the page
+        // keeps dispatching through BootUpJs.Pump -> PumpMessages().
         internal override bool GetMessage(object queue_id, ref MSG msg, IntPtr hWnd, int wFilterMin, int wFilterMax)
         {
             var q = (SocketQueue)queue_id;
@@ -2200,21 +2271,12 @@ namespace System.Windows.Forms
                     return false;
                 }
                 RaiseIdle(EventArgs.Empty);
-                JsYield?.Invoke();
 
-                WaitForWork(q, NextTimeout(250));
-
-                if (!canBlock)
-                {
-                    // Single-threaded browser-wasm: we cannot wait here. End the
-                    // Run loop cleanly and let the browser host keep dispatching
-                    // through PumpMessages()/DoEvents() (form.Show() + [JSExport] Pump).
-                    msg.hwnd = IntPtr.Zero;
-                    msg.message = Msg.WM_QUIT;
-                    msg.wParam = IntPtr.Zero;
-                    msg.lParam = IntPtr.Zero;
-                    return false;
-                }
+                msg.hwnd = IntPtr.Zero;
+                msg.message = Msg.WM_QUIT;
+                msg.wParam = IntPtr.Zero;
+                msg.lParam = IntPtr.Zero;
+                return false;
             }
         }
 
@@ -2289,7 +2351,7 @@ namespace System.Windows.Forms
             var q = ThreadQueue(Thread.CurrentThread);
             q.ExitCode = exitCode;
             q.Quit = true;
-            q.Evt.Set();
+            q.Signal();
         }
 
         internal override void SendAsyncMethod(AsyncMethodData method)
@@ -2821,8 +2883,7 @@ namespace System.Windows.Forms
         internal override void SetTimer(Timer timer)
         {
             lock (Sync) if (!timers.Contains(timer)) timers.Add(timer);
-            lock (Sync) foreach (var q in queues.Values) q.Evt.Set();
-            EnsureTimerPump();                    // WinForms timers need a heartbeat
+            lock (Sync) foreach (var q in queues.Values) q.Signal();
             SchedulePump();
         }
 
