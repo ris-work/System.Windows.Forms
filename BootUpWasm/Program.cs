@@ -1797,21 +1797,14 @@ if (!OperatingSystem.IsBrowser())
 }
 else
 {
-    // ── browser on this RC ─────────────────────────────────────────
-    //  * Task.Run is inline when the pool is idle → never wrap a blocking
-    //    loop in it.
-    //  * await continuations are stranded unless the pool is fed → keep
-    //    feeding it.
-    //  * so: Show() on this thread, then a feeder loop that (a) submits
-    //    pool work so continuations drain, and (b) pumps the message loop.
     form.Show();
-    Console.WriteLine("[boot] browser: feeder loop (pool-fed pump)");
+    Console.WriteLine("[boot] browser: fed-and-yielding pump loop");
     while (true)
     {
-        _ = Task.Run(() => Console.WriteLine("[pool] tick"));                                   // feeds the pool → continuations drain
-        System.Windows.Forms.XplatUISocketWasm.SchedulePump();     // message loop pass
+        await Task.Run(() => { });                 // feeds the pool (continuations drain)
+                                                   // AND suspends Main (interop thread is free)
+        System.Windows.Forms.XplatUISocketWasm.SchedulePump();
     }
-
 }
 
 /*if (await BootUpJs.ThreadingAvailable())
@@ -1901,8 +1894,8 @@ public static partial class BootUpJs
         //await Wystem.Wet.WetWire.Deliver(req, "1");
     }
 
-    [JSExport] public static async Task PingStrAsync(int req) => await Wystem.Wet.WetWire.Deliver(req, "pong");
-    [JSExport] public static async Task PingIntAsync(int req) => await Wystem.Wet.WetWire.Deliver(req, "42");
+    [JSExport] public static async Task PingStrAsync(int req) => Wystem.Wet.WetWire.Deliver(req, "pong");
+    [JSExport] public static async Task PingIntAsync(int req) => Wystem.Wet.WetWire.Deliver(req, "42");
     [JSExport] public static async Task PingVoidAsync(int req) { }
 }
 #pragma warning restore CS1998

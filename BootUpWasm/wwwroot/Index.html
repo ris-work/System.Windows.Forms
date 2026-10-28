@@ -37,14 +37,14 @@
         }
 
         #sidebar {
-            width: 300px;
+            width: 320px;
             background: var(--panel);
             border-right: 1px solid var(--line);
-            padding: 12px;
+            padding: 10px;
             overflow: auto;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 10px;
         }
 
         h1 {
@@ -94,7 +94,7 @@
                 overflow: hidden;
                 text-overflow: ellipsis;
                 white-space: nowrap;
-                max-width: 175px;
+                max-width: 185px;
             }
 
         .tag {
@@ -239,7 +239,7 @@
             bottom: 0;
             left: 0;
             right: 0;
-            height: 170px;
+            height: 190px;
             overflow: auto;
             background: rgba(0, 0, 0, .78);
             border-top: 1px solid var(--line);
@@ -290,18 +290,35 @@
 
         <div class="panel">
             <h2>runtime</h2>
-            <div class="kv"><b>viewer edition</b><span id="info-edition">async/mt v7 · safe errors</span></div>
+            <div class="kv"><b>viewer edition</b><span id="info-edition">async/mt v8 · viewer+tests</span></div>
             <div class="kv"><b>main assembly</b><span id="info-main">—</span></div>
             <div class="kv"><b>WetJs source</b><span id="info-wet">resolving…</span></div>
+            <div class="kv"><b>echo service</b><span id="info-echo">resolving…</span></div>
             <div class="kv"><b>message pump</b><span id="info-pump">checking…</span></div>
             <div class="kv"><b>frames</b><span id="info-frames">0</span></div>
             <div class="kv"><b>throughput</b><span id="info-fps">0 fps</span></div>
-            <div class="row" style="margin-top:6px">
-                <button class="mini" id="btn-pump">pump</button>
-                <button class="mini" id="btn-test">test</button>
-                <button class="mini" id="btn-listeners">listeners</button>
-                <button class="mini" id="btn-ping">ping</button>
-                <button class="mini" id="btn-env">env</button>
+        </div>
+
+        <div class="panel">
+            <h2>transport test (echo)</h2>
+            <div class="row">
+                <button class="primary" id="e-start">start /echo</button>
+                <button id="e-stats">stats</button>
+                <button id="e-reset">reset</button>
+                <button id="e-stop">stop</button>
+            </div>
+            <div class="row" style="margin-top:8px">
+                <button id="e-connect">connect</button>
+                <button id="e-write">write</button>
+                <button id="e-tick">echo tick</button>
+                <button id="e-read">read all</button>
+                <button id="e-close">close</button>
+            </div>
+            <div class="row" style="margin-top:8px">
+                <label style="margin:0">size <input id="e-size" type="number" value="1024" style="width:74px"></label>
+                <label style="margin:0">count <input id="e-count" type="number" value="100" style="width:74px"></label>
+                <button class="primary" id="e-rt">round-trip</button>
+                <button id="e-flood">speed</button>
             </div>
         </div>
 
@@ -318,6 +335,11 @@
                     <option>jpeg</option>
                     <option>png</option>
                     <option>svg</option>
+                    <option value="rawbgra">raw BGRA8</option>
+                    <option value="rawg8">raw Gray8</option>
+                    <option value="rawbgra332">raw 332</option>
+                    <option value="rawbgra1">raw 1bpp</option>
+                    <option value="rawycbcr322">raw YCbCr 4:2:2</option>
                 </select>
             </label>
             <label>quality <input type="range" id="q" min="1" max="100" value="75"></label>
@@ -337,12 +359,15 @@
             <div class="row" style="margin-top:6px">
                 <button class="mini" id="btn-reconnect">reconnect</button>
                 <button class="mini" id="btn-disconnect">disconnect</button>
+                <button class="mini" id="btn-ping">ping</button>
+                <button class="mini" id="btn-env">env</button>
             </div>
         </div>
 
         <div class="panel">
             <h2>log</h2>
             <div class="row">
+                <button class="mini" id="b-pause">pause output</button>
                 <button class="mini" id="clearlog">clear</button>
                 <button class="mini" id="copylog">copy</button>
                 <label style="margin:0"><input type="checkbox" id="autoscroll" checked> autoscroll</label>
@@ -359,13 +384,16 @@
 
     <script type="module">
         // ══════════════════════════════════════════════════════════════════
-        //  XplatUISocketWasm viewer — ASYNC / MT EDITION (v7)
-        //  = v6 + fmtErr(): NEVER read .stack / .message off a managed
-        //  exception proxy. Property access on it is a synchronous JS→.NET
-        //  call, which MT forbids ("Cannot call synchronous C# methods") —
-        //  it was throwing INSIDE the catch block that was printing the error.
+        //  XplatUISocketWasm viewer — ASYNC / MT EDITION (v8)
+        //  = v7 (safe errors, RPC/push results) + transport test panel + pause.
+        //
+        //  Rules for this runtime:
+        //   * JS→.NET: `async Task*` exports, args only — never rely on returned values
+        //     except Task<int>; strings come back pushed via deliver.
+        //   * .NET→JS: fire-and-forget imports; never block the interop thread.
+        //   * no .stack/.message property access off managed exception proxies.
         // ══════════════════════════════════════════════════════════════════
-        const EDITION = 'async/mt v7';
+        const EDITION = 'async/mt v8 · viewer+tests';
         import { dotnet } from './_framework/dotnet.js'
 
         const $ = (s) => document.querySelector(s);
@@ -374,11 +402,6 @@
         const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
         const num = (v) => Number(v);
 
-        /**
-         * Safe error formatting for BOTH plain JS errors and managed-exception
-         * proxies. Reading .stack on the latter is a synchronous interop call and
-         * throws under wasm threads — so we only ever read .message, guarded.
-         */
         function fmtErr(e) {
             try {
                 if (e == null) return String(e);
@@ -398,14 +421,24 @@
             return u8;
         }
 
+        // ── log with pause ──────────────────────────────────────────────
         const logBox = $('#log');
+        let paused = false, held = [];
+
         function log(level, msg) {
             const t = new Date().toTimeString().slice(0, 8);
             const cls = level === 'error' ? 'e' : level === 'warn' ? 'w' : level === 'ok' ? 's' : level === 'banner' ? 'b' : 'i';
-            logBox.innerHTML += `<span class="t">${t}</span> <span class="${cls}">${esc(msg)}</span>\n`;
+            const line = `<span class="t">${t}</span> <span class="${cls}">${esc(msg)}</span>\n`;
+            if (paused) {
+                held.push(line);
+                $('#b-pause').textContent = `pause output (${held.length})`;
+                return;
+            }
+            logBox.innerHTML += line;
             if (logBox.textContent.length > 250000) logBox.textContent = logBox.textContent.slice(-120000);
             if ($('#autoscroll').checked) logBox.scrollTop = logBox.scrollHeight;
         }
+
         function setTag(kind, text) { const s = $('#status'); s.className = 'tag ' + kind; s.textContent = text; }
         function setBar(t) { $('#bar').textContent = t; }
         function info(id, text) { const el = $(id); if (el) el.textContent = text; }
@@ -419,6 +452,20 @@
         // ───────────────────── runtime + .NET → JS wire ─────────────────────
         const conns = new Map();
         const services = new Map();
+        let rpcSeq = 0;
+        const rpcPending = new Map();
+
+        function rpc(fn) {
+            return new Promise((resolve, reject) => {
+                const req = ++rpcSeq;
+                rpcPending.set(req, { resolve, reject });
+                try { fn(req); }
+                catch (e) { rpcPending.delete(req); reject(e); }
+                setTimeout(() => {
+                    if (rpcPending.delete(req)) reject(new Error('rpc timeout'));
+                }, 8000);
+            });
+        }
 
         const { setModuleImports, getAssemblyExports, getConfig } = await dotnet.create();
         info('#info-main', getConfig().mainAssemblyName);
@@ -441,13 +488,16 @@
                 setTimeout(() => onNotify(num(handle), kind), 0);
             },
 
-            // results are PUSHED here — string returns from [JSExport] never arrive
-            // results are PUSHED here
+            // results are PUSHED here — returned Task<string> values never arrive
             async deliver(req, payload) {
-                log('info', `[deliver] req=${req} len=${(payload ?? '').length}`);
-                const p = rpcPending.get(num(req));
-                if (p) { rpcPending.delete(num(req)); p.resolve(payload ?? ''); }
-                else log('warn', `[deliver] unmatched req=${req} pending=[${[...rpcPending.keys()].join(',')}]`);
+                const key = num(req);
+                const p = rpcPending.get(key);
+                if (!p) {
+                    log('warn', `[deliver] unmatched req=${req} pending=[${[...rpcPending.keys()].join(',') || 'none'}]`);
+                    return;
+                }
+                rpcPending.delete(key);
+                p.resolve(payload ?? '');
             },
         });
 
@@ -482,8 +532,8 @@
             })();
         }
 
-        // ───────────────────── WetJs resolution ─────────────────────
-        let wet = null, wetSource = null, pump = null, runtimeDead = false;
+        // ───────────────────── export resolution ─────────────────────
+        let wet = null, wetSource = null, echoJs = null, pump = null, runtimeDead = false;
 
         function die(reason, level = 'error') {
             if (runtimeDead) return;
@@ -492,24 +542,32 @@
             setTag('off', 'runtime exited');
         }
 
-        async function tryResolveWet() {
+        async function tryResolveExports() {
             for (const name of [getConfig().mainAssemblyName, 'WetAfunix', 'WetAfunix.dll', 'Wystem.Wet', 'System.Windows.Forms']) {
                 let root;
                 try { root = await getAssemblyExports(name); } catch { continue; }
+
                 const w = root?.WetJs ?? root?.Wystem?.Wet?.WetJs ?? root?.Wystem?.WetJs;
-                const p = boot?.BootUpJs?.PumpRpcAsync;      // ← app-level, not WetJs
-                if (!pump && typeof p === 'function') pump = p;
-                if (w && typeof w.WriteAsync === 'function') {
-                    if (!wetSource) { wetSource = name; log('ok', `WetJs found in "${name}" (async surface)`); }
-                    return w;
+                const e = root?.WetEchoJs ?? root?.Wystem?.Wet?.WetEchoJs;
+                const p = root?.BootUpJs?.Pump ?? root?.BootUpJs?.PumpRpcAsync ?? root?.XplatUISocketWasm?.Pump;
+
+                if (!echoJs && typeof e?.StartEchoAsync === 'function') {
+                    echoJs = e;
+                    log('ok', `WetEchoJs found in "${name}"`);
                 }
-                if (w && typeof w.Write === 'function')
-                    log('warn', `WetJs in "${name}" exposes only SYNC exports — need the *Async surface`);
+                if (!pump && typeof p === 'function') pump = p;
+
+                if (!wet && (typeof w?.WriteRpcAsync === 'function' || typeof w?.WriteAsync === 'function')) {
+                    wet = w;
+                    wetSource = name;
+                    log('ok', `WetJs found in "${name}"`);
+                }
+
+                if (wet && echoJs) break;
             }
-            return null;
         }
 
-        async function initWet() {
+        async function initExports() {
             try {
                 const boot = await getAssemblyExports(getConfig().mainAssemblyName);
                 globalThis.boot = boot;
@@ -518,12 +576,13 @@
                 if (r) { await r; log('info', 'LoadWet() awaited — WetAfunix forced to load'); }
             } catch (e) { log('warn', 'LoadWet: ' + fmtErr(e)); }
 
-            for (let i = 0; i < 150 && !wet; i++) {
-                wet = await tryResolveWet();
-                if (!wet) await new Promise((r) => setTimeout(r, 200));
+            for (let i = 0; i < 150 && (!wet || !echoJs); i++) {
+                await tryResolveExports();
+                if (!wet || !echoJs) await new Promise((r) => setTimeout(r, 200));
             }
             info('#info-wet', wet ? wetSource : 'NOT FOUND');
-            return wet;
+            info('#info-echo', echoJs ? 'ready' : 'NOT FOUND');
+            return !!wet;
         }
 
         function getWet() {
@@ -580,25 +639,6 @@
             return c;
         }
 
-
-        // ---- request/response over pushed results (strings never come back as
-        //      return values on this runtime, so .NET pushes them) ----
-        let rpcSeq = 0;
-        const rpcPending = new Map();
-
-        function rpc(fn, ...args) {
-            return new Promise((resolve, reject) => {
-                const req = ++rpcSeq;
-                log('info', `[rpc] req=${req} registered`);
-                rpcPending.set(req, { resolve, reject });
-                try { fn(req, ...args); }
-                catch (e) { rpcPending.delete(req); reject(e); }
-                setTimeout(() => {
-                    if (rpcPending.delete(req)) { log('warn', `[rpc] req=${req} TIMEOUT`); reject(new Error('rpc timeout')); }
-                }, 5000);
-            });
-        }
-
         const AF_UNIX = {
             list: async () => JSON.parse(await rpc((req) => getWet().ListRpcAsync(req))),
 
@@ -610,20 +650,23 @@
             },
 
             connect: async (path) => {
-                const raw = await rpc((req) => getWet().ConnectRpcAsync(req, path));   // ← RPC name
+                const raw = await rpc((req) => getWet().ConnectRpcAsync(req, path));
                 const id = num(raw);
                 log('info', `[connect] unix:${path} -> raw=${raw} (${typeof raw}) id=${id}`);
                 if (!(id >= 0)) throw new Error(`connect refused — nothing listening at unix:${path}`);
                 return makeConn(id);
             },
 
-            read: (id, max) => rpc((req) => getWet().ReadRpcAsync(req, num(id), max)).then((b64) => (b64 ? b64ToU8(b64) : new Uint8Array(0))),
+            read: (id, max) => rpc((req) => getWet().ReadRpcAsync(req, num(id), max))
+                .then((b64) => (b64 ? b64ToU8(b64) : new Uint8Array(0))),
+
             write: (id, data) => rpc((req) => getWet().WriteRpcAsync(req, num(id), toU8(data))).then(num),
+
             disconnect: (id) => rpc((req) => getWet().CloseRpcAsync(req, num(id))).then(num),
+
             listen: (path, onAccept) => services.set(path, onAccept),
         };
         globalThis.AF_UNIX = AF_UNIX;
-
 
         // ────────────────── newline-delimited JSON framing ──────────────────
         class LineConn {
@@ -721,7 +764,8 @@
                 log('ok', `connected #${c.id} → unix:${LIST_PATH}`);
             } catch (e) {
                 info('#info-list', 'waiting for ' + LIST_PATH);
-                log('warn', 'connectList: ' + fmtErr(e));
+                const m = fmtErr(e);
+                if (!/connect refused/.test(m)) log('warn', 'connectList: ' + m);
                 setTimeout(connectList, 700);
             } finally {
                 listBusy = false;
@@ -808,6 +852,86 @@
         // ───────────────────────── frames ─────────────────────────
         let frameCount = 0, lastFrame = null, fpsCount = 0, fpsMark = performance.now(), fpsShown = 0;
 
+        const clamp255 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v | 0);
+
+        function renderRawFrame(m) {
+            let cv = document.getElementById('rawcanvas');
+            if (!cv) {
+                cv = document.createElement('canvas');
+                cv.id = 'rawcanvas';
+                cv.style.maxWidth = '100%';
+                cv.style.maxHeight = '100%';
+                cv.style.imageRendering = 'pixelated';
+                $('#stage').insertBefore(cv, $('#bar').nextSibling);
+            }
+            cv.width = m.width;
+            cv.height = m.height;
+            const ctx = cv.getContext('2d');
+            const img = ctx.createImageData(m.width, m.height);
+            const d = img.data;
+            const px = b64ToU8(m.data);
+            const w = m.width, h = m.height;
+
+            switch (m.pixelformat) {
+                case 'bgra8':
+                    for (let i = 0, j = 0; i < px.length; i += 4, j += 4) {
+                        d[j] = px[i + 2]; d[j + 1] = px[i + 1]; d[j + 2] = px[i]; d[j + 3] = 255;
+                    }
+                    break;
+                case 'gray8':
+                    for (let i = 0, j = 0; i < px.length; i++, j += 4) {
+                        const v = px[i];
+                        d[j] = d[j + 1] = d[j + 2] = v; d[j + 3] = 255;
+                    }
+                    break;
+                case 'bgra332':
+                    for (let i = 0, j = 0; i < px.length; i++, j += 4) {
+                        const v = px[i];
+                        d[j] = clamp255(((v >> 5) & 7) * 255 / 7);
+                        d[j + 1] = clamp255(((v >> 2) & 7) * 255 / 7);
+                        d[j + 2] = clamp255((v & 3) * 255 / 3);
+                        d[j + 3] = 255;
+                    }
+                    break;
+                case 'bgra1':
+                    {
+                        const stride = m.stride;
+                        for (let y = 0; y < h; y++) {
+                            for (let x = 0; x < w; x++) {
+                                const bit = (px[y * stride + (x >> 3)] >> (7 - (x & 7))) & 1;
+                                const j = (y * w + x) * 4;
+                                const v = bit ? 255 : 0;
+                                d[j] = d[j + 1] = d[j + 2] = v; d[j + 3] = 255;
+                            }
+                        }
+                    }
+                    break;
+                case 'ycbcr422':
+                    {
+                        const cw = m.chromawidth;
+                        const cboff = w * h, croff = cboff + cw * h;
+                        for (let y = 0; y < h; y++) {
+                            for (let x = 0; x < w; x++) {
+                                const Y = px[y * w + x];
+                                const cx = x >> 1;
+                                const Cb = px[cboff + y * cw + cx] - 128;
+                                const Cr = px[croff + y * cw + cx] - 128;
+                                const j = (y * w + x) * 4;
+                                d[j] = clamp255(Y + 1.402 * Cr);
+                                d[j + 1] = clamp255(Y - 0.344136 * Cb - 0.714136 * Cr);
+                                d[j + 2] = clamp255(Y + 1.772 * Cb);
+                                d[j + 3] = 255;
+                            }
+                        }
+                    }
+                    break;
+            }
+            ctx.putImageData(img, 0, 0);
+            cv.style.display = 'block';
+            $('#frame').style.display = 'none';
+            $('#svgwrap').style.display = 'none';
+        }
+
         function handleFrame(m) {
             frameCount++;
             fpsCount++;
@@ -825,6 +949,10 @@
                 $('#svgwrap').style.display = 'block';
                 $('#svgwrap').innerHTML = m.data;
                 setBar(`frame #${frameCount} · svg ${m.width}x${m.height} · ${fpsShown} fps`);
+            } else if (m.pixelformat) {
+                lastFrame = { format: m.format, data: m.data };
+                renderRawFrame(m);
+                setBar(`frame #${frameCount} · ${m.format} ${m.width}x${m.height} · ${fpsShown} fps`);
             } else {
                 lastFrame = { format: m.format, data: m.data };
                 $('#svgwrap').style.display = 'none';
@@ -836,34 +964,29 @@
             }
         }
 
-        // ───────────────────────── pump (manual + timer) ─────────────────────────
-        async function pumpOnce() {
-            if (runtimeDead) { log('warn', 'pump: runtime dead'); return; }
-            const bootJs = globalThis.boot && globalThis.boot.BootUpJs;
-            if (!bootJs || typeof bootJs.PumpRpcAsync !== 'function') {
-                log('warn', 'pump: BootUpJs.PumpRpcAsync not found yet');
-                return;
-            }
-            try {
-                await rpc((req) => bootJs.PumpRpcAsync(req));
-                log('ok', 'pump kicked');
-            } catch (e) {
-                log('warn', 'pump: ' + fmtErr(e));
-            }
-        }
-
         // ───────────────────────── input (HTML → .NET) ─────────────────────────
         function imgPos(e) {
-            const img = $('#frame');
-            if (img.style.display === 'none' || !img.naturalWidth) return null;
-            const r = img.getBoundingClientRect();
-            const scale = Math.min(r.width / img.naturalWidth, r.height / img.naturalHeight);
-            const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
+            const cv = document.getElementById('rawcanvas');
+            const target = (cv && cv.style.display !== 'none') ? cv : $('#frame');
+            if (target.tagName === 'CANVAS') {
+                const r = target.getBoundingClientRect();
+                const scale = Math.min(r.width / target.width, r.height / target.height);
+                const dw = target.width * scale, dh = target.height * scale;
+                const ox = r.left + (r.width - dw) / 2, oy = r.top + (r.height - dh) / 2;
+                const x = Math.floor((e.clientX - ox) / scale);
+                const y = Math.floor((e.clientY - oy) / scale);
+                return (x < 0 || y < 0 || x >= target.width || y >= target.height) ? null : { x, y };
+            }
+            if (target.style.display === 'none' || !target.naturalWidth) return null;
+            const r = target.getBoundingClientRect();
+            const scale = Math.min(r.width / target.naturalWidth, r.height / target.naturalHeight);
+            const dw = target.naturalWidth * scale, dh = target.naturalHeight * scale;
             const ox = r.left + (r.width - dw) / 2, oy = r.top + (r.height - dh) / 2;
             const x = Math.floor((e.clientX - ox) / scale);
             const y = Math.floor((e.clientY - oy) / scale);
-            return (x < 0 || y < 0 || x >= img.naturalWidth || y >= img.naturalHeight) ? null : { x, y };
+            return (x < 0 || y < 0 || x >= target.naturalWidth || y >= target.naturalHeight) ? null : { x, y };
         }
+
         function svgPos(e) {
             const svg = $('#svgwrap').querySelector('svg');
             if (!svg) return null;
@@ -875,7 +998,8 @@
             const y = Math.floor((e.clientY - r.top) / r.height * h);
             return (x < 0 || y < 0 || x >= w || y >= h) ? null : { x, y };
         }
-        const pos = (e) => $('#frame').style.display !== 'none' ? imgPos(e) : svgPos(e);
+
+        const pos = (e) => imgPos(e) || svgPos(e);
         const btnName = (b) => b === 2 ? 'right' : b === 1 ? 'middle' : 'left';
         const sendWin = (o) => { if (winConn && !runtimeDead) winConn.send(o); };
 
@@ -900,6 +1024,7 @@
             Semicolon: 'Oem1', Equal: 'Oemplus', Comma: 'Oemcomma', Minus: 'OemMinus', Period: 'OemPeriod', Slash: 'OemQuestion',
             Backquote: 'Oem8', BracketLeft: 'OemOpenBrackets', BracketRight: 'OemCloseBrackets', Backslash: 'Oem5', Quote: 'Oem7',
         };
+
         function keyName(e) {
             const c = e.code || '';
             if (c.startsWith('Key')) return c.slice(3);
@@ -918,6 +1043,7 @@
                 sendWin({ type: 'text', text: e.key });
             if (['Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Backspace', ' '].includes(e.key)) e.preventDefault();
         });
+
         document.addEventListener('keyup', (e) => {
             if (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
             sendWin({ type: 'keyup', key: keyName(e) });
@@ -930,25 +1056,41 @@
             else log('warn', `no element for ${sel}`);
         };
 
-        on('#btn-pump', 'click', () => { log('info', '⚙ pump pressed'); pumpOnce(); });
-        on('#btn-test', 'click', async () => {
-            log('info', '🧪 test pressed');
-            try {
-                const js = getWet();
-                const l = await rpc((req) => js.ListRpcAsync(req));
-                log('ok', `ListRpc -> ${String(l).slice(0, 120)}`);
-                const raw = await js.ConnectAsync(LIST_PATH);
-                log('ok', `ConnectAsync -> ${typeof raw} ${raw}`);
-            } catch (e) { log('error', 'test: ' + fmtErr(e)); }
+        // log controls
+        on('#b-pause', 'click', () => {
+            paused = !paused;
+            if (!paused) {
+                logBox.innerHTML += held.join('');
+                held = [];
+                $('#b-pause').textContent = 'pause output';
+                logBox.scrollTop = logBox.scrollHeight;
+                log('ok', 'output resumed');
+            } else {
+                log('warn', 'output paused (lines are held back)');
+                $('#b-pause').textContent = 'resume output (0)';
+            }
         });
-
-        on('#refresh', 'click', () => { log('info', '↻ refresh pressed'); resub(); });
         on('#clearlog', 'click', () => { logBox.textContent = ''; });
         on('#copylog', 'click', async () => {
             log('info', 'copy pressed');
             try { await navigator.clipboard.writeText(logBox.textContent); log('ok', 'log copied to clipboard'); }
             catch (e) { log('warn', 'copy failed: ' + fmtErr(e)); }
         });
+
+        // window list / connection
+        on('#btn-reconnect', 'click', () => {
+            log('info', '↩ reconnect pressed');
+            if (curWin) connectWin(curWin);
+            else { listConn?.close(); listConn = null; connectList(); }
+        });
+        on('#btn-disconnect', 'click', () => { log('info', '⏹ disconnect pressed'); closeWin('manual'); });
+        on('#btn-ping', 'click', () => { log('info', 'ping →'); sendWin({ type: 'ping' }); });
+        on('#btn-env', 'click', () => log('info',
+            `[env] crossOriginIsolated=${crossOriginIsolated} SharedArrayBuffer=${typeof SharedArrayBuffer} ` +
+            `devicePixelRatio=${devicePixelRatio} edition=${EDITION}`));
+
+        // stream
+        on('#refresh', 'click', () => { log('info', '↻ refresh pressed'); resub(); });
         on('#save', 'click', () => {
             log('info', '💾 save pressed');
             if (!lastFrame) { log('warn', 'no frame to save yet'); return; }
@@ -969,32 +1111,117 @@
         on('#fps', 'change', () => { log('info', 'fps → ' + $('#fps').value); resub(); });
         on('#live', 'change', () => { log('info', 'live → ' + $('#live').checked); resub(); });
 
-        on('#btn-reconnect', 'click', () => {
-            log('info', '↩ reconnect pressed');
-            if (curWin) connectWin(curWin);
-            else { listConn?.close(); listConn = null; connectList(); }
+        // ───────────────── transport test (echo) ─────────────────
+        let echoConn = null;
+
+        on('#e-start', 'click', async () => {
+            log('info', '▶ start /echo');
+            try { log('ok', 'echo: ' + await rpc((req) => echoJs.StartEchoAsync(req))); }
+            catch (e) { log('error', 'start: ' + fmtErr(e)); }
         });
-        on('#btn-disconnect', 'click', () => { log('info', '⏹ disconnect pressed'); closeWin('manual'); });
-        on('#btn-ping', 'click', () => { log('info', 'ping →'); sendWin({ type: 'ping' }); });
-        on('#btn-env', 'click', () => log('info',
-            `[env] crossOriginIsolated=${crossOriginIsolated} SharedArrayBuffer=${typeof SharedArrayBuffer} ` +
-            `devicePixelRatio=${devicePixelRatio} edition=${EDITION}`));
-        on('#btn-listeners', 'click', async () => {
-            log('info', 'listeners →');
+        on('#e-stop', 'click', async () => {
+            log('info', '■ stop /echo');
+            try { log('ok', 'echo: ' + await rpc((req) => echoJs.StopEchoAsync(req))); }
+            catch (e) { log('error', 'stop: ' + fmtErr(e)); }
+        });
+        on('#e-stats', 'click', async () => {
+            try { log('info', 'stats: ' + await rpc((req) => echoJs.StatsAsync(req))); }
+            catch (e) { log('error', 'stats: ' + fmtErr(e)); }
+        });
+        on('#e-reset', 'click', async () => {
+            try { log('info', await rpc((req) => echoJs.ResetAsync(req))); }
+            catch (e) { log('error', 'reset: ' + fmtErr(e)); }
+        });
+
+        on('#e-connect', 'click', async () => {
+            log('info', '→ connect /echo');
             try {
-                const js = getWet();
-                const listening = await rpc((req) => js.ListeningRpcAsync(req));
-                const all = await rpc((req) => js.ListRpcAsync(req));
-                log('info', `ListeningRpc raw: ${String(listening).slice(0, 300)}`);
-                log('info', `ListRpc      raw: ${String(all).slice(0, 300)}`);
-            } catch (e) { log('error', 'listeners: ' + fmtErr(e)); }
+                echoConn = await AF_UNIX.connect('/echo');
+                log('ok', `echo connected #${echoConn.id}`);
+            } catch (e) { log('error', 'connect: ' + fmtErr(e)); }
+        });
+        on('#e-write', 'click', async () => {
+            const size = +$('#e-size').value;
+            try {
+                const n = await echoConn.write(new Uint8Array(size).fill(65));
+                log('ok', `write ${n}B`);
+            } catch (e) { log('error', 'write: ' + fmtErr(e)); }
+        });
+        on('#e-tick', 'click', async () => {
+            try {
+                const n = await rpc((req) => echoJs.EchoTickAsync(req));
+                log('info', `echo tick handled ${n}`);
+            } catch (e) { log('error', 'tick: ' + fmtErr(e)); }
+        });
+        on('#e-read', 'click', async () => {
+            let total = 0;
+            try {
+                for (let i = 0; i < 100; i++) {
+                    const u8 = await echoConn.read(65536);
+                    if (!u8.length) break;
+                    total += u8.length;
+                }
+                log('ok', `read ${total}B`);
+            } catch (e) { log('error', 'read: ' + fmtErr(e)); }
+        });
+        on('#e-close', 'click', async () => {
+            try { await echoConn.close(); log('ok', 'echo conn closed'); }
+            catch (e) { log('error', 'close: ' + fmtErr(e)); }
+        });
+
+        on('#e-rt', 'click', async () => {
+            const size = +$('#e-size').value, count = +$('#e-count').value;
+            log('info', `round-trip: ${count} × ${size}B`);
+            try {
+                const c = await AF_UNIX.connect('/echo');
+                const payload = new Uint8Array(size).fill(65);
+                const t0 = performance.now();
+                let got = 0;
+                for (let i = 0; i < count; i++) {
+                    await c.write(payload);
+                    await rpc((req) => echoJs.EchoTickAsync(req));
+                    let need = size;
+                    while (need > 0) {
+                        const u8 = await c.read(need);
+                        if (!u8.length) break;
+                        need -= u8.length; got += u8.length;
+                    }
+                }
+                const ms = performance.now() - t0;
+                await c.close();
+                log('ok', `round-trip: ${got}B in ${ms.toFixed(0)}ms → ${(got / 1024 / (ms / 1000)).toFixed(1)} KiB/s · ${(count / (ms / 1000)).toFixed(1)} ops/s`);
+            } catch (e) { log('error', 'round-trip: ' + fmtErr(e)); }
+        });
+
+        on('#e-flood', 'click', async () => {
+            const size = +$('#e-size').value, count = +$('#e-count').value;
+            log('info', `speed test: ${count} × ${size}B (pause the log for clean numbers)`);
+            try {
+                await rpc((req) => echoJs.ResetAsync(req));
+                const c = await AF_UNIX.connect('/echo');
+                const payload = new Uint8Array(size).fill(65);
+                const t0 = performance.now();
+                let got = 0;
+                for (let i = 0; i < count; i++) {
+                    await c.write(payload);
+                    if ((i & 15) === 15) await rpc((req) => echoJs.EchoTickAsync(req));
+                }
+                await rpc((req) => echoJs.EchoTickAsync(req));
+                while (true) {
+                    const u8 = await c.read(65536);
+                    if (!u8.length) break;
+                    got += u8.length;
+                }
+                const ms = performance.now() - t0;
+                await c.close();
+                log('ok', `flood: ${got}B in ${ms.toFixed(0)}ms → ${(got / 1024 / (ms / 1000)).toFixed(1)} KiB/s`);
+            } catch (e) { log('error', 'flood: ' + fmtErr(e)); }
         });
 
         window.addEventListener('error', (e) => log('error', 'window.onerror: ' + fmtErr(e.error || e.message)));
-        window.addEventListener('unhandledrejection', (e) =>
-            log('error', 'unhandledrejection: ' + fmtErr(e.reason)));
+        window.addEventListener('unhandledrejection', (e) => log('error', 'unhandledrejection: ' + fmtErr(e.reason)));
         window.addEventListener('beforeunload', () => {
-            try { winConn?.close(); listConn?.close(); } catch { }
+            try { winConn?.close(); listConn?.close(); echoConn?.close(); } catch { }
         });
 
         AF_UNIX.listen('/js-echo', (c) => {
@@ -1002,33 +1229,29 @@
             c.ondata = (u8) => c.write(u8).catch((e) => log('warn', 'js-echo: ' + fmtErr(e)));
         });
 
-        // ─────────────── console surface: everything global ───────────────
+        // ─────────────── console surface ───────────────
         globalThis.viewer = {
-            get wet() { return wet; }, get pump() { return pump; }, get wetSource() { return wetSource; },
-            conns, services,
-            get windows() { return windows; }, get listConn() { return listConn; }, get winConn() { return winConn; },
-            get runtimeDead() { return runtimeDead; }, edition: EDITION,
-            log, fmtErr, getWet, toU8, b64ToU8, makeConn, LineConn, onNotify,
+            get wet() { return wet; }, get echoJs() { return echoJs; }, get pump() { return pump; },
+            get wetSource() { return wetSource; }, get runtimeDead() { return runtimeDead; },
+            conns, services, rpc, AF_UNIX, makeConn, LineConn, onNotify,
+            get windows() { return windows; }, get listConn() { return listConn; },
+            get winConn() { return winConn; }, get echoConn() { return echoConn; },
+            log, fmtErr, getWet, toU8, b64ToU8,
             connectList, connectWin, closeWin, redrawList, upsertWin, handleListMessage,
-            resub, pumpOnce, handleFrame, clearWinUI,
+            resub, handleFrame, clearWinUI, edition: EDITION,
         };
-        globalThis.pumpOnce = pumpOnce;
-        globalThis.connectList = connectList;
-        globalThis.connectWin = connectWin;
-        globalThis.closeWin = closeWin;
-        globalThis.resub = resub;
+        globalThis.rpc = rpc;
         globalThis.getWet = getWet;
         globalThis.fmtErr = fmtErr;
         globalThis.getAssemblyExports = getAssemblyExports;
-        log('info', 'console hooks ready: pumpOnce(), viewer.*, fmtErr(), getWet(), getAssemblyExports()');
+        log('info', 'console hooks ready: viewer.*, rpc(), getWet(), fmtErr(), getAssemblyExports()');
 
         // ───────────────────────── boot ─────────────────────────
-        setTag('wait', 'resolving WetJs…');
-        const ok = await initWet();
+        setTag('wait', 'resolving exports…');
+        const ok = await initExports();
         if (!ok) {
             setTag('off', 'WetJs not found');
-            info('#info-wet', 'NOT FOUND');
-            log('error', 'WetJs async exports never appeared — need WriteAsync/ReadAsync/CloseAsync/ConnectAsync/ListAsync/ListeningAsync.');
+            log('error', 'WetJs async exports never appeared — need WriteRpcAsync/ReadRpcAsync/CloseRpcAsync/ConnectRpcAsync/ListRpcAsync/ListeningRpcAsync/TakeEventsAsync.');
         } else {
             setTag('on', 'runtime up · ' + EDITION);
             log('ok', `WetJs ready (${wetSource}) — ${EDITION}`);
@@ -1038,9 +1261,10 @@
         connectList();
         setInterval(connectList, 1500);
 
+        // message pump (harmless on MT where Main drives it; required on ST)
         if (pump) {
-            info('#info-pump', 'exported (' + (wetSource || '?') + ')');
-            log('ok', 'message pump export found — timer drives DoEvents at ~60 Hz (pump button runs it manually)');
+            info('#info-pump', 'exported');
+            log('ok', 'message pump export found');
             setInterval(async () => {
                 if (runtimeDead) return;
                 try { await pump(); }
@@ -1052,11 +1276,12 @@
             }, 16);
         } else {
             info('#info-pump', 'NOT EXPORTED');
-            log('warn', 'no Pump export — use the pump button / pumpOnce() once it resolves');
+            log('warn', 'no Pump export — required unless Main drives the loop');
         }
 
+        // event pull (socket notifications queued by the driver)
         setInterval(async () => {
-            if (runtimeDead) return;
+            if (runtimeDead || !wet?.TakeEventsAsync) return;
             try {
                 const raw = await rpc((req) => getWet().TakeEventsAsync(req));
                 const evs = JSON.parse(raw || '[]');
@@ -1070,7 +1295,7 @@
                 if (/already exited|Cannot call synchronous|rpc timeout/.test(m)) return;
                 log('warn', 'tick: ' + m);
             }
-        }, 16);
+        }, 100);
 
         try {
             await dotnet.runMain();
