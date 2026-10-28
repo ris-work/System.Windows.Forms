@@ -1884,14 +1884,24 @@ public static partial class BootUpJs
     }
 
     /// <summary>
-    /// UI message pump. Lives HERE (the host app), not in Wystem.Wet — the socket
-    /// library must not know WinForms exists. Result is pushed, never returned.
+    /// THE tick the page drives. Runs XplatUISocketWasm.TickIO() (accept/read/write)
+    /// plus one WinForms message pass. Parameterless on purpose: the page calls it
+    /// as pump() every frame, and there is nothing to deliver back.
     /// </summary>
+    [JSExport]
+    public static async Task Pump()
+    {
+        try { System.Windows.Forms.XplatUISocketWasm.SchedulePump(); }
+        catch (Exception e) { Console.WriteLine("[Pump] " + e.Message); }
+    }
+
+    /// <summary>Same, with an RPC request id (result is pushed through deliver).</summary>
     [JSExport]
     public static async Task PumpRpcAsync(int req)
     {
-        //System.Windows.Forms.XplatUISocketWasm.SchedulePump();
-        //await Wystem.Wet.WetWire.Deliver(req, "1");
+        try { System.Windows.Forms.XplatUISocketWasm.SchedulePump(); }
+        catch (Exception e) { Console.WriteLine("[PumpRpc] " + e.Message); }
+        if (req > 0) Wystem.Wet.WetWire.Deliver(req, "1");
     }
 
     [JSExport] public static async Task PingStrAsync(int req) => Wystem.Wet.WetWire.Deliver(req, "pong");
