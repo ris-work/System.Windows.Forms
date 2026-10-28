@@ -37,7 +37,7 @@
         }
 
         #sidebar {
-            width: 320px;
+            width: 340px;
             background: var(--panel);
             border-right: 1px solid var(--line);
             padding: 10px;
@@ -94,7 +94,7 @@
                 overflow: hidden;
                 text-overflow: ellipsis;
                 white-space: nowrap;
-                max-width: 185px;
+                max-width: 200px;
             }
 
         .tag {
@@ -273,6 +273,37 @@
                 color: var(--acc);
                 font-weight: 700;
             }
+
+        pre.hex {
+            margin: 6px 0 0;
+            padding: 6px;
+            background: #07090d;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            font: 10.5px/1.45 ui-monospace, monospace;
+            color: #a8c7e0;
+            max-height: 170px;
+            overflow: auto;
+            white-space: pre;
+        }
+
+        .verdict {
+            margin-top: 6px;
+            font-size: 12px;
+            padding: 5px 8px;
+            border-radius: 6px;
+            border: 1px solid var(--line);
+        }
+
+            .verdict.ok {
+                color: var(--ok);
+                border-color: var(--ok);
+            }
+
+            .verdict.bad {
+                color: var(--bad);
+                border-color: var(--bad);
+            }
     </style>
 </head>
 
@@ -290,7 +321,7 @@
 
         <div class="panel">
             <h2>runtime</h2>
-            <div class="kv"><b>viewer edition</b><span id="info-edition">async/mt v8 · viewer+tests</span></div>
+            <div class="kv"><b>viewer edition</b><span id="info-edition">async/mt v9 · viewer+echo</span></div>
             <div class="kv"><b>main assembly</b><span id="info-main">—</span></div>
             <div class="kv"><b>WetJs source</b><span id="info-wet">resolving…</span></div>
             <div class="kv"><b>echo service</b><span id="info-echo">resolving…</span></div>
@@ -315,11 +346,18 @@
                 <button id="e-close">close</button>
             </div>
             <div class="row" style="margin-top:8px">
-                <label style="margin:0">size <input id="e-size" type="number" value="1024" style="width:74px"></label>
+                <label style="margin:0">size <input id="e-size" type="number" value="256" style="width:74px"></label>
                 <label style="margin:0">count <input id="e-count" type="number" value="100" style="width:74px"></label>
-                <button class="primary" id="e-rt">round-trip</button>
+                <button class="primary" id="e-echo">echo &amp; show bytes</button>
+                <button id="e-rt">round-trip</button>
                 <button id="e-flood">speed</button>
             </div>
+            <div class="row" style="margin-top:8px">
+                <label style="margin:0;flex:1">text <input id="e-text" type="text" value="hello, wet-afunix" style="width:100%"></label>
+                <button id="e-sendtext">echo text</button>
+            </div>
+            <div class="verdict dim" id="e-verdict">no echo round-trip yet</div>
+            <pre class="hex" id="e-hex">— echoed bytes appear here —</pre>
         </div>
 
         <div class="panel">
@@ -360,6 +398,7 @@
                 <button class="mini" id="btn-reconnect">reconnect</button>
                 <button class="mini" id="btn-disconnect">disconnect</button>
                 <button class="mini" id="btn-ping">ping</button>
+                <button class="mini" id="btn-listeners">listeners()</button>
                 <button class="mini" id="btn-env">env</button>
             </div>
         </div>
@@ -384,16 +423,17 @@
 
     <script type="module">
         // ══════════════════════════════════════════════════════════════════
-        //  XplatUISocketWasm viewer — ASYNC / MT EDITION (v8)
-        //  = v7 (safe errors, RPC/push results) + transport test panel + pause.
+        //  XplatUISocketWasm viewer — ASYNC / MT EDITION (v9)
+        //  = v8 + echo round-trip that SHOWS the echoed bytes (hex + ascii),
+        //    listeners() diagnostic, plain (non-async) wet imports.
         //
         //  Rules for this runtime:
-        //   * JS→.NET: `async Task*` exports, args only — never rely on returned values
-        //     except Task<int>; strings come back pushed via deliver.
-        //   * .NET→JS: fire-and-forget imports; never block the interop thread.
-        //   * no .stack/.message property access off managed exception proxies.
+        //   * JS→.NET: `async Task*` exports, args only — results arrive pushed
+        //     through the deliver() import (rpc() below).
+        //   * .NET→JS: fire-and-forget imports; handlers MUST be plain functions.
+        //   * no .stack/.message access off managed exception proxies.
         // ══════════════════════════════════════════════════════════════════
-        const EDITION = 'async/mt v8 · viewer+tests';
+        const EDITION = 'async/mt v9 · viewer+echo';
         import { dotnet } from './_framework/dotnet.js'
 
         const $ = (s) => document.querySelector(s);
@@ -419,6 +459,32 @@
             const u8 = new Uint8Array(bin.length);
             for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
             return u8;
+        }
+
+        function concatU8(parts, total) {
+            const out = new Uint8Array(total);
+            let off = 0;
+            for (const p of parts) { out.set(p, off); off += p.length; }
+            return out;
+        }
+
+        function firstDiff(a, b) {
+            const n = Math.min(a.length, b.length);
+            for (let i = 0; i < n; i++) if (a[i] !== b[i]) return i;
+            return a.length === b.length ? -1 : n;
+        }
+
+        function hexdump(u8, max = 96) {
+            const n = Math.min(u8.length, max);
+            const lines = [];
+            for (let off = 0; off < n; off += 16) {
+                const chunk = u8.subarray(off, Math.min(off + 16, n));
+                const hex = [...chunk].map((b) => b.toString(16).padStart(2, '0')).join(' ').padEnd(47, ' ');
+                const asc = [...chunk].map((b) => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('');
+                lines.push(off.toString(16).padStart(4, '0') + '  ' + hex + '  |' + asc + '|');
+            }
+            if (u8.length > n) lines.push('… ' + (u8.length - n) + ' more bytes');
+            return lines.join('\n');
         }
 
         // ── log with pause ──────────────────────────────────────────────
@@ -472,24 +538,27 @@
         log('info', `dotnet runtime created · main assembly "${getConfig().mainAssemblyName}"`);
         log('info', `[env] crossOriginIsolated=${crossOriginIsolated} SharedArrayBuffer=${typeof SharedArrayBuffer} devicePixelRatio=${devicePixelRatio}`);
 
+        // NOTE: handlers are PLAIN functions. An async handler returns a Promise,
+        // and on this runtime an unfinished promise blocks every later import.
         setModuleImports('wet', {
-            async connect(path, handle) {
+            connect(path, handle) {
+                handle = num(handle);
                 const onAccept = services.get(path);
                 setTimeout(() => {
                     if (onAccept) {
-                        log('info', `[js-service] accepted #${num(handle)} on unix:${path}`);
+                        log('info', `[js-service] accepted #${handle} on unix:${path}`);
                         onAccept(makeConn(handle));
                     }
                 }, 0);
                 return !!onAccept;
             },
 
-            async notify(handle, kind) {
+            notify(handle, kind) {
                 setTimeout(() => onNotify(num(handle), kind), 0);
             },
 
             // results are PUSHED here — returned Task<string> values never arrive
-            async deliver(req, payload) {
+            deliver(req, payload) {
                 const key = num(req);
                 const p = rpcPending.get(key);
                 if (!p) {
@@ -653,7 +722,7 @@
                 const raw = await rpc((req) => getWet().ConnectRpcAsync(req, path));
                 const id = num(raw);
                 log('info', `[connect] unix:${path} -> raw=${raw} (${typeof raw}) id=${id}`);
-                if (!(id >= 0)) throw new Error(`connect refused — nothing listening at unix:${path}`);
+                if (!(id >= 0)) throw new Error(`connect refused — nothing is listening at unix:${path}`);
                 return makeConn(id);
             },
 
@@ -699,7 +768,7 @@
         }
 
         // ───────────────────────── window list ─────────────────────────
-        let listConn = null, listBusy = false;
+        let listConn = null, listBusy = false, listFails = 0;
         let windows = [], curWin = null, winConn = null, winEpoch = 0;
 
         function redrawList() {
@@ -746,12 +815,20 @@
             }
         }
 
+        async function dumpListeners(tag) {
+            try {
+                const l = await AF_UNIX.listeners();
+                log('info', `[listeners:${tag}] ` + (l.length ? l.map((x) => `${x.host}:${x.path} (${x.state}${x.pending ? ', pending ' + x.pending : ''})`).join(' · ') : '(none)'));
+            } catch (e) { log('warn', 'listeners: ' + fmtErr(e)); }
+        }
+
         async function connectList() {
             if (runtimeDead || listConn || listBusy) return;
             if (!wet) { setTimeout(connectList, 500); return; }
             listBusy = true;
             try {
                 const c = await AF_UNIX.connect(LIST_PATH);
+                listFails = 0;
                 listConn = new LineConn(c, 'window-list');
                 listConn.onmessage = handleListMessage;
                 listConn.onclose = () => {
@@ -764,8 +841,8 @@
                 log('ok', `connected #${c.id} → unix:${LIST_PATH}`);
             } catch (e) {
                 info('#info-list', 'waiting for ' + LIST_PATH);
-                const m = fmtErr(e);
-                if (!/connect refused/.test(m)) log('warn', 'connectList: ' + m);
+                log('warn', `connectList(${LIST_PATH}): ${fmtErr(e)}`);
+                if (++listFails === 3 || listFails % 10 === 0) await dumpListeners('connectList');
                 setTimeout(connectList, 700);
             } finally {
                 listBusy = false;
@@ -1085,6 +1162,7 @@
         });
         on('#btn-disconnect', 'click', () => { log('info', '⏹ disconnect pressed'); closeWin('manual'); });
         on('#btn-ping', 'click', () => { log('info', 'ping →'); sendWin({ type: 'ping' }); });
+        on('#btn-listeners', 'click', () => dumpListeners('manual'));
         on('#btn-env', 'click', () => log('info',
             `[env] crossOriginIsolated=${crossOriginIsolated} SharedArrayBuffer=${typeof SharedArrayBuffer} ` +
             `devicePixelRatio=${devicePixelRatio} edition=${EDITION}`));
@@ -1113,6 +1191,112 @@
 
         // ───────────────── transport test (echo) ─────────────────
         let echoConn = null;
+
+        const echoTick = () => rpc((req) => echoJs.EchoTickAsync(req));
+
+        // write everything, ticking the (poll-driven) echo service when the
+        // send window is full — no blocking, no continuations required.
+        async function writeFully(conn, data, tick, maxSpins = 20000) {
+            let off = 0, spins = 0;
+            while (off < data.length) {
+                if (spins++ > maxSpins) throw new Error(`writeFully: stalled at ${off}/${data.length}B`);
+                const n = await conn.write(data.subarray(off));
+                if (n > 0) off += n;
+                else await tick();
+            }
+            return off;
+        }
+
+        // read exactly `need` bytes (or until the stream goes idle).
+        async function readFully(conn, need, tick, maxIdle = 64) {
+            const parts = [];
+            let got = 0, idle = 0;
+            while (got < need && idle < maxIdle) {
+                const u8 = await conn.read(65536);
+                if (!u8.length) { await tick(); idle++; continue; }
+                idle = 0;
+                parts.push(u8);
+                got += u8.length;
+            }
+            return concatU8(parts, got);
+        }
+
+        function verdict(ok, text) {
+            const el = $('#e-verdict');
+            el.className = 'verdict ' + (ok ? 'ok' : 'bad');
+            el.textContent = text;
+        }
+
+        // ── the echo round-trip that SHOWS the bytes that came back ──
+        async function echoRoundTrip() {
+            const size = Math.max(1, Math.min(1 << 20, +$('#e-size').value || 256));
+            log('info', `echo & show bytes: ${size}B pattern`);
+            try {
+                await rpc((req) => echoJs.StartEchoAsync(req));
+                const c = await AF_UNIX.connect('/echo');
+
+                // deterministic pattern (NOT all 'A') so a byte-level check is meaningful
+                const sent = new Uint8Array(size);
+                for (let i = 0; i < size; i++) sent[i] = (i * 31 + 7) & 0xff;
+
+                const t0 = performance.now();
+                await writeFully(c, sent, echoTick);
+                await echoTick();
+                const back = await readFully(c, size, echoTick);
+                const ms = performance.now() - t0;
+
+                const bad = firstDiff(sent, back);
+                const ok = back.length === size && bad < 0;
+
+                $('#e-hex').textContent =
+                    `sent ${sent.length}B (pattern i*31+7)\n` + hexdump(sent) +
+                    `\n\nreceived ${back.length}B\n` + hexdump(back) +
+                    (back.length ? `\n\nascii: ${[...back.subarray(0, 96)].map((b) => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('')}` : '');
+
+                if (ok) {
+                    verdict(true, `✔ echoed back ${back.length}B in ${ms.toFixed(1)} ms · ` +
+                        `${(back.length / 1024 / (ms / 1000)).toFixed(1)} KiB/s · all bytes identical`);
+                    log('ok', `echo: ${back.length}B returned identical in ${ms.toFixed(1)}ms`);
+                } else {
+                    verdict(false, `✘ echo mismatch — got ${back.length}/${size}B` +
+                        (bad >= 0 ? ` · first difference at offset ${bad} (sent 0x${sent[bad]?.toString(16)} got 0x${back[bad]?.toString(16)})` : ''));
+                    log('error', `echo: MISMATCH got ${back.length}/${size}B, first diff @${bad}`);
+                }
+
+                await c.close();
+            } catch (e) {
+                verdict(false, '✘ ' + fmtErr(e));
+                log('error', 'echo round-trip: ' + fmtErr(e));
+            }
+        }
+
+        // ── text echo: show the decoded bytes that came back ──
+        async function echoText() {
+            const text = $('#e-text').value ?? '';
+            const sent = enc.encode(text);
+            if (!sent.length) { log('warn', 'echo text: nothing to send'); return; }
+            try {
+                await rpc((req) => echoJs.StartEchoAsync(req));
+                const c = await AF_UNIX.connect('/echo');
+                await writeFully(c, sent, echoTick);
+                await echoTick();
+                const back = await readFully(c, sent.length, echoTick);
+                const s = dec.decode(back);
+                $('#e-hex').textContent =
+                    `sent ${sent.length}B utf-8\n` + hexdump(sent) +
+                    `\n\nreceived ${back.length}B\n` + hexdump(back) +
+                    `\n\ndecoded: "${s}"`;
+                verdict(back.length === sent.length && firstDiff(sent, back) < 0,
+                    back.length === sent.length && firstDiff(sent, back) < 0
+                        ? `✔ text echoed back: "${s}"`
+                        : `✘ text echo mismatch (${back.length}/${sent.length}B)`);
+                log('ok', `text echo → "${s}"`);
+                await c.close();
+            } catch (e) {
+                verdict(false, '✘ ' + fmtErr(e));
+                log('error', 'echo text: ' + fmtErr(e));
+            }
+        }
 
         on('#e-start', 'click', async () => {
             log('info', '▶ start /echo');
@@ -1143,24 +1327,28 @@
         on('#e-write', 'click', async () => {
             const size = +$('#e-size').value;
             try {
-                const n = await echoConn.write(new Uint8Array(size).fill(65));
+                const payload = new Uint8Array(size);
+                for (let i = 0; i < size; i++) payload[i] = (i * 31 + 7) & 0xff;
+                const n = await echoConn.write(payload);
                 log('ok', `write ${n}B`);
             } catch (e) { log('error', 'write: ' + fmtErr(e)); }
         });
         on('#e-tick', 'click', async () => {
             try {
-                const n = await rpc((req) => echoJs.EchoTickAsync(req));
+                const n = await echoTick();
                 log('info', `echo tick handled ${n}`);
             } catch (e) { log('error', 'tick: ' + fmtErr(e)); }
         });
         on('#e-read', 'click', async () => {
-            let total = 0;
+            let total = 0; const parts = [];
             try {
                 for (let i = 0; i < 100; i++) {
                     const u8 = await echoConn.read(65536);
                     if (!u8.length) break;
-                    total += u8.length;
+                    parts.push(u8); total += u8.length;
                 }
+                const all = concatU8(parts, total);
+                $('#e-hex').textContent = `read ${total}B\n` + hexdump(all);
                 log('ok', `read ${total}B`);
             } catch (e) { log('error', 'read: ' + fmtErr(e)); }
         });
@@ -1169,28 +1357,33 @@
             catch (e) { log('error', 'close: ' + fmtErr(e)); }
         });
 
+        on('#e-echo', 'click', echoRoundTrip);
+        on('#e-sendtext', 'click', echoText);
+
         on('#e-rt', 'click', async () => {
             const size = +$('#e-size').value, count = +$('#e-count').value;
             log('info', `round-trip: ${count} × ${size}B`);
             try {
+                await rpc((req) => echoJs.StartEchoAsync(req));
                 const c = await AF_UNIX.connect('/echo');
                 const payload = new Uint8Array(size).fill(65);
                 const t0 = performance.now();
                 let got = 0;
                 for (let i = 0; i < count; i++) {
-                    await c.write(payload);
-                    await rpc((req) => echoJs.EchoTickAsync(req));
-                    let need = size;
-                    while (need > 0) {
-                        const u8 = await c.read(need);
-                        if (!u8.length) break;
-                        need -= u8.length; got += u8.length;
-                    }
+                    await writeFully(c, payload, echoTick);
+                    await echoTick();
+                    got += (await readFully(c, size, echoTick)).length;
                 }
                 const ms = performance.now() - t0;
                 await c.close();
+                verdict(true, `✔ round-trip ${got}B in ${ms.toFixed(0)}ms`);
+                $('#e-hex').textContent = `round-trip ${count} × ${size}B · ${got}B total\n` +
+                    hexdump(payload);
                 log('ok', `round-trip: ${got}B in ${ms.toFixed(0)}ms → ${(got / 1024 / (ms / 1000)).toFixed(1)} KiB/s · ${(count / (ms / 1000)).toFixed(1)} ops/s`);
-            } catch (e) { log('error', 'round-trip: ' + fmtErr(e)); }
+            } catch (e) {
+                verdict(false, '✘ ' + fmtErr(e));
+                log('error', 'round-trip: ' + fmtErr(e));
+            }
         });
 
         on('#e-flood', 'click', async () => {
@@ -1204,9 +1397,9 @@
                 let got = 0;
                 for (let i = 0; i < count; i++) {
                     await c.write(payload);
-                    if ((i & 15) === 15) await rpc((req) => echoJs.EchoTickAsync(req));
+                    if ((i & 15) === 15) await echoTick();
                 }
-                await rpc((req) => echoJs.EchoTickAsync(req));
+                await echoTick();
                 while (true) {
                     const u8 = await c.read(65536);
                     if (!u8.length) break;
@@ -1214,8 +1407,13 @@
                 }
                 const ms = performance.now() - t0;
                 await c.close();
+                verdict(true, `✔ flood ${got}B in ${ms.toFixed(0)}ms`);
+                $('#e-hex').textContent = `flood ${count} × ${size}B · echoed back ${got}B`;
                 log('ok', `flood: ${got}B in ${ms.toFixed(0)}ms → ${(got / 1024 / (ms / 1000)).toFixed(1)} KiB/s`);
-            } catch (e) { log('error', 'flood: ' + fmtErr(e)); }
+            } catch (e) {
+                verdict(false, '✘ ' + fmtErr(e));
+                log('error', 'flood: ' + fmtErr(e));
+            }
         });
 
         window.addEventListener('error', (e) => log('error', 'window.onerror: ' + fmtErr(e.error || e.message)));
@@ -1226,7 +1424,10 @@
 
         AF_UNIX.listen('/js-echo', (c) => {
             log('info', `[js-echo] attached #${c.id}`);
-            c.ondata = (u8) => c.write(u8).catch((e) => log('warn', 'js-echo: ' + fmtErr(e)));
+            c.ondata = (u8) => {
+                $('#e-hex').textContent = `[js-echo] ${u8.length}B\n` + hexdump(u8);
+                c.write(u8).catch((e) => log('warn', 'js-echo: ' + fmtErr(e)));
+            };
         });
 
         // ─────────────── console surface ───────────────
@@ -1236,7 +1437,7 @@
             conns, services, rpc, AF_UNIX, makeConn, LineConn, onNotify,
             get windows() { return windows; }, get listConn() { return listConn; },
             get winConn() { return winConn; }, get echoConn() { return echoConn; },
-            log, fmtErr, getWet, toU8, b64ToU8,
+            log, fmtErr, getWet, toU8, b64ToU8, hexdump, firstDiff, echoRoundTrip, echoText,
             connectList, connectWin, closeWin, redrawList, upsertWin, handleListMessage,
             resub, handleFrame, clearWinUI, edition: EDITION,
         };
@@ -1260,6 +1461,7 @@
         log('info', 'waiting for the driver to start listening…');
         connectList();
         setInterval(connectList, 1500);
+        setInterval(() => dumpListeners('auto'), 10000);
 
         // message pump (harmless on MT where Main drives it; required on ST)
         if (pump) {
@@ -1279,7 +1481,8 @@
             log('warn', 'no Pump export — required unless Main drives the loop');
         }
 
-        // event pull (socket notifications queued by the driver)
+        // event pull (socket notifications queued by the driver) — this is also
+        // the tick that should be driving the poll-based I/O of the driver.
         setInterval(async () => {
             if (runtimeDead || !wet?.TakeEventsAsync) return;
             try {

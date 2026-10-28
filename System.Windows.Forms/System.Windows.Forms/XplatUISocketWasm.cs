@@ -221,131 +221,203 @@ namespace System.Windows.Forms
             public bool IsDesktop;
         }
 
-        // One accepted AF_UNIX connection. Control messages are queued; frames are
-        // coalesced into a single "wanted" slot and encoded at send time on the
-        // writer task, so what goes out is always the freshest state.
-        class ClientConn
+        // ════════════════════════════════════════════════════════════════════
+        //  ClientConn — one accepted AF_UNIX connection. POLL-DRIVEN.
+        //
+        //  Everything here is synchronous and non-blocking and runs ONLY inside
+        //  TickIO(), which is only ever called from JS→.NET calls (PumpMessages /
+        //  BootUpJs.Pump). There is no Task, no await, no thread-pool
+        //  continuation anywhere in this type: on the browser RC continuations
+        //  get stranded, which is exactly why the old writer/reader loops never
+        //  resumed and /ui/window-list never answered.
+        // ════════════════════════════════════════════════════════════════════
+        sealed class ClientConn
         {
             public WetSocket Sock;
-            public WinInfo Win;
+            public WinInfo Win;                    // null == window-list watcher
             public bool Subscribed;
             public string Format = "jpeg";
             public int Quality = 80;
             public bool Gray;
-            public int MinFrameMs;              // 0 = uncapped (fps throttle)
-            public int LastFrameTick;           // Environment.TickCount of the last frame we wrote
+            public int MinFrameMs;                 // 0 = uncapped (fps throttle)
+            public int LastFrameTick;              // Environment.TickCount of the last frame we wrote
+            public long BytesIn, BytesOut, FramesOut;
             public volatile bool Dead;
 
-            public readonly object QueueLock = new object();
-            public readonly Queue<string> OutQueue = new Queue<string>();   // control msgs
-            public bool FrameWanted;                                        // coalesced frame slot
-            public readonly SemaphoreSlim Work = new SemaphoreSlim(0);
-            public Task Writer;
-            public Task Reader;
-            public long BytesIn, BytesOut, FramesOut;
-            const int MaxCtrl = 64;
+            readonly object QLock = new object();
+            readonly Queue<string> OutQueue = new Queue<string>();   // complete messages, not yet on the wire
+            byte[] Cur;                                              // message currently being pushed
+            int CurOff;
+            readonly StringBuilder Line = new StringBuilder();       // incoming newline framing
+            public bool FrameWanted;                                  // coalesced frame slot
 
-            public void StartWriter() =>
-                Writer = ParallelExecutionUnit.RunAsync(WriterLoopAsync, "client-writer");
-
-            // Control messages (hello/info/pong/bye/log) — queued, capped.
-            public void Send(string s)
+            public ClientConn(WetSocket sock, WinInfo win)
             {
-                if (Dead) return;
-                lock (QueueLock)
-                {
-                    if (OutQueue.Count >= MaxCtrl) { Dead = true; Work.Release(); return; } // hopeless client: cut it, don't OOM
-                    OutQueue.Enqueue(s);
-                }
-                Work.Release();
+                Sock = sock;
+                Win = win;
             }
 
-            // Frames — coalesced to a single "wanted" flag.
+            // ── outbound: queue one complete message ─────────────────────────
+            // Never blocks and never drops: backpressure lives in WetSocket's
+            // send window (Send returns 0 when it is full, we retry next tick).
+            public void Send(string s)
+            {
+                if (Dead || s == null) return;
+                lock (QLock) OutQueue.Enqueue(s);
+            }
+
+            // ── "encode a frame the next time the wire is idle" ─────────────
+            // Many requests before the flusher runs collapse into ONE frame,
+            // and that frame is encoded at flush time → always the freshest.
             public void RequestFrame()
             {
                 if (Dead) return;
-                lock (QueueLock) FrameWanted = true;
-                Work.Release();
+                FrameWanted = true;
             }
 
-            async Task WriterLoopAsync()
+            // ── inbound: bytes JS wrote to us → newline-delimited JSON ───────
+            public void OnBytes(byte[] data)
+            {
+                if (Dead || data == null || data.Length == 0) return;
+                BytesIn += data.Length;
+
+                string text;
+                try { text = Encoding.UTF8.GetString(data); }
+                catch { Kill(); return; }
+
+                foreach (var ch in text)
+                {
+                    if (ch == '\n')
+                    {
+                        var line = Line.ToString();
+                        Line.Clear();
+                        if (line.Length > 0) Dispatch(line);
+                    }
+                    else if (Line.Length < (1 << 20))     // guard: peer that never sends '\n'
+                        Line.Append(ch);
+                    else { Kill(); return; }
+                }
+            }
+
+            void Dispatch(string line)
             {
                 try
                 {
-                    while (!Dead)
+                    using (var doc = JsonDocument.Parse(line))
                     {
-                        bool signalled;
-                        try { signalled = await Work.WaitAsync(500).ConfigureAwait(false); }
-                        catch { break; }
-                        Console.WriteLine("Running Task.Yield()");
-                        await Task.Yield();   // never continue the writer inside the caller's stack
-                        Console.WriteLine("Ran Task.Yield()");
-
-                        // Heartbeat: a live subscriber gets a frame even if nothing
-                        // invalidated — this is the "video output" path.
-                        if (!signalled && Subscribed && !Dead)
+                        var root = doc.RootElement;
+                        if (Win == null)
                         {
-                            lock (QueueLock) FrameWanted = true;
-                        }
-
-                        for (; ; )
-                        {
-                            string msg = null;
-                            bool wantFrame = false;
-                            lock (QueueLock)
+                            // window-list watcher: the old ListClientLoopAsync did exactly this
+                            if (line.IndexOf("\"list\"", StringComparison.Ordinal) >= 0) Send(ListJson());
+                            else
                             {
-                                if (OutQueue.Count > 0) msg = OutQueue.Dequeue();
-                                else if (FrameWanted) { FrameWanted = false; wantFrame = true; }
+                                var t = root.TryGetProperty("type", out var te) ? te.GetString() : "";
+                                if (t == "ping") Send("{\"type\":\"pong\"}");
+                                else Send(ListJson());
                             }
-                            if (msg != null) await WriteRawAsync(msg).ConfigureAwait(false);
-                            else if (wantFrame) await SendFrameAsync(this).ConfigureAwait(false);
-                            else break;
                         }
+                        else HandleClientMessage(this, root);
                     }
                 }
-                catch { }
-                Dead = true;
+                catch (Exception e) { Log("bad client message: " + e.Message); }
             }
 
-            // One newline-terminated message. WetSocket.SendAsync accepts as much as
-            // the JS window allows and returns the byte count (0 == window full,
-            // <0 == gone), so loop until the message is out. AWAITED — never blocks,
-            // which is essential on single-threaded browser-wasm. Only the writer
-            // task calls this, so writes stay ordered without a lock.
-            // One newline-terminated message. WetSocket.SendAsync accepts as much as
-            // the JS window allows and returns the byte count (0 == window full,
-            // <0 == gone), so loop until the message is out. AWAITED — never blocks.
-            public async Task WriteRawAsync(string s)
+            // ── outbound: push whatever fits; the rest waits for the next tick ─
+            public void FlushOut()
             {
-                WetTrace.Enter("WriteRawAsync " + s.Length + " chars -> #" + Sock.Handle);
-                if (Dead)
+                if (Dead) return;
+                for (; ; )
                 {
-                    WetTrace.Exit("WriteRawAsync -> dead");
-                    return;
-                }
-                var b = Encoding.UTF8.GetBytes(s + "\n");
-                int off = 0;
-                while (off < b.Length)
-                {
+                    if (Cur == null)
+                    {
+                        lock (QLock)
+                        {
+                            if (OutQueue.Count > 0) { Cur = Encoding.UTF8.GetBytes(OutQueue.Dequeue()); CurOff = 0; }
+                        }
+
+                        if (Cur == null)
+                        {
+                            // Wire idle → encode a frame NOW (freshest possible state).
+                            if (!FrameWanted) return;
+                            if (MinFrameMs > 0 && unchecked(Environment.TickCount - LastFrameTick) < MinFrameMs)
+                                return;                      // throttled; FrameWanted stays set
+                            FrameWanted = false;
+                            if (!GenerateFrame()) return;
+                            continue;
+                        }
+                    }
+
                     int n;
-                    WetTrace.Mark("WriteRawAsync: sending " + (b.Length - off) + "B");
-                    try { n = await Sock.SendAsync(b.AsMemory(off)).ConfigureAwait(false); }
-                    catch
-                    {
-                        WetTrace.Exit("WriteRawAsync -> send threw");
-                        Dead = true;
-                        return;
-                    }
-                    if (n <= 0)
-                    {
-                        WetTrace.Exit("WriteRawAsync -> " + (n == 0 ? "window full/gone" : "peer gone"));
-                        Dead = true;
-                        return;
-                    }
-                    off += n;
+                    try { n = Sock.Send(Cur.AsSpan(CurOff)); }     // PARTIAL, non-blocking
+                    catch { Kill(); return; }
+                    if (n <= 0) return;                            // send window full → next tick
+
+                    CurOff += n;
                     BytesOut += n;
+                    if (CurOff >= Cur.Length) { Cur = null; CurOff = 0; }
                 }
-                WetTrace.Exit("WriteRawAsync -> " + off + "B written");
+            }
+
+            // Build + encode + enqueue ONE frame message. Replaces SendFrameAsync.
+            bool GenerateFrame()
+            {
+                var wi = Win;
+                if (wi == null) return false;
+
+                if (Format == "svg" && !SvgSupport.Enabled) Format = "png";
+
+                string payload;
+                int w, h;
+
+                if (wi.IsDesktop)
+                {
+                    w = screenW; h = screenH;
+                    if (Format == "svg")
+                        payload = JEsc(BuildDesktopSvg());
+                    else
+                    {
+                        using (var desk = BuildDesktopFrame())
+                        {
+                            var dbytes = EncodeFrame(desk, Format, Quality, Gray);
+                            payload = dbytes != null ? Convert.ToBase64String(dbytes) : "";
+                        }
+                    }
+                }
+                else if (Format == "svg")
+                {
+                    w = wi.Hwnd != null ? wi.Hwnd.width : 0;
+                    h = wi.Hwnd != null ? wi.Hwnd.height : 0;
+                    payload = JEsc(BuildTopFrameSvg(wi));
+                }
+                else
+                {
+                    w = wi.Hwnd != null ? wi.Hwnd.width : 0;
+                    h = wi.Hwnd != null ? wi.Hwnd.height : 0;
+                    var bytes = EncodeWindowFrame(wi, Format, Quality, Gray);
+                    if (bytes != null)
+                    {
+                        lock (wi.BufLock)
+                            if (wi.Buffer != null) { w = wi.Buffer.Width; h = wi.Buffer.Height; }
+                    }
+                    payload = bytes != null ? Convert.ToBase64String(bytes) : "";
+                }
+
+                Send(FrameJson(Format, w, h, payload));
+                LastFrameTick = Environment.TickCount;
+                FramesOut++;
+                return true;
+            }
+
+            // ── drop this connection: idempotent, safe from any thread ────────
+            public void Kill()
+            {
+                if (Dead) return;
+                Dead = true;
+                try { Sock?.Close(); } catch { }
+                if (Win == null) { lock (Sync) listWatchers.Remove(this); }
+                else { lock (Sync) Win.Clients.Remove(this); }
+                Log("client #" + (Sock?.Handle ?? 0) + " disconnected");
             }
         }
 
@@ -381,7 +453,11 @@ namespace System.Windows.Forms
         static void EnsureServer()
         {
             if (serverStarted) return;
-            serverStarted = true;
+            if (listListener != null && desktopWi != null && desktopWi.Listener != null)
+            {
+                serverStarted = true;
+                return;
+            }
 
             var dir = Environment.GetEnvironmentVariable("XPLAT_UI_SOCKET_DIR");
             if (!string.IsNullOrEmpty(dir))
@@ -392,12 +468,16 @@ namespace System.Windows.Forms
             }
 
             listListener = ListenWet(PathFor("window-list"));
-            _ = ListAcceptLoopAsync(listListener);
 
-            desktopWi = new WinInfo { IsDesktop = true, SockPath = PathFor("compositor") };
-            desktopWi.Listener = ListenWet(desktopWi.SockPath);
-            _ = WinAcceptLoopAsync(desktopWi);
+            if (desktopWi == null)
+            {
+                desktopWi = new WinInfo { IsDesktop = true, SockPath = PathFor("compositor") };
+                desktopWi.Listener = ListenWet(desktopWi.SockPath);
+            }
 
+            // Only latch once BOTH listeners are real, so a failed bind is retried
+            // on the next window creation instead of being lost forever.
+            serverStarted = (listListener != null && desktopWi.Listener != null);
             Log("serving windows on unix:" + SockDir + "/* (screen " + screenW + "x" + screenH + ")");
         }
 
@@ -408,10 +488,15 @@ namespace System.Windows.Forms
                 lock (Sync)
                 {
                     foreach (var wi in topWindows.Values) CloseWinSockets(wi);
-                    foreach (var w in listWatchers.ToArray()) { w.Dead = true; try { w.Sock.Close(); } catch { } }
+                    foreach (var w in listWatchers.ToArray())
+                    {
+                        w.Dead = true;
+                        try { w.Sock.Close(); } catch { }
+                    }
                     listWatchers.Clear();
                 }
                 try { listListener?.Close(); } catch { }
+                listListener = null;
                 if (desktopWi != null) CloseWinSockets(desktopWi);
             }
             catch { }
@@ -419,6 +504,7 @@ namespace System.Windows.Forms
 
         static void CloseWinSockets(WinInfo wi)
         {
+            if (wi == null) return;
             ClientConn[] cs;
             lock (Sync)
             {
@@ -427,8 +513,8 @@ namespace System.Windows.Forms
             }
             foreach (var c in cs)
             {
+                try { c.Send("{\"type\":\"bye\"}"); c.FlushOut(); } catch { }
                 c.Dead = true;
-                c.Send("{\"type\":\"bye\"}");
                 try { c.Sock.Close(); } catch { }
             }
             try { wi.Listener?.Close(); } catch { }
@@ -445,7 +531,7 @@ namespace System.Windows.Forms
                 Log("listening unix:" + path);
                 return s;
             }
-            catch (WetException e)
+            catch (Exception e)
             {
                 Log("listen failed for unix:" + path + " — " + e.Message);
                 return null;
@@ -508,11 +594,11 @@ namespace System.Windows.Forms
 
         static void EnsureTimerPump()
         {
-            if (timerPump != null) return;
+            /*if (timerPump != null) return;
             timerPump = new System.Threading.Timer(_ =>
             {
                 if (timers.Count > 0) SchedulePump();
-            }, null, 250, 250);
+            }, null, 250, 250);*/
         }
 
         // ── JSON helpers ─────────────────────────────────────────────────
@@ -585,130 +671,88 @@ namespace System.Windows.Forms
         }
 
         // ── AF_UNIX accept loops (async, no threads) ─────────────────────
-        static async Task ListAcceptLoopAsync(WetSocket listener)
+        // ── AF_UNIX accept — POLLED, synchronous, no continuations ───────────
+        static void AcceptPendingOn(WetSocket listener, WinInfo wi)
         {
             if (listener == null) return;
-            WetTrace.Enter("ListAcceptLoopAsync");
-            try
-            {
-                for (; ; )
-                {
-                    WetSocket s;
-                    try { s = await listener.AcceptAsync().ConfigureAwait(false); }
-                    catch (WetException) { break; }
-                    if (s == null) break;
-
-                    WetTrace.Mark("accept: client #" + s.Handle + " accepted on window-list");
-                    var cc = new ClientConn { Sock = s };
-                    WetTrace.Mark("accept: ClientConn created #" + s.Handle);
-                    lock (Sync) listWatchers.Add(cc);
-                    cc.StartWriter();
-                    WetTrace.Mark("accept: writer started #" + s.Handle);
-                    cc.Send(ListJson());
-                    WetTrace.Mark("accept: ListJson queued #" + s.Handle);
-                    cc.Reader = ParallelExecutionUnit.RunAsync(() => ListClientLoopAsync(cc), "list-reader");
-                    WetTrace.Mark("accept: reader started #" + s.Handle);
-                    Log("window-list client #" + s.Handle + " connected");
-                }
-            }
-            catch (Exception e) { Log("window-list accept loop: " + e.Message); }
-            WetTrace.Exit("ListAcceptLoopAsync");
-        }
-
-
-        static async Task ListClientLoopAsync(ClientConn cc)
-        {
-            try
-            {
-                await foreach (var text in ReadLinesAsync(cc).ConfigureAwait(false))
-                {
-                    if (text == null) break;
-                    if (text.IndexOf("\"list\"", StringComparison.Ordinal) >= 0) cc.Send(ListJson());
-                }
-            }
-            catch { }
-            cc.Dead = true;
-            lock (Sync) listWatchers.Remove(cc);
-            try { cc.Sock.Close(); } catch { }
-            Log("window-list client disconnected");
-        }
-
-        static async Task WinAcceptLoopAsync(WinInfo wi)
-        {
-            if (wi.Listener == null) return;
-            WetTrace.Enter("WinAcceptLoopAsync " + wi.SockPath);
-            try
-            {
-                for (; ; )
-                {
-                    WetSocket s;
-                    try { s = await wi.Listener.AcceptAsync().ConfigureAwait(false); }
-                    catch (WetException) { break; }
-                    if (s == null) break;
-
-                    WetTrace.Mark("win-accept: #" + s.Handle + " on " + wi.SockPath);
-                    var cc = new ClientConn { Sock = s, Win = wi };
-                    lock (Sync) wi.Clients.Add(cc);
-                    cc.StartWriter();
-                    cc.Send("{\"type\":\"hello\",\"protocol\":1,\"screen\":[" + screenW + "," + screenH +
-                            "],\"window\":" + (wi.IsDesktop ? DesktopJson() : WindowJson(wi)) + "}");
-                    WetTrace.Mark("win-accept: hello queued #" + s.Handle);
-                    cc.Reader = ParallelExecutionUnit.RunAsync(() => WinClientLoopAsync(cc), "win-reader");
-                    Log("client #" + s.Handle + " attached to " + (wi.IsDesktop ? "compositor" : "0x" + wi.Handle.ToInt64().ToString("X")));
-                }
-            }
-            catch (Exception e) { Log("accept loop (" + wi.SockPath + "): " + e.Message); }
-            WetTrace.Exit("WinAcceptLoopAsync " + wi.SockPath);
-        }
-
-        static async Task WinClientLoopAsync(ClientConn cc)
-        {
-            try
-            {
-                await foreach (var text in ReadLinesAsync(cc).ConfigureAwait(false))
-                {
-                    if (text == null) break;
-                    if (text.Length == 0) continue;
-                    try
-                    {
-                        using (var doc = JsonDocument.Parse(text))
-                            HandleClientMessage(cc, doc.RootElement);
-                    }
-                    catch (Exception e)
-                    {
-                        Log("bad client message: " + e.Message);
-                    }
-                }
-            }
-            catch { }
-            cc.Dead = true;
-            lock (Sync) cc.Win?.Clients.Remove(cc);
-            try { cc.Sock.Close(); } catch { }
-            Log("client #" + (cc.Sock?.Handle ?? 0) + " disconnected");
-        }
-
-        // Newline-delimited UTF-8 framing over a raw WetSocket byte stream.
-        // Fully async: receives are awaited, never blocked on — the JS interop is
-        // what completes them, and a blocking wait here would starve it.
-        static async IAsyncEnumerable<string> ReadLinesAsync(ClientConn cc)
-        {
-            var pending = new List<byte>(8 * 1024);
-            var chunk = new byte[16 * 1024];
             for (; ; )
             {
-                int n;
-                try { n = await cc.Sock.ReceiveAsync(chunk).ConfigureAwait(false); }
-                catch { n = 0; }
-                if (n <= 0) yield break;
-                cc.BytesIn += n;
-                for (int i = 0; i < n; i++) pending.Add(chunk[i]);
+                WetSocket s;
+                try { s = listener.AcceptPending(); } catch { return; }
+                if (s == null) return;
 
-                int cut;
-                while ((cut = pending.IndexOf((byte)'\n')) >= 0)
+                var cc = new ClientConn(s, wi);
+                if (wi == null)
                 {
-                    var line = Encoding.UTF8.GetString(pending.GetRange(0, cut).ToArray());
-                    pending.RemoveRange(0, cut + 1);
-                    if (line.Length > 0) yield return line;
+                    lock (Sync) listWatchers.Add(cc);
+                    cc.Send(ListJson());
+                    Log("window-list client #" + s.Handle + " connected");
+                }
+                else
+                {
+                    lock (Sync) wi.Clients.Add(cc);
+                    cc.Send("{\"type\":\"hello\",\"protocol\":1,\"screen\":[" + screenW + "," + screenH +
+                            "],\"window\":" + (wi.IsDesktop ? DesktopJson() : WindowJson(wi)) + "}");
+                    Log("client #" + s.Handle + " attached to " +
+                        (wi.IsDesktop ? "compositor" : "0x" + wi.Handle.ToInt64().ToString("X")));
+                }
+            }
+        }
+
+        static int tickRunning;
+
+        /// <summary>
+        /// One non-blocking pass over the whole transport: accept → read → handle →
+        /// write. Fully synchronous; must only be called from JS→.NET entry points
+        /// (PumpMessages / BootUpJs.Pump). Re-entrant calls are dropped, not queued.
+        /// </summary>
+        public static void TickIO()
+        {
+            if (Interlocked.CompareExchange(ref tickRunning, 1, 0) != 0) return;
+            try { TickIOCore(); }
+            finally { Interlocked.Exchange(ref tickRunning, 0); }
+        }
+
+        static void TickIOCore()
+        {
+            // 1) accepts
+            AcceptPendingOn(listListener, null);
+            AcceptPendingOn(desktopWi != null ? desktopWi.Listener : null, desktopWi);
+
+            List<WinInfo> tops;
+            lock (Sync) tops = topWindows.Values.ToList();
+            foreach (var t in tops) AcceptPendingOn(t.Listener, t);
+
+            // 2) snapshot of every live connection
+            var all = new List<ClientConn>();
+            lock (Sync)
+            {
+                all.AddRange(listWatchers);
+                foreach (var t in tops) all.AddRange(t.Clients);
+                if (desktopWi != null) all.AddRange(desktopWi.Clients);
+            }
+
+            // 3) read + handle + write
+            foreach (var cc in all)
+            {
+                if (cc.Dead) continue;
+                try
+                {
+                    int avail = cc.Sock.Available;
+                    if (avail > 0)
+                    {
+                        var b = cc.Sock.DrainRx(avail);
+                        if (b.Length > 0) cc.OnBytes(b);
+                    }
+
+                    if (!cc.Dead) cc.FlushOut();
+
+                    if (!cc.Sock.Connected && cc.Sock.Available == 0) cc.Kill();
+                }
+                catch (Exception e)
+                {
+                    Log("io tick #" + cc.Sock.Handle + ": " + e.Message);
+                    cc.Kill();
                 }
             }
         }
@@ -914,70 +958,16 @@ namespace System.Windows.Forms
                    ",\"data\":\"" + data + "\"}";
         }
 
-        static async Task SendFrameAsync(ClientConn cc)
-        {
-            var wi = cc.Win;
-            if (wi == null || cc.Dead) return;
-            WetTrace.Enter("SendFrameAsync #" + cc.Sock.Handle + " fmt=" + cc.Format);
 
-            if (cc.MinFrameMs > 0)
-            {
-                int wait = cc.MinFrameMs - unchecked(Environment.TickCount - cc.LastFrameTick);
-                if (wait > 0) await Task.Delay(wait).ConfigureAwait(false);
-            }
-
-            if (cc.Format == "svg" && !SvgSupport.Enabled)
-                cc.Format = "png";
-
-            string payload;
-            int w, h;
-
-            if (wi.IsDesktop)
-            {
-                w = screenW; h = screenH;
-                if (cc.Format == "svg")
-                {
-                    payload = JEsc(BuildDesktopSvg());
-                }
-                else
-                {
-                    using (var desk = BuildDesktopFrame())
-                    {
-                        var dbytes = EncodeFrame(desk, cc.Format, cc.Quality, cc.Gray);
-                        payload = dbytes != null ? Convert.ToBase64String(dbytes) : "";
-                    }
-                }
-            }
-            else if (cc.Format == "svg")
-            {
-                w = wi.Hwnd != null ? wi.Hwnd.width : 0;
-                h = wi.Hwnd != null ? wi.Hwnd.height : 0;
-                payload = JEsc(BuildTopFrameSvg(wi));
-            }
-            else
-            {
-                w = wi.Hwnd != null ? wi.Hwnd.width : 0;
-                h = wi.Hwnd != null ? wi.Hwnd.height : 0;
-                var bytes = EncodeWindowFrame(wi, cc.Format, cc.Quality, cc.Gray);
-                if (bytes != null && wi.Buffer != null) { w = wi.Buffer.Width; h = wi.Buffer.Height; }
-                payload = bytes != null ? Convert.ToBase64String(bytes) : "";
-            }
-
-            WetTrace.Mark("SendFrameAsync #" + cc.Sock.Handle + " " + cc.Format + " " + w + "x" + h +
-                          " payload=" + payload.Length + "b64");
-            await cc.WriteRawAsync(FrameJson(cc.Format, w, h, payload)).ConfigureAwait(false);
-
-            cc.LastFrameTick = Environment.TickCount;
-            cc.FramesOut++;
-            WetTrace.Exit("SendFrameAsync #" + cc.Sock.Handle + " frames=" + cc.FramesOut);
-        }
 
         static void PushFrames(WinInfo wi)
         {
             if (wi == null) return;
             ClientConn[] subs;
             lock (Sync) subs = wi.Clients.FindAll(c => c.Subscribed && !c.Dead).ToArray();
+            if (subs.Length == 0) return;
             foreach (var c in subs) c.RequestFrame();
+            SchedulePump();        // make TickIO() run so the frames actually go out
         }
 
         void FullRedraw(WinInfo topWi)
@@ -1441,7 +1431,6 @@ namespace System.Windows.Forms
                 EnsureServer();
                 wi.SockPath = PathFor("win-" + wi.Handle.ToInt64().ToString("X"));
                 wi.Listener = ListenWet(wi.SockPath);
-                _ = WinAcceptLoopAsync(wi);
                 BroadcastList("window-added", wi);
                 Log("window 0x" + wi.Handle.ToInt64().ToString("X") + " '" + wi.Title + "' -> unix:" + wi.SockPath);
             }
@@ -2265,9 +2254,24 @@ namespace System.Windows.Forms
         /// Export this to JS ([JSExport] Pump) and call it from a timer
         /// (requestAnimationFrame / setInterval) — that is the ST message loop.
         /// </summary>
+        static int pumpRunning;
+
+        /// <summary>
+        /// Cooperative pump: run the transport tick, drain the WinForms queue once,
+        /// tick again so anything painted by that pass goes out immediately.
+        /// Re-entrant calls return at once (a nested DoEvents would corrupt framing).
+        /// </summary>
         public static void PumpMessages()
         {
-            try { Instance?.DoEvents(); } catch { }
+            if (Interlocked.CompareExchange(ref pumpRunning, 1, 0) != 0) return;
+            try
+            {
+                TickIO();
+                Instance?.DoEvents();
+                TickIO();
+            }
+            catch (Exception e) { Log("pump: " + e.Message); }
+            finally { Interlocked.Exchange(ref pumpRunning, 0); }
         }
 
         internal override bool TranslateMessage(ref MSG msg) => false;
