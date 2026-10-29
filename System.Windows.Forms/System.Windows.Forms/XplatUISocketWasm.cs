@@ -137,16 +137,17 @@ namespace System.Windows.Forms
         static readonly Queue<string> LogRing = new Queue<string>();
         const int MaxLogLines = 500;
         static bool logBroadcast = true;
+        const bool DEBUG = false;
 
         /// <summary>Console + ring + BROADCAST to window-list watchers.</summary>
-        internal static void Log(string message) => Write(message, broadcast: true);
+        internal static Action<string> Log = (string message) => { if (DEBUG) Write(message, broadcast: true); return; };
 
         /// <summary>
         /// Console + ring ONLY. Never broadcast. A broadcast becomes a message on
         /// the very connection we are describing, and describing that write
         /// broadcasts again — a self-feeding loop (BytesOut climbing 496→565→663→…).
         /// </summary>
-        internal static void LogLocal(string message) => Write(message, broadcast: false);
+        internal static Action<string> LogLocal = (string message) => { if (DEBUG) Write(message, broadcast: false); return; };
 
         static void Write(string message, bool broadcast)
         {
@@ -1144,7 +1145,7 @@ namespace System.Windows.Forms
             }
             finally
             {
-                src.Dispose();
+                ReturnBitmap(src);            // ← was src.Dispose()
             }
             return enc;
         }
@@ -1673,6 +1674,50 @@ namespace System.Windows.Forms
             return wi.Buffer;
         }
 
+        // ════════════════════════════════════════════════════════════════════
+        //  Bitmap scratch pool.
+        //
+        //  Every frame used to allocate a fresh Bitmap: the compositor alone is
+        //  screenW*screenH*4 = 8.3 MB at 1080p, so 30 fps was 250 MB/s of LOH
+        //  garbage. Rent/Return reuses them.
+        //
+        //  Ownership: whoever Rents must Return, exactly once. Nesting depth is at
+        //  most 3 (desktop -> composited -> top frame), so a cap of 8 is plenty.
+        //  Rented bitmaps are NOT cleared — callers must overwrite or clear.
+        // ════════════════════════════════════════════════════════════════════
+        static readonly object ScratchLock = new object();
+        static readonly List<Bitmap> Scratch = new List<Bitmap>();
+        const int ScratchCap = 8;
+
+        static Bitmap RentBitmap(int w, int h)
+        {
+            w = Math.Max(1, w);
+            h = Math.Max(1, h);
+            lock (ScratchLock)
+            {
+                for (int i = Scratch.Count - 1; i >= 0; i--)
+                {
+                    var b = Scratch[i];
+                    if (b.Width == w && b.Height == h)
+                    {
+                        Scratch.RemoveAt(i);
+                        return b;
+                    }
+                }
+            }
+            return new Bitmap(w, h);
+        }
+
+        static void ReturnBitmap(Bitmap b)
+        {
+            if (b == null) return;
+            lock (ScratchLock)
+            {
+                if (Scratch.Count < ScratchCap) { Scratch.Add(b); return; }
+            }
+            b.Dispose();
+        }
+
         // ── Rendering: desktop compositor ────────────────────────────────
         static Bitmap BuildDesktopFrame()
         {
@@ -1683,17 +1728,20 @@ namespace System.Windows.Forms
                     .Where(w => w?.Hwnd != null && w.Hwnd.visible && !w.Hwnd.zombie)
                     .ToList();
 
-            var bmp = new Bitmap(screenW, screenH);
+            var bmp = RentBitmap(screenW, screenH);
             using (var g = Graphics.FromImage(bmp))
             {
                 g._suppressSvg = true;
-                g.Clear(Color.FromArgb(58, 58, 64));
+                g.Clear(Color.FromArgb(58, 58, 64));          // covers the whole bitmap
                 foreach (var w in vis)
                 {
                     bool ridesAlong = vis.Any(o => o != w && IsPopupOf(w, o));
                     if (ridesAlong) continue;
-                    using (var f = BuildCompositedFrame(w))
-                        if (f != null) g.DrawImage(f, w.Hwnd.x, w.Hwnd.y);
+
+                    var f = BuildCompositedFrame(w);
+                    if (f == null) continue;
+                    try { g.DrawImage(f, w.Hwnd.x, w.Hwnd.y); }
+                    finally { ReturnBitmap(f); }
                 }
             }
             return bmp;
@@ -2040,36 +2088,55 @@ namespace System.Windows.Forms
         {
             Bitmap frame = BuildTopFrame(wi);
             if (frame == null) return null;
+
             var pops = PopupsFor(wi);
-            if (pops.Count == 0) return frame;
-            var comp = new Bitmap(frame.Width, frame.Height);
+            if (pops.Count == 0) return frame;                // caller owns `frame`
+
+            var comp = RentBitmap(frame.Width, frame.Height);
             using (var g = Graphics.FromImage(comp))
             {
                 g._suppressSvg = true;
-                g.DrawImage(frame, 0, 0);
+                g.DrawImage(frame, 0, 0);                     // covers the whole bitmap
                 foreach (var p in pops)
-                    using (var pf = BuildTopFrame(p))
-                        if (pf != null)
-                            g.DrawImage(pf, p.Hwnd.x - wi.Hwnd.x, p.Hwnd.y - wi.Hwnd.y);
+                {
+                    var pf = BuildTopFrame(p);
+                    if (pf == null) continue;
+                    try { g.DrawImage(pf, p.Hwnd.x - wi.Hwnd.x, p.Hwnd.y - wi.Hwnd.y); }
+                    finally { ReturnBitmap(pf); }
+                }
             }
-            frame.Dispose();
+            ReturnBitmap(frame);                              // merged into comp
             return comp;
         }
 
         static Bitmap BuildTopFrame(WinInfo topWi)
         {
             var top = topWi.Hwnd;
-            var frame = new Bitmap(Math.Max(1, top.width), Math.Max(1, top.height));
+            var frame = RentBitmap(Math.Max(1, top.width), Math.Max(1, top.height));
+
             using (var g = Graphics.FromImage(frame))
             {
                 g._suppressSvg = true;
+
+                bool painted = false;
                 lock (topWi.BufLock)
+                {
                     if (topWi.Buffer != null)
+                    {
                         g.DrawImage(topWi.Buffer, 0, 0);
+                        painted = true;
+                    }
+                }
+
+                // A rented bitmap carries the previous frame's pixels. If there is
+                // no window buffer to overwrite them, clear — otherwise the frame
+                // shows garbage where the old (larger) window used to be.
+                if (!painted) g.Clear(Color.Transparent);
 
                 var c = Control.FromHandle(top.Handle);
                 if (c != null) RenderChildren(topWi, g);
             }
+
             DrawCaretIfAny(top, frame);
             return frame;
         }
