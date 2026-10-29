@@ -1,10 +1,11 @@
 ﻿
+
 using SkiaSharp;
 using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Drawing;
-
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -14,6 +15,7 @@ using System.Runtime.Loader;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Windows.Forms.VisualStyles;
 using Wystem.Wet;
 
 [assembly: System.Runtime.Versioning.SupportedOSPlatform("browser")]
@@ -1394,6 +1396,7 @@ Bitmap CreateStarBitmap(int width, int height)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 2. Basic Paint — MS-Paint-like, minimal, measures input→output latency
+//    + a "Calculator" button that opens the basic/scientific calculator
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ---- drawing state (declared BEFORE the local functions that use them) ----
@@ -1406,6 +1409,9 @@ Point lastPt = Point.Empty, anchorPt = Point.Empty;
 Bitmap surface = null, snapshot = null;
 var undoStack = new List<Bitmap>();
 
+// ---- calculator (one instance, reused) ----
+CalcForm calcForm = null;
+
 // ---- latency instrumentation ----
 long inputTick = 0;                       // timestamp of the input that caused the pending repaint
 long latLast = 0, latSum = 0, latMax = 0;
@@ -1415,14 +1421,14 @@ int inputCount = 0, paintCount = 0;
 // ---- form ----
 var form = new Form
 {
-    Text = "Wasm Paint — latency bench",
-    AutoScaleMode = AutoScaleMode.None,        // ← MWF autoscaling collapses the window without this
-    ClientSize = new Size(1200, 700),
-    MinimumSize = new Size(1200, 700),         // ← the driver honours Min/Max; nothing may shrink us
-    FormBorderStyle = FormBorderStyle.Sizable,
-    StartPosition = FormStartPosition.Manual,
-    WindowState = FormWindowState.Maximized,   // ← same trick as the original program
-    BackColor = Color.FromArgb(245, 246, 250),
+Text = "Wasm Paint — latency bench",
+AutoScaleMode = AutoScaleMode.None,        // ← MWF autoscaling collapses the window without this
+ClientSize = new Size(1200, 700),
+MinimumSize = new Size(1200, 700),         // ← the driver honours Min/Max; nothing may shrink us
+FormBorderStyle = FormBorderStyle.Sizable,
+StartPosition = FormStartPosition.Manual,
+WindowState = FormWindowState.Maximized,   // ← same trick as the original program
+BackColor = Color.FromArgb(245, 246, 250),
 
 };
 
@@ -1450,6 +1456,9 @@ toolStrip.Items.Add(tUndo);
 toolStrip.Items.Add(tClear);
 toolStrip.Items.Add(tSave);
 toolStrip.Items.Add(tProbe);
+toolStrip.Items.Add(new ToolStripSeparator());
+var tCalc = new ToolStripButton("Calculator");      // ← NEW
+toolStrip.Items.Add(tCalc);
 
 // ---- palette + brush size ----
 var dimGray = Color.FromArgb(105, 105, 105);
@@ -1465,16 +1474,16 @@ var palette = new[]
 };
 for (int i = 0; i < palette.Length; i++)
 {
-    var sw = new Button
-    {
-        Location = new Point(8 + (i % 3) * 36, 30 + (i / 3) * 36),
-        Size = new Size(32, 32),
-        BackColor = palette[i],
-        FlatStyle = FlatStyle.Flat,
-        Tag = i,
-    };
-    sw.FlatAppearance.BorderSize = 1;
-    pnlLeft.Controls.Add(sw);
+var sw = new Button
+{
+Location = new Point(8 + (i % 3) * 36, 30 + (i / 3) * 36),
+Size = new Size(32, 32),
+BackColor = palette[i],
+FlatStyle = FlatStyle.Flat,
+Tag = i,
+};
+sw.FlatAppearance.BorderSize = 1;
+pnlLeft.Controls.Add(sw);
 }
 
 var lblInk = new Label { Text = "", Location = new Point(8, 190), Size = new Size(104, 26), BackColor = Color.Black, BorderStyle = BorderStyle.FixedSingle };
@@ -1489,11 +1498,11 @@ pnlLeft.Controls.Add(nudSize);
 const int canvasW = 1120, canvasH = 740;
 var canvas = new PictureBox
 {
-    Location = new Point(130, 40),
-    Size = new Size(canvasW, canvasH),
-    BackColor = Color.White,
-    BorderStyle = BorderStyle.FixedSingle,
-    SizeMode = PictureBoxSizeMode.Normal,
+Location = new Point(130, 40),
+Size = new Size(canvasW, canvasH),
+BackColor = Color.White,
+BorderStyle = BorderStyle.FixedSingle,
+SizeMode = PictureBoxSizeMode.Normal,
 };
 surface = new Bitmap(canvasW, canvasH);
 using (var g0 = Graphics.FromImage(surface)) g0.Clear(Color.White);
@@ -1520,83 +1529,98 @@ form.Controls.Add(status);
 // ---- local functions (after every local they touch is declared) ----
 void NoteInput()
 {
-    inputCount++;
-    inputTick = Environment.TickCount64;  // the "in" mark
+inputCount++;
+inputTick = Environment.TickCount64;  // the "in" mark
 }
 
 void DrawStroke(Point from, Point to)
 {
-    using var g = Graphics.FromImage(surface);
-    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-    using var pen = new Pen(tool == PaintTool.Eraser ? Color.White : ink, brushSize)
-    {
-        StartCap = System.Drawing.Drawing2D.LineCap.Round,
-        EndCap = System.Drawing.Drawing2D.LineCap.Round,
-        LineJoin = System.Drawing.Drawing2D.LineJoin.Round,
-    };
-    g.DrawLine(pen, from, to);
+using var g = Graphics.FromImage(surface);
+g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+using var pen = new Pen(tool == PaintTool.Eraser ? Color.White : ink, brushSize)
+{
+StartCap = System.Drawing.Drawing2D.LineCap.Round,
+EndCap = System.Drawing.Drawing2D.LineCap.Round,
+LineJoin = System.Drawing.Drawing2D.LineJoin.Round,
+};
+g.DrawLine(pen, from, to);
 }
 
 void DrawShape(Graphics g, Point a, Point b)
 {
-    using var pen = new Pen(ink, brushSize);
-    var r = new Rectangle(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y),
-                          Math.Abs(b.X - a.X), Math.Abs(b.Y - a.Y));
-    switch (tool)
-    {
-        case PaintTool.Line: g.DrawLine(pen, a, b); break;
-        case PaintTool.Rectangle: g.DrawRectangle(pen, r); break;
-        case PaintTool.Ellipse: g.DrawEllipse(pen, r); break;
-    }
+using var pen = new Pen(ink, brushSize);
+var r = new Rectangle(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y),
+                      Math.Abs(b.X - a.X), Math.Abs(b.Y - a.Y));
+switch (tool)
+{
+case PaintTool.Line: g.DrawLine(pen, a, b); break;
+case PaintTool.Rectangle: g.DrawRectangle(pen, r); break;
+case PaintTool.Ellipse: g.DrawEllipse(pen, r); break;
+}
 }
 
 void PushUndo()
 {
-    undoStack.Add(new Bitmap(surface));
-    while (undoStack.Count > 12) { undoStack[0].Dispose(); undoStack.RemoveAt(0); }
+undoStack.Add(new Bitmap(surface));
+while (undoStack.Count > 12) { undoStack[0].Dispose(); undoStack.RemoveAt(0); }
 }
 
 void Undo()
 {
-    if (undoStack.Count == 0) return;
-    var prev = undoStack[undoStack.Count - 1];
-    undoStack.RemoveAt(undoStack.Count - 1);
-    using (var g = Graphics.FromImage(surface)) g.DrawImage(prev, 0, 0);
-    prev.Dispose();
-    canvas.Invalidate();
+if (undoStack.Count == 0) return;
+var prev = undoStack[undoStack.Count - 1];
+undoStack.RemoveAt(undoStack.Count - 1);
+using (var g = Graphics.FromImage(surface)) g.DrawImage(prev, 0, 0);
+prev.Dispose();
+canvas.Invalidate();
 }
 
 void ClearCanvas()
 {
-    using var g = Graphics.FromImage(surface);
-    g.Clear(Color.White);
-    canvas.Invalidate();
+using var g = Graphics.FromImage(surface);
+g.Clear(Color.White);
+canvas.Invalidate();
 }
 
 void Save()
 {
-    try
-    {
-        using var ms = new MemoryStream();
-        surface.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
-        surface.Save("painting.png", System.Drawing.Imaging.ImageFormat.Png);   // browser: MEMFS
-        lblStatus.Text = $"saved painting.png · {ms.Length} bytes";
-        Console.WriteLine($"[paint] saved painting.png ({ms.Length} bytes)");
-    }
-    catch (Exception ex) { Dump(ex); }
+try
+{
+using var ms = new MemoryStream();
+surface.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+surface.Save("painting.png", System.Drawing.Imaging.ImageFormat.Png);   // browser: MEMFS
+lblStatus.Text = $"saved painting.png · {ms.Length} bytes";
+Console.WriteLine($"[paint] saved painting.png ({ms.Length} bytes)");
+}
+catch (Exception ex) { Dump(ex); }
 }
 
 void SetTool(PaintTool t)
 {
-    tool = t;
-    lblTool.Text = "tool: " + t;
+tool = t;
+lblTool.Text = "tool: " + t;
 }
 
 void ProbeLatency()
 {
-    NoteInput();
-    canvas.Invalidate();
-    Console.WriteLine("[paint] probe queued");
+NoteInput();
+canvas.Invalidate();
+Console.WriteLine("[paint] probe queued");
+}
+
+void OpenCalc()
+{
+    try
+    {
+        Console.WriteLine("[calc] OpenCalc: about to new CalcForm()");
+        if (calcForm == null || calcForm.IsDisposed) calcForm = new CalcForm();
+        Console.WriteLine("[calc] OpenCalc: about to Show()  hwnd-path=" + calcForm.IsHandleCreated);
+        calcForm.Show();
+        Console.WriteLine("[calc] OpenCalc: Show() returned");
+        calcForm.Activate();
+        Console.WriteLine("[calc] OpenCalc: Activate() returned");
+    }
+    catch (Exception ex) { Console.WriteLine("[calc] OpenCalc EXCEPTION: " + ex); Dump(ex); }
 }
 
 // ---- wiring ----
@@ -1610,100 +1634,101 @@ tUndo.Click += (_, __) => Undo();
 tClear.Click += (_, __) => { PushUndo(); ClearCanvas(); };
 tSave.Click += (_, __) => Save();
 tProbe.Click += (_, __) => ProbeLatency();
+tCalc.Click += (_, __) => OpenCalc();                       // ← NEW
 
 for (int i = 0; i < palette.Length; i++)
 {
-    var sw = pnlLeft.Controls[2 + i] as Button;   // 0=lblColors, 1=swatch loop starts at 2
-    if (sw == null) continue;
-    int idx = (int)sw.Tag;
-    sw.Click += (s, __) =>
-    {
-        ink = palette[idx];
-        lblInk.BackColor = ink;
-    };
+var sw = pnlLeft.Controls[2 + i] as Button;   // 0=lblColors, 1=swatch loop starts at 2
+if (sw == null) continue;
+int idx = (int)sw.Tag;
+sw.Click += (s, __) =>
+{
+ink = palette[idx];
+lblInk.BackColor = ink;
+};
 }
 nudSize.ValueChanged += (_, __) => brushSize = (int)nudSize.Value;
 
 canvas.MouseDown += (s, e) =>
 {
-    NoteInput();
-    drawing = true;
-    lastPt = anchorPt = e.Location;
-    PushUndo();
-    if (tool == PaintTool.Line || tool == PaintTool.Rectangle || tool == PaintTool.Ellipse)
-        snapshot = new Bitmap(surface);
-    else
-        DrawStroke(lastPt, e.Location);
-    canvas.Invalidate();
+NoteInput();
+drawing = true;
+lastPt = anchorPt = e.Location;
+PushUndo();
+if (tool == PaintTool.Line || tool == PaintTool.Rectangle || tool == PaintTool.Ellipse)
+snapshot = new Bitmap(surface);
+else
+DrawStroke(lastPt, e.Location);
+canvas.Invalidate();
 };
 
 canvas.MouseMove += (s, e) =>
 {
-    NoteInput();
-    lblPos.Text = $"{e.X},{e.Y}";
-    if (!drawing) return;
+NoteInput();
+lblPos.Text = $"{e.X},{e.Y}";
+if (!drawing) return;
 
-    if (tool == PaintTool.Line || tool == PaintTool.Rectangle || tool == PaintTool.Ellipse)
-    {
-        using (var g = Graphics.FromImage(surface))
-        {
-            if (snapshot != null) g.DrawImage(snapshot, 0, 0);
-            DrawShape(g, anchorPt, e.Location);
-        }
-    }
-    else
-    {
-        DrawStroke(lastPt, e.Location);
-        lastPt = e.Location;
-    }
-    canvas.Invalidate();
+if (tool == PaintTool.Line || tool == PaintTool.Rectangle || tool == PaintTool.Ellipse)
+{
+using (var g = Graphics.FromImage(surface))
+{
+if (snapshot != null) g.DrawImage(snapshot, 0, 0);
+DrawShape(g, anchorPt, e.Location);
+}
+}
+else
+{
+DrawStroke(lastPt, e.Location);
+lastPt = e.Location;
+}
+canvas.Invalidate();
 };
 
 canvas.MouseUp += (s, e) =>
 {
-    if (!drawing) return;
-    NoteInput();
-    drawing = false;
-    if (tool == PaintTool.Line || tool == PaintTool.Rectangle || tool == PaintTool.Ellipse)
-    {
-        using var g = Graphics.FromImage(surface);
-        if (snapshot != null) g.DrawImage(snapshot, 0, 0);
-        DrawShape(g, anchorPt, e.Location);
-        snapshot?.Dispose();
-        snapshot = null;
-    }
-    canvas.Invalidate();
+if (!drawing) return;
+NoteInput();
+drawing = false;
+if (tool == PaintTool.Line || tool == PaintTool.Rectangle || tool == PaintTool.Ellipse)
+{
+using var g = Graphics.FromImage(surface);
+if (snapshot != null) g.DrawImage(snapshot, 0, 0);
+DrawShape(g, anchorPt, e.Location);
+snapshot?.Dispose();
+snapshot = null;
+}
+canvas.Invalidate();
 };
 
 // keyboard: P/B/E/L/R/O tools, Ctrl+Z undo, Ctrl+S save
 form.KeyDown += (s, e) =>
 {
-    NoteInput();
-    if (e.Control && e.KeyCode == Keys.Z) { Undo(); return; }
-    if (e.Control && e.KeyCode == Keys.S) { Save(); return; }
-    switch (e.KeyCode)
-    {
-        case Keys.P: SetTool(PaintTool.Pencil); break;
-        case Keys.B: SetTool(PaintTool.Brush); break;
-        case Keys.E: SetTool(PaintTool.Eraser); break;
-        case Keys.L: SetTool(PaintTool.Line); break;
-        case Keys.R: SetTool(PaintTool.Rectangle); break;
-        case Keys.O: SetTool(PaintTool.Ellipse); break;
-    }
+NoteInput();
+if (e.Control && e.KeyCode == Keys.Z) { Undo(); return; }
+if (e.Control && e.KeyCode == Keys.S) { Save(); return; }
+switch (e.KeyCode)
+{
+case Keys.P: SetTool(PaintTool.Pencil); break;
+case Keys.B: SetTool(PaintTool.Brush); break;
+case Keys.E: SetTool(PaintTool.Eraser); break;
+case Keys.L: SetTool(PaintTool.Line); break;
+case Keys.R: SetTool(PaintTool.Rectangle); break;
+case Keys.O: SetTool(PaintTool.Ellipse); break;
+}
 };
 
 // ---- output → measure: the "out" mark ----
 canvas.Paint += (s, e) =>
 {
-    paintCount++;
-    if (inputTick != 0)
-    {
-        latLast = Environment.TickCount64 - inputTick;
-        latSum += latLast;
-        latCount++;
-        if (latLast > latMax) latMax = latLast;
-        inputTick = 0;              // consumed by this repaint
-    }
+paintCount++;
+if (inputTick != 0)
+{
+latLast = Environment.TickCount64 - inputTick;
+latSum += latLast;
+latCount++;
+if (latLast > latMax) latMax = latLast;
+inputTick = 0;              // consumed by this repaint
+}
 };
 
 // ---- live stats ----
@@ -1711,16 +1736,64 @@ var uiTimer = new System.Windows.Forms.Timer { Interval = 500 };
 int lastIn = 0, lastPaint = 0;
 uiTimer.Tick += (s, e) =>
 {
-    int inRate = (inputCount - lastIn) * 2;
-    int paintRate = (paintCount - lastPaint) * 2;
-    lastIn = inputCount;
-    lastPaint = paintCount;
-    lblStats.Text = $"in {inputCount} ({inRate}/s) · paint {paintCount} ({paintRate}/s)";
-    lblLatency.Text = latCount > 0
-        ? $"latency in→paint {latLast} ms · avg {latSum / latCount} ms · max {latMax} ms"
-        : "latency in→paint —";
+int inRate = (inputCount - lastIn) * 2;
+int paintRate = (paintCount - lastPaint) * 2;
+lastIn = inputCount;
+lastPaint = paintCount;
+lblStats.Text = $"in {inputCount} ({inRate}/s) · paint {paintCount} ({paintRate}/s)";
+lblLatency.Text = latCount > 0
+    ? $"latency in→paint {latLast} ms · avg {latSum / latCount} ms · max {latMax} ms"
+    : "latency in→paint —";
 };
 //uiTimer.Start();
+
+
+
+// ── warm up the thread pool ──────────────────────────────────────────────
+// This RC does not create pool threads on demand (Thread.Start asserts), so
+// TaskCompletionSource continuations (RunContinuationsAsynchronously) have
+// nowhere to run unless workers already exist. The old Task.Run(fn) × 100
+// test block did this accidentally — that is the run where accepts resumed.
+static void WarmUpPool(int workers = 16)
+{
+int done = 0;
+for (int i = 0; i < workers; i++)
+Task.Run(() => System.Threading.Interlocked.Increment(ref done));
+Console.WriteLine($"[boot] pool warm-up: {workers} workers requested");
+}
+
+WarmUpPool();
+AssemblyDiag.Report();
+
+if (!OperatingSystem.IsBrowser())
+{
+Task.Run(() => Application.Run(form));                       // desktop: the proper way, unchanged
+while (true)
+{
+await Task.Run(() => { });                 // feeds the pool (continuations drain)
+                                           // AND suspends Main (interop thread is free)
+System.Windows.Forms.XplatUISocketWasm.SchedulePump();
+}
+}
+else
+{
+await Task.Run(() => form.Show());
+Console.WriteLine("[boot] browser: fed-and-yielding pump loop");
+var x = async () =>
+{
+while (true)
+{
+await Task.Run(() => { });                 // feeds the pool (continuations drain)
+                                           // AND suspends Main (interop thread is free)
+System.Windows.Forms.XplatUISocketWasm.SchedulePump();
+
+await Task.Yield();
+}
+};
+Task.Run(x);
+}
+
+
 
 var fn = () =>
 {
@@ -1782,13 +1855,7 @@ catch (Exception ex) { Dump(ex); throw; }*/
 // TaskCompletionSource continuations (RunContinuationsAsynchronously) have
 // nowhere to run unless workers already exist. The old Task.Run(fn) × 100
 // test block did this accidentally — that is the run where accepts resumed.
-static void WarmUpPool(int workers = 16)
-{
-    int done = 0;
-    for (int i = 0; i < workers; i++)
-        Task.Run(() => System.Threading.Interlocked.Increment(ref done));
-    Console.WriteLine($"[boot] pool warm-up: {workers} workers requested");
-}
+
 
 WarmUpPool();
 AssemblyDiag.Report();
@@ -2030,4 +2097,880 @@ internal static class SystemDrawingBinding
 
     static bool IsOurDrawing(string simpleName) =>
         simpleName == "System.Drawing" && ours != null && ours.GetName().Name == "System.Drawing";
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// types
+// ═══════════════════════════════════════════════════════════════════════════
+
+public enum CalcMode { Decimal, Scientific }
+
+/// <summary>
+/// Calculator — two modes on one keypad:
+///
+///   DECIMAL    exact System.Decimal arithmetic: + − × ÷ % ± ⌫ C CE = Ans
+///              (scientific keys are DISABLED — no transcendental maths on decimal)
+///   SCIENTIFIC System.Double arithmetic: sin cos tan asin acos atan sinh cosh
+///              tanh ln log 10^x e^x x² x³ x^y √ ∛ 1/x n! mod π e EXP
+///
+/// Tracing: every step writes "[calc] …" to the console so a hang or a throw
+/// during construction shows which control caused it.
+/// Nothing throws out of a button handler (SafeDispatch).
+/// </summary>
+public class CalcForm : Form
+{
+    // ── tracing ─────────────────────────────────────────────────────────
+    static int _seq;
+
+    static void T(string s)
+    {
+        try { Console.WriteLine("[calc " + (++_seq).ToString("D3") + "] " + s); }
+        catch { }
+    }
+
+    // ── layout ──────────────────────────────────────────────────────────
+    const int BW = 70, BH = 50, GAP = 6;
+    const int LX = 12, LY = 122;
+    const int RX = 330;                 // right (scientific) grid origin
+
+    // ── palette ─────────────────────────────────────────────────────────
+    static readonly Color BackC = Color.FromArgb(24, 26, 32);
+    static readonly Color NumBg = Color.FromArgb(52, 58, 70);
+    static readonly Color NumFg = Color.FromArgb(232, 236, 242);
+    static readonly Color NumHi = Color.FromArgb(72, 82, 98);
+    static readonly Color NumLo = Color.FromArgb(34, 38, 48);
+    static readonly Color OpBg = Color.FromArgb(198, 124, 28);
+    static readonly Color OpFg = Color.White;
+    static readonly Color SciBg = Color.FromArgb(96, 76, 152);
+    static readonly Color SciFg = Color.FromArgb(238, 232, 255);
+    static readonly Color SciOff = Color.FromArgb(56, 52, 68);
+    static readonly Color EqBg = Color.FromArgb(38, 148, 96);
+    static readonly Color ClrBg = Color.FromArgb(168, 54, 54);
+    static readonly Color AnsBg = Color.FromArgb(62, 70, 86);
+    static readonly Color DispBg = Color.FromArgb(12, 14, 18);
+    static readonly Color DispFg = Color.FromArgb(122, 232, 162);
+    static readonly Color ExprFg = Color.FromArgb(150, 160, 175);
+    static readonly Color StatFg = Color.FromArgb(255, 196, 96);
+
+    // ── fonts (created once, with fallbacks — a throw in a static field
+    //    initializer becomes TypeInitializationException on `new CalcForm()`
+    //    and looks exactly like "the button does nothing") ───────────────
+    static readonly Font FNum = SafeFont("Segoe UI", 12f, FontStyle.Bold);
+    static readonly Font FSci = SafeFont("Segoe UI", 10f, FontStyle.Bold);
+    static readonly Font FEq = SafeFont("Segoe UI", 14f, FontStyle.Bold);
+    static readonly Font FDisp = SafeFont("Consolas", 22f, FontStyle.Bold);
+    static readonly Font FSmall = SafeFont("Segoe UI", 9f, FontStyle.Regular);
+    static readonly Font FSmallI = SafeFont("Segoe UI", 9f, FontStyle.Italic);
+
+    static Font SafeFont(string name, float size, FontStyle style)
+    {
+        try
+        {
+            T("font: '" + name + "' " + size + "pt " + style);
+            var f = new Font(name, size, style);
+            T("font: '" + name + "' ok");
+            return f;
+        }
+        catch (Exception e)
+        {
+            T("font: '" + name + "' FAILED (" + e.GetType().Name + ": " + e.Message + ") — GenericSansSerif");
+            try { return new Font(FontFamily.GenericSansSerif, size, style); }
+            catch (Exception e2)
+            {
+                T("font: GenericSansSerif FAILED (" + e2.Message + ") — size only");
+                try { return new Font(FontFamily.GenericSansSerif, size); }
+                catch (Exception e3)
+                {
+                    T("font: ALL font creation failed (" + e3.Message + ")");
+                    return null;
+                }
+            }
+        }
+    }
+
+    // ── keypad definitions: "label|code" ────────────────────────────────
+    static readonly string[] NumKeys =
+    {
+        "C|C",     "CE|CE",   "⌫|back", "±|neg",
+        "7|7",     "8|8",     "9|9",    "÷|÷",
+        "4|4",     "5|5",     "6|6",    "×|×",
+        "1|1",     "2|2",     "3|3",    "−|-",
+        "0|0",     ".|.",     "%|%",    "+|+",
+    };
+
+    static readonly string[] SciKeys =
+    {
+        "sin|sin",   "cos|cos",   "tan|tan",
+        "asin|asin", "acos|acos", "atan|atan",
+        "sinh|sinh", "cosh|cosh", "tanh|tanh",
+        "ln|ln",     "log|log",   "10^x|10^x",
+        "e^x|e^x",   "x²|x2",     "x³|x3",
+        "x^y|x^y",   "√|sqrt",    "∛|cbrt",
+        "1/x|inv",   "n!|fact",   "mod|mod",
+        "π|pi",      "e|e",       "EXP|exp",
+    };
+
+    // ── controls ────────────────────────────────────────────────────────
+    readonly TextBox _display;
+    readonly Label _expr, _modeLabel, _status;   // ← _modeLabel, NOT _mode
+    readonly Button _modeBtn;
+    readonly List<Button> _sci = new List<Button>();
+
+    // ── state ("" means "none" — no nullable annotations needed) ────────
+    CalcMode _mode = CalcMode.Decimal;           // ← the only _mode
+    string _entry = "0";
+    bool _fresh = true;          // next digit starts a brand-new number
+    bool _errored;               // an invalid op happened — C/CE/DC restart
+    string _op = "";             // pending binary operator
+    decimal _decAcc; double _dblAcc;
+    decimal _decAns; double _dblAns; bool _hasAns;
+    string _lastOp = "";         // for repeated "="
+    string _lastArg = "";
+    string _statusText = "";
+
+    public CalcForm()
+    {
+        T("ctor: START");
+        try
+        {
+            Text = "Calculator — basic (decimal) · scientific (double)";
+            T("ctor: Text ok");
+
+            AutoScaleMode = AutoScaleMode.None;
+            T("ctor: AutoScaleMode ok");
+
+            FormBorderStyle = FormBorderStyle.Sizable;
+            StartPosition = FormStartPosition.CenterScreen;
+            T("ctor: border/startposition ok");
+
+            BackColor = BackC;
+            KeyPreview = true;
+            T("ctor: BackColor/KeyPreview ok");
+
+            MinimumSize = new Size(564, 620);
+            T("ctor: MinimumSize ok");
+
+            ClientSize = new Size(564, 578);
+            T("ctor: ClientSize ok (" + ClientSize.Width + "x" + ClientSize.Height + ")");
+
+            // ── display ─────────────────────────────────────────────────
+            T("ctor: creating display…");
+            _display = new TextBox
+            {
+                Multiline = false,
+                ReadOnly = true,
+                TextAlign = HorizontalAlignment.Right,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = DispBg,
+                ForeColor = DispFg,
+                Font = FDisp,
+                Text = "0",
+            };
+            T("ctor: display created");
+            _display.SetBounds(12, 10, 540, 46);
+            Controls.Add(_display);
+            T("ctor: display added");
+
+            T("ctor: creating labels…");
+            _expr = new Label
+            {
+                AutoSize = false,
+                TextAlign = System.Drawing.ContentAlignment.MiddleRight,
+                ForeColor = ExprFg,
+                Font = FSmall,
+                Text = "",
+            };
+            _expr.SetBounds(12, 58, 540, 18);
+            Controls.Add(_expr);
+            T("ctor: _expr added");
+
+            _status = new Label
+            {
+                AutoSize = false,
+                TextAlign = System.Drawing.ContentAlignment.MiddleLeft,
+                ForeColor = StatFg,
+                Font = FSmallI,
+                Text = "",
+            };
+            _status.SetBounds(12, 80, 350, 32);
+            Controls.Add(_status);
+            T("ctor: _status added");
+
+            _modeLabel = new Label
+            {
+                AutoSize = false,
+                TextAlign = System.Drawing.ContentAlignment.MiddleLeft,
+                ForeColor = ExprFg,
+                Font = FSmall,
+                Text = "",
+            };
+            _modeLabel.SetBounds(370, 80, 182, 16);
+            Controls.Add(_modeLabel);
+            T("ctor: _modeLabel added");
+
+            T("ctor: creating mode button…");
+            _modeBtn = new Button
+            {
+                Text = "⇄  switch to SCIENTIFIC",
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(38, 44, 56),
+                ForeColor = Color.White,
+                Font = FSmall,
+                UseVisualStyleBackColor = false,
+                TabStop = false,
+            };
+            _modeBtn.FlatAppearance.BorderSize = 0;
+            _modeBtn.SetBounds(370, 96, 182, 22);
+            _modeBtn.Click += (s, e) => SafeDispatch("mode");
+            Controls.Add(_modeBtn);
+            T("ctor: _modeBtn added");
+
+            // ── numeric keypad (FLAT) — 4 cols × 5 rows ─────────────────
+            T("ctor: numeric keypad (" + NumKeys.Length + " keys)…");
+            for (int i = 0; i < NumKeys.Length; i++)
+            {
+                if (i % 4 == 0) T("ctor: num row " + (i / 4));
+                var parts = NumKeys[i].Split('|');
+                var b = MakeBtn(parts[0], parts[1], false);
+                b.SetBounds(LX + (i % 4) * (BW + GAP), LY + (i / 4) * (BH + GAP), BW, BH);
+                Controls.Add(b);
+            }
+            T("ctor: numeric keypad done");
+
+            T("ctor: equals/Ans…");
+            var eq = MakeBtn("=", "=", false);
+            eq.Font = FEq;
+            eq.SetBounds(LX, LY + 5 * (BH + GAP), 3 * BW + 2 * GAP, BH);
+            Controls.Add(eq);
+
+            var ans = MakeBtn("Ans", "Ans", false);
+            ans.SetBounds(LX + 3 * (BW + GAP), LY + 5 * (BH + GAP), BW, BH);
+            Controls.Add(ans);
+            T("ctor: equals/Ans done");
+
+            // ── scientific keypad (3-D) — 3 cols × 8 rows ───────────────
+            T("ctor: scientific keypad (" + SciKeys.Length + " keys)…");
+            for (int i = 0; i < SciKeys.Length; i++)
+            {
+                if (i % 3 == 0) T("ctor: sci row " + (i / 3));
+                var parts = SciKeys[i].Split('|');
+                var b = MakeBtn(parts[0], parts[1], true);
+                b.SetBounds(RX + (i % 3) * (BW + GAP), LY + (i / 3) * (BH + GAP), BW, BH);
+                Controls.Add(b);
+            }
+            T("ctor: scientific keypad done");
+
+            T("ctor: ApplyMode…");
+            ApplyMode();
+            T("ctor: ApplyMode done");
+
+            T("ctor: Render…");
+            Render();
+            T("ctor: Render done");
+
+            T("ctor: KeyDown hook…");
+            KeyDown += OnFormKeyDown;
+            T("ctor: KeyDown hooked");
+
+            T("ctor: COMPLETE — " + Controls.Count + " controls");
+        }
+        catch (Exception ex)
+        {
+            T("ctor: EXCEPTION " + ex.GetType().FullName + ": " + ex.Message);
+            T("ctor: " + (ex.StackTrace ?? "(no stack)"));
+            throw;      // let OpenCalc's try/catch see it; do not show a broken form
+        }
+    }
+
+    void OnFormKeyDown(object s, KeyEventArgs e)
+    {
+        try
+        {
+            var k = e.KeyCode;
+            if (k >= Keys.D0 && k <= Keys.D9) { Digit(((int)k - (int)Keys.D0).ToString()); e.Handled = true; return; }
+            if (k >= Keys.NumPad0 && k <= Keys.NumPad9) { Digit(((int)k - (int)Keys.NumPad0).ToString()); e.Handled = true; return; }
+            switch (k)
+            {
+                case Keys.Oemplus: case Keys.Add: Op("+"); break;
+                case Keys.OemMinus: case Keys.Subtract: Op("-"); break;
+                case Keys.Multiply: Op("×"); break;
+                case Keys.Divide: case Keys.OemQuestion: Op("÷"); break;
+                case Keys.Decimal: case Keys.OemPeriod: Digit("."); break;
+                case Keys.Return: DoEquals(); break;
+                case Keys.Back: Backspace(); break;
+                case Keys.Escape: ResetAll(); break;
+                case Keys.Delete: ClearEntry(); break;
+                case Keys.F9: Negate(); break;
+                default: return;
+            }
+            e.Handled = true;
+        }
+        catch (Exception ex) { Fail("key: " + ex.Message); }
+    }
+
+    // ── button factory ──────────────────────────────────────────────────
+    Button MakeBtn(string label, string code, bool sci)
+    {
+        var b = new Button
+        {
+            Text = label,
+            Font = (sci ? FSci : FNum) ?? Font,
+            FlatStyle = sci ? FlatStyle.Standard : FlatStyle.Flat,   // 3-D vs flat
+            BackColor = sci ? SciBg : NumColor(code),
+            ForeColor = sci ? SciFg : NumFg,
+            UseVisualStyleBackColor = false,
+            TabStop = false,
+        };
+
+        if (!sci)
+        {
+            b.FlatAppearance.BorderSize = 0;
+            b.FlatAppearance.MouseOverBackColor = NumHi;
+            b.FlatAppearance.MouseDownBackColor = NumLo;
+            if (code == "+" || code == "-" || code == "×" || code == "÷") b.ForeColor = OpFg;
+        }
+
+        b.Click += (s, e) => SafeDispatch(code);
+        if (sci) _sci.Add(b);
+        return b;
+    }
+
+    static Color NumColor(string code)
+    {
+        switch (code)
+        {
+            case "C": case "CE": return ClrBg;
+            case "+": case "-": case "×": case "÷": return OpBg;
+            case "=": return EqBg;
+            case "Ans": return AnsBg;
+            default: return NumBg;
+        }
+    }
+
+    /// <summary>Every button funnels through here: a thrown exception becomes a
+    /// status message and a console line, never a dead form.</summary>
+    void SafeDispatch(string code)
+    {
+        T("click '" + code + "'");
+        try { Dispatch(code); }
+        catch (Exception ex)
+        {
+            T("click '" + code + "' EXCEPTION " + ex.GetType().FullName + ": " + ex.Message);
+            T(ex.StackTrace ?? "(no stack)");
+            Fail("internal: " + ex.Message);
+        }
+    }
+
+    void Dispatch(string k)
+    {
+        switch (k)
+        {
+            case "mode": ToggleMode(); return;
+            case "C": ResetAll(); return;
+            case "CE": ClearEntry(); return;
+            case "back": Backspace(); return;
+            case "neg": Negate(); return;
+            case "%": Percent(); return;
+            case "Ans": InsertAns(); return;
+            case "=": DoEquals(); return;
+            case ".": Digit("."); return;
+            case "+": Op("+"); return;
+            case "-": Op("-"); return;
+            case "×": Op("×"); return;
+            case "÷": Op("÷"); return;
+            case "x^y": Op("x^y"); return;
+            case "mod": Op("mod"); return;
+            case "pi": Const(Math.PI); return;
+            case "e": Const(Math.E); return;
+        }
+        if (k.Length == 1 && k[0] >= '0' && k[0] <= '9') { Digit(k); return; }
+        Fn(k);
+    }
+
+    // ── mode ────────────────────────────────────────────────────────────
+    void ToggleMode()
+    {
+        T("ToggleMode: " + _mode + " → " + (_mode == CalcMode.Decimal ? CalcMode.Scientific : CalcMode.Decimal));
+        SetMode(_mode == CalcMode.Decimal ? CalcMode.Scientific : CalcMode.Decimal);
+    }
+
+    void SetMode(CalcMode m)
+    {
+        T("SetMode(" + m + ") from " + _mode);
+        if (_mode == m) return;
+        _mode = m;
+        _op = "";
+        _errored = false;
+        _statusText = "";
+        _fresh = true;
+
+        if (m == CalcMode.Decimal)
+        {
+            if (!decimal.TryParse(_entry, NFloat, Inv, out var d))
+            {
+                T("SetMode: entry '" + _entry + "' is not decimal — reset");
+                _entry = "0";
+                _statusText = "value not representable in decimal — reset";
+            }
+            else _entry = FormatDec(d);
+        }
+
+        ApplyMode();
+        Render();
+        T("SetMode done: " + _mode);
+    }
+
+    void ApplyMode()
+    {
+        bool sci = _mode == CalcMode.Scientific;
+        T("ApplyMode: " + _mode + " — " + _sci.Count + " scientific buttons");
+        foreach (var b in _sci)
+        {
+            b.Enabled = sci;
+            b.BackColor = sci ? SciBg : SciOff;
+            b.ForeColor = sci ? SciFg : Color.FromArgb(120, 116, 132);
+        }
+        _modeBtn.Text = sci ? "⇄  switch to DECIMAL" : "⇄  switch to SCIENTIFIC";
+        _modeLabel.Text = sci ? "SCIENTIFIC · double" : "DECIMAL · exact";
+        T("ApplyMode done");
+    }
+
+    // ── parsing / formatting (invariant culture, NaN-safe) ──────────────
+    static readonly System.Globalization.CultureInfo Inv =
+        System.Globalization.CultureInfo.InvariantCulture;
+
+    const System.Globalization.NumberStyles NFloat =
+        System.Globalization.NumberStyles.Float;
+
+    static string FormatDec(decimal v)
+    {
+        try
+        {
+            string s = v.ToString("0.##############################", Inv);
+            return s.Length == 0 ? "0" : s;
+        }
+        catch { return "0"; }
+    }
+
+    static string FormatDbl(double v)
+    {
+        if (double.IsNaN(v)) return "NaN";
+        if (double.IsPositiveInfinity(v)) return "∞";
+        if (double.IsNegativeInfinity(v)) return "-∞";
+        if (v == 0d) return "0";
+        try
+        {
+            double a = Math.Abs(v);
+            if (a >= 1e16 || a < 1e-9)
+                return v.ToString("0.###############E+0", Inv);
+            return v.ToString("0.##############################", Inv);
+        }
+        catch { return "NaN"; }
+    }
+
+    static decimal ParseDec(string s)
+    {
+        if (s.Length == 0 || s == "Error" || s == "NaN") return 0m;
+        if (s == "∞") return decimal.MaxValue;
+        if (s == "-∞") return decimal.MinValue;
+        if (decimal.TryParse(s, NFloat, Inv, out var v)) return v;
+        return 0m;
+    }
+
+    static double ParseDbl(string s)
+    {
+        if (s.Length == 0) return 0d;
+        if (s == "NaN" || s == "Error") return double.NaN;
+        if (s == "∞") return double.PositiveInfinity;
+        if (s == "-∞") return double.NegativeInfinity;
+        if (double.TryParse(s, NFloat, Inv, out var v)) return v;
+        return double.NaN;
+    }
+
+    void Render()
+    {
+        _display.Text = _entry;
+        string acc = _mode == CalcMode.Decimal ? FormatDec(_decAcc) : FormatDbl(_dblAcc);
+        _expr.Text = _op.Length > 0 ? acc + "   " + _op : "";
+        _status.Text = _statusText;
+        T("render: entry='" + _entry + "' op='" + _op + "' acc='" + acc + "'" +
+          (_statusText.Length > 0 ? " status='" + _statusText + "'" : ""));
+    }
+
+    void SetStatus(string s) { _statusText = s; T("status: " + s); }
+
+    /// <summary>Invalid operation: report it, park the machine in a safe state.</summary>
+    void Fail(string msg)
+    {
+        T("FAIL: " + msg);
+        _errored = true;
+        _op = "";
+        _entry = "Error";
+        _fresh = true;
+        _statusText = msg;
+        Render();
+    }
+
+    // ── entry editing ───────────────────────────────────────────────────
+    void ResetAll()
+    {
+        T("ResetAll");
+        _entry = "0"; _fresh = true; _errored = false; _op = "";
+        _decAcc = 0m; _dblAcc = 0d; _lastOp = ""; _lastArg = "";
+        _statusText = "";
+        Render();
+    }
+
+    void ClearEntry()
+    {
+        T("ClearEntry");
+        if (_errored) { ResetAll(); return; }
+        _entry = "0"; _fresh = true;
+        Render();
+    }
+
+    void Backspace()
+    {
+        T("Backspace");
+        if (_errored) { ResetAll(); return; }
+        if (_fresh) return;
+        if (_entry.Length <= 1 || (_entry.Length == 2 && _entry[0] == '-'))
+        {
+            _entry = "0"; _fresh = true;
+        }
+        else _entry = _entry.Substring(0, _entry.Length - 1);
+        Render();
+    }
+
+    bool MantissaHasDot()
+    {
+        int e = _entry.IndexOf('E');
+        string mant = e < 0 ? _entry : _entry.Substring(0, e);
+        return mant.IndexOf('.') >= 0;
+    }
+
+    void Digit(string d)
+    {
+        T("Digit(" + d + ") entry='" + _entry + "' fresh=" + _fresh + " errored=" + _errored);
+        if (_errored) ResetAll();
+
+        if (_fresh)
+        {
+            _entry = (d == ".") ? "0." : d;
+            _fresh = false;
+        }
+        else if (d == ".")
+        {
+            if (MantissaHasDot()) return;
+            _entry += ".";
+        }
+        else
+        {
+            if (_entry == "0") _entry = d;
+            else if (_entry == "-0") _entry = "-" + d;
+            else if (_entry.Length < 28) _entry += d;
+        }
+        _statusText = "";
+        Render();
+    }
+
+    void Negate()
+    {
+        T("Negate");
+        if (_errored) return;
+
+        if (_entry.EndsWith("E+")) { _entry = _entry.Substring(0, _entry.Length - 1) + "-"; Render(); return; }
+        if (_entry.EndsWith("E-")) { _entry = _entry.Substring(0, _entry.Length - 1) + "+"; Render(); return; }
+
+        if (_entry.StartsWith("-")) _entry = _entry.Substring(1);
+        else _entry = "-" + _entry;
+        _fresh = false;
+        Render();
+    }
+
+    void InsertAns()
+    {
+        T("InsertAns hasAns=" + _hasAns);
+        if (_errored) return;
+        if (!_hasAns) { SetStatus("no answer yet"); Render(); return; }
+        _entry = _mode == CalcMode.Decimal ? FormatDec(_decAns) : FormatDbl(_dblAns);
+        _fresh = true;
+        _statusText = "";
+        Render();
+    }
+
+    void Const(double v)
+    {
+        T("Const(" + v + ")");
+        if (_mode != CalcMode.Scientific) return;
+        if (_errored) ResetAll();
+        _entry = FormatDbl(v);
+        _fresh = true;
+        _statusText = "";
+        Render();
+    }
+
+    void Percent()
+    {
+        T("Percent");
+        if (_errored) return;
+        if (_mode == CalcMode.Decimal)
+        {
+            try
+            {
+                decimal b = ParseDec(_entry);
+                decimal r = (_op.Length > 0) ? _decAcc * b / 100m : b / 100m;
+                _entry = FormatDec(r);
+            }
+            catch (OverflowException) { Fail("Overflow"); return; }
+            catch (Exception ex) { Fail("percent: " + ex.Message); return; }
+        }
+        else
+        {
+            double b = ParseDbl(_entry);
+            double r = (_op.Length > 0) ? _dblAcc * b / 100d : b / 100d;
+            _entry = FormatDbl(r);
+        }
+        _fresh = true;
+        _statusText = "";
+        Render();
+    }
+
+    // ── binary operators ────────────────────────────────────────────────
+    void Op(string o)
+    {
+        T("Op('" + o + "') mode=" + _mode + " pending='" + _op + "' fresh=" + _fresh);
+        if (_errored) return;
+        if (_mode == CalcMode.Decimal) OpDec(o); else OpDbl(o);
+    }
+
+    void OpDec(string o)
+    {
+        try
+        {
+            if (_op.Length > 0 && !_fresh) ComputeDec(_op);
+            else if (_op.Length == 0) _decAcc = ParseDec(_entry);
+            if (_errored) return;
+            _op = o;
+            _fresh = true;
+            _statusText = "";
+            Render();
+        }
+        catch (OverflowException) { Fail("Overflow"); }
+        catch (Exception ex) { Fail("op: " + ex.Message); }
+    }
+
+    void OpDbl(string o)
+    {
+        if (_op.Length > 0 && !_fresh) ComputeDbl(_op);
+        else if (_op.Length == 0) _dblAcc = ParseDbl(_entry);
+        _op = o;
+        _fresh = true;
+        _statusText = "";
+        Render();
+    }
+
+    void DoEquals()
+    {
+        T("DoEquals pending='" + _op + "' last='" + _lastOp + "'");
+        if (_errored) return;
+        if (_op.Length > 0)
+        {
+            _lastOp = _op;
+            _lastArg = _entry;
+            Compute(_op);
+            _op = "";
+        }
+        else if (_lastOp.Length > 0)
+        {
+            if (_lastArg.Length > 0) _entry = _lastArg;
+            Compute(_lastOp);
+        }
+        Render();
+    }
+
+    void Compute(string o)
+    {
+        T("Compute('" + o + "')");
+        if (_mode == CalcMode.Decimal) ComputeDec(o); else ComputeDbl(o);
+    }
+
+    void ComputeDec(string o)
+    {
+        try
+        {
+            decimal a = _decAcc, b = ParseDec(_entry), r;
+            switch (o)
+            {
+                case "+": r = a + b; break;
+                case "-": r = a - b; break;
+                case "×": r = a * b; break;
+                case "÷":
+                    if (b == 0m) { Fail("Cannot divide by zero"); return; }
+                    r = a / b; break;
+                case "mod":
+                    if (b == 0m) { Fail("Cannot mod by zero"); return; }
+                    r = a % b; break;
+                default: r = b; break;
+            }
+            _decAns = r; _hasAns = true;
+            _decAcc = r;
+            _entry = FormatDec(r);
+            _fresh = true;
+            _statusText = "";
+            T("ComputeDec: " + a + " '" + o + "' " + b + " = " + r);
+        }
+        catch (OverflowException) { Fail("Overflow"); }
+        catch (Exception ex) { Fail("compute: " + ex.Message); }
+    }
+
+    void ComputeDbl(string o)
+    {
+        double a = _dblAcc, b = ParseDbl(_entry), r;
+        switch (o)
+        {
+            case "+": r = a + b; break;
+            case "-": r = a - b; break;
+            case "×": r = a * b; break;
+            case "÷":
+                if (b == 0d) { Fail("Cannot divide by zero"); return; }
+                r = a / b; break;
+            case "mod":
+                if (b == 0d) { Fail("Cannot mod by zero"); return; }
+                r = a % b; break;
+            case "x^y":
+                r = Math.Pow(a, b);
+                if (double.IsNaN(r)) SetStatus("undefined: " + FormatDbl(a) + " ^ " + FormatDbl(b));
+                else if (double.IsInfinity(r)) SetStatus("overflow");
+                break;
+            default: r = b; break;
+        }
+
+        _dblAns = r; _hasAns = true;
+        _dblAcc = r;
+        _entry = FormatDbl(r);            // NaN / ∞ are displayed, never thrown
+        _fresh = true;
+        T("ComputeDbl: " + a + " '" + o + "' " + b + " = " + _entry);
+    }
+
+    // ── unary (scientific) functions ────────────────────────────────────
+    void Fn(string f)
+    {
+        T("Fn('" + f + "') x='" + _entry + "' mode=" + _mode);
+        if (_errored) return;
+        if (_mode != CalcMode.Scientific) return;      // buttons are disabled anyway
+
+        double x = ParseDbl(_entry);
+        double r;
+        _statusText = "";
+
+        switch (f)
+        {
+            case "sin": r = Math.Sin(x); break;
+            case "cos": r = Math.Cos(x); break;
+            case "tan": r = Math.Tan(x); break;
+
+            case "asin":
+                if (double.IsNaN(x) || x < -1d || x > 1d) { SetStatus("asin needs −1 … 1"); r = double.NaN; }
+                else r = Math.Asin(x);
+                break;
+
+            case "acos":
+                if (double.IsNaN(x) || x < -1d || x > 1d) { SetStatus("acos needs −1 … 1"); r = double.NaN; }
+                else r = Math.Acos(x);
+                break;
+
+            case "atan": r = Math.Atan(x); break;
+
+            case "sinh": r = Math.Sinh(x); break;
+            case "cosh": r = Math.Cosh(x); break;
+            case "tanh": r = Math.Tanh(x); break;
+
+            case "ln":
+                if (double.IsNaN(x)) { r = double.NaN; SetStatus("ln(NaN) is undefined"); }
+                else if (x < 0d) { r = double.NaN; SetStatus("ln of a negative is undefined"); }
+                else if (x == 0d) { r = double.NegativeInfinity; SetStatus("ln(0) = −∞"); }
+                else r = Math.Log(x);
+                break;
+
+            case "log":
+                if (double.IsNaN(x)) { r = double.NaN; SetStatus("log(NaN) is undefined"); }
+                else if (x < 0d) { r = double.NaN; SetStatus("log of a negative is undefined"); }
+                else if (x == 0d) { r = double.NegativeInfinity; SetStatus("log(0) = −∞"); }
+                else r = Math.Log10(x);
+                break;
+
+            case "10^x":
+                r = Math.Pow(10d, x);
+                if (double.IsInfinity(r)) SetStatus("10^x overflow");
+                else if (double.IsNaN(r)) SetStatus("10^x undefined");
+                break;
+
+            case "e^x":
+                r = Math.Exp(x);
+                if (double.IsInfinity(r)) SetStatus("e^x overflow");
+                else if (double.IsNaN(r)) SetStatus("e^x undefined");
+                break;
+
+            case "x2":
+                r = x * x;
+                if (double.IsInfinity(r)) SetStatus("x² overflow");
+                break;
+
+            case "x3":
+                r = x * x * x;
+                if (double.IsInfinity(r)) SetStatus("x³ overflow");
+                break;
+
+            case "sqrt":
+                if (double.IsNaN(x)) r = double.NaN;
+                else if (x < 0d) { SetStatus("√ of a negative is undefined (real)"); r = double.NaN; }
+                else r = Math.Sqrt(x);
+                break;
+
+            case "cbrt":
+                // Math.Cbrt may be missing on a trimmed fork — fall back to Pow.
+                try { r = Math.Cbrt(x); }
+                catch { r = x < 0d ? -Math.Pow(-x, 1d / 3d) : Math.Pow(x, 1d / 3d); }
+                break;
+
+            case "inv":
+                if (x == 0d) { Fail("Cannot divide by zero"); return; }
+                r = 1d / x;
+                break;
+
+            case "fact":
+                if (double.IsNaN(x) || x < 0d || Math.Floor(x) != x)
+                {
+                    SetStatus("n! needs a non-negative integer");
+                    r = double.NaN;
+                }
+                else if (x > 170d) { SetStatus("n! overflows double beyond 170"); r = double.PositiveInfinity; }
+                else
+                {
+                    r = 1d;
+                    for (int i = 2; i <= (int)x; i++) r *= i;
+                }
+                break;
+
+            case "exp":
+                if (_fresh) { _entry = "1E+"; _fresh = false; }
+                else if (_entry.IndexOf('E') < 0) { _entry += "E+"; }
+                T("EXP → entry='" + _entry + "'");
+                Render();
+                return;
+
+            default:
+                T("Fn: unknown code '" + f + "'");
+                r = x;
+                break;
+        }
+
+        _dblAns = r; _hasAns = true;
+        _entry = FormatDbl(r);
+        _fresh = true;
+        T("Fn('" + f + "') → " + _entry);
+        Render();
+    }
 }
