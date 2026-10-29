@@ -137,16 +137,17 @@ namespace System.Windows.Forms
         static readonly Queue<string> LogRing = new Queue<string>();
         const int MaxLogLines = 500;
         static bool logBroadcast = true;
+        const bool DEBUG = false;
 
         /// <summary>Console + ring + BROADCAST to window-list watchers.</summary>
-        internal static void Log(string message) => Write(message, broadcast: true);
+        internal static Action<string> Log = (string message) => { if (DEBUG) Write(message, broadcast: true); return; };
 
         /// <summary>
         /// Console + ring ONLY. Never broadcast. A broadcast becomes a message on
         /// the very connection we are describing, and describing that write
         /// broadcasts again — a self-feeding loop (BytesOut climbing 496→565→663→…).
         /// </summary>
-        internal static void LogLocal(string message) => Write(message, broadcast: false);
+        internal static Action<string> LogLocal = (string message) => { if (DEBUG) Write(message, broadcast: false); return; };
 
         static void Write(string message, bool broadcast)
         {

@@ -37,6 +37,14 @@ AppDomain.CurrentDomain.FirstChanceException += (s, e) =>
 };
 
 
+// ── virtual screen / socket layout — MUST precede any WinForms type ─────
+// XPLAT_UI_SOCKET_SCREEN = "WxH" (also "W,X"). Sizes the desktop compositor
+// bitmap (screenW*screenH*4 per frame) and maximized forms.
+Environment.SetEnvironmentVariable("XPLAT_UI_SOCKET_SCREEN", "1280x720");
+Environment.SetEnvironmentVariable("XPLAT_UI_SOCKET_DIR", "/ui");
+Environment.SetEnvironmentVariable("XPLAT_UI_SOCKET_LOG", "0");
+
+
 // ==========================================
 // 1. System.Drawing Test: Output drawing.png
 // ==========================================
