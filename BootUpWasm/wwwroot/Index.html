@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
-    <title>XplatUISocketWasm — viewer [ASYNC / MT EDITION]</title>
+    <title>XplatUISocketWasm — viewer [ASYNC / MT · TOUCH]</title>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <link rel="preload" id="webassembly" />
     <script type="importmap"></script>
     <style>
@@ -20,24 +20,98 @@
             --ok: #3fd68c;
             --warn: #ffb454;
             --bad: #ff6b6b;
+            --tap: 44px;
         }
 
         * {
             box-sizing: border-box;
         }
 
-        body {
+        html, body {
             margin: 0;
+            height: 100%;
+            overscroll-behavior: none;
+        }
+
+        body {
             background: var(--bg);
             color: var(--fg);
             font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-            display: flex;
-            height: 100vh;
-            overflow: hidden;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+            -webkit-tap-highlight-color: transparent;
         }
 
+        /* ── menu drivers: hidden checkboxes, CSS does the toggling ── */
+        .vh {
+            position: absolute;
+            width: 0;
+            height: 0;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .icon-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 42px;
+            min-height: 36px;
+            padding: 4px 11px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: #1c2430;
+            cursor: pointer;
+            font-size: 15px;
+            line-height: 1;
+            touch-action: manipulation;
+        }
+
+            .icon-btn:hover {
+                border-color: var(--acc);
+            }
+
+        #app {
+            display: flex;
+            flex-direction: column;
+            height: 100dvh;
+            padding-top: env(safe-area-inset-top);
+        }
+
+        /* ── top bar ─────────────────────────────────────────── */
+        #topbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            background: var(--panel);
+            border-bottom: 1px solid var(--line);
+            flex: 0 0 auto;
+            padding-left: calc(10px + env(safe-area-inset-left));
+            padding-right: calc(10px + env(safe-area-inset-right));
+        }
+
+            #topbar h1 {
+                font-size: 14px;
+                margin: 0;
+                white-space: nowrap;
+            }
+
+        .spacer {
+            flex: 1;
+        }
+
+        #main {
+            flex: 1 1 auto;
+            display: flex;
+            min-height: 0;
+        }
+
+        /* ── sidebar ─────────────────────────────────────────── */
         #sidebar {
             width: 340px;
+            flex: 0 0 340px;
             background: var(--panel);
             border-right: 1px solid var(--line);
             padding: 10px;
@@ -45,19 +119,37 @@
             display: flex;
             flex-direction: column;
             gap: 10px;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: calc(10px + env(safe-area-inset-bottom));
         }
 
-        h1 {
-            font-size: 15px;
-            margin: 0;
-        }
-
-        h2 {
+        details.panel > summary {
+            cursor: pointer;
+            list-style: none;
             font-size: 10px;
             text-transform: uppercase;
             letter-spacing: .1em;
             color: var(--dim);
             margin: 0 0 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-height: 28px;
+            touch-action: manipulation;
+        }
+
+            details.panel > summary::-webkit-details-marker {
+                display: none;
+            }
+
+            details.panel > summary::after {
+                content: '▸';
+                margin-left: auto;
+                color: var(--dim);
+            }
+
+        details.panel[open] > summary::after {
+            content: '▾';
         }
 
         .sub {
@@ -98,7 +190,7 @@
             }
 
         .tag {
-            padding: 1px 8px;
+            padding: 2px 9px;
             border-radius: 20px;
             font-size: 11px;
             border: 1px solid var(--line);
@@ -135,12 +227,13 @@
         }
 
         div.win {
-            padding: 6px 8px;
-            margin: 2px 0;
+            padding: 8px;
+            margin: 3px 0;
             cursor: pointer;
-            border-radius: 5px;
+            border-radius: 6px;
             border: 1px solid transparent;
             font-size: 12px;
+            min-height: var(--tap);
         }
 
             div.win:hover {
@@ -159,22 +252,25 @@
 
         label {
             display: block;
-            margin: 5px 0;
+            margin: 6px 0;
             font-size: 12px;
         }
 
         input, button, select {
             font: inherit;
+            font-size: 14px;
             color: var(--fg);
             background: var(--panel2);
             border: 1px solid var(--line);
             border-radius: 6px;
-            padding: 5px 9px;
+            padding: 8px 10px;
+            min-height: 38px;
         }
 
         button {
             cursor: pointer;
             background: #1c2430;
+            touch-action: manipulation;
         }
 
             button:hover {
@@ -189,29 +285,35 @@
             }
 
             button.mini {
-                padding: 2px 7px;
-                font-size: 11px;
+                padding: 5px 9px;
+                font-size: 12px;
+                min-height: 34px;
             }
 
+        /* ── stage ───────────────────────────────────────────── */
         #stage {
-            flex: 1;
+            flex: 1 1 auto;
             display: flex;
             align-items: center;
             justify-content: center;
             overflow: hidden;
             position: relative;
             background: #18181c;
+            touch-action: none;
+            min-width: 0;
         }
 
-        #frame {
+        #frame, #rawcanvas {
             max-width: 100%;
             max-height: 100%;
             image-rendering: pixelated;
+            pointer-events: none;
         }
 
         #svgwrap {
             width: 100%;
             height: 100%;
+            pointer-events: none;
         }
 
             #svgwrap svg {
@@ -232,6 +334,7 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            pointer-events: none;
         }
 
         #log {
@@ -239,7 +342,7 @@
             bottom: 0;
             left: 0;
             right: 0;
-            height: 190px;
+            height: 170px;
             overflow: auto;
             background: rgba(0, 0, 0, .78);
             border-top: 1px solid var(--line);
@@ -247,6 +350,7 @@
             font: 11px/1.45 ui-monospace, monospace;
             white-space: pre-wrap;
             word-break: break-word;
+            -webkit-overflow-scrolling: touch;
         }
 
             #log .t {
@@ -290,7 +394,7 @@
         .verdict {
             margin-top: 6px;
             font-size: 12px;
-            padding: 5px 8px;
+            padding: 6px 8px;
             border-radius: 6px;
             border: 1px solid var(--line);
         }
@@ -304,143 +408,272 @@
                 color: var(--bad);
                 border-color: var(--bad);
             }
+
+        /* ── on-screen keyboard (CSS-toggled) ────────────────── */
+        #kbd {
+            display: none;
+            flex: 0 0 auto;
+            gap: 6px;
+            flex-wrap: wrap;
+            align-items: center;
+            padding: 8px;
+            background: var(--panel);
+            border-top: 1px solid var(--line);
+            padding-bottom: calc(8px + env(safe-area-inset-bottom));
+        }
+
+            #kbd button {
+                min-width: 42px;
+            }
+
+        /* ── CSS menu state ──────────────────────────────────── */
+        #navToggle:checked ~ #app #sidebar {
+            transform: translateY(0);
+        }
+
+        #navToggle:checked ~ #app #navLabel {
+            background: var(--acc);
+            color: #04121c;
+            border-color: var(--acc);
+        }
+
+        #kbdToggle:checked ~ #app #kbd {
+            display: flex;
+        }
+
+        #kbdToggle:checked ~ #app #kbdLabel {
+            background: var(--acc);
+            color: #04121c;
+            border-color: var(--acc);
+        }
+
+        /* ── mobile ──────────────────────────────────────────── */
+        @media (min-width: 901px) {
+            #navLabel {
+                display: none;
+            }
+        }
+
+        @media (max-width: 900px) {
+            #main {
+                flex-direction: column;
+            }
+
+            #topbar h1 {
+                font-size: 12px;
+            }
+
+            .edition-tag {
+                display: none;
+            }
+
+            #sidebar {
+                position: fixed;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                width: auto;
+                flex: none;
+                max-height: 64vh;
+                z-index: 30;
+                border-right: 0;
+                border-top: 1px solid var(--line);
+                border-radius: 12px 12px 0 0;
+                transform: translateY(102%);
+                transition: transform .2s ease;
+                box-shadow: 0 -10px 30px rgba(0,0,0,.5);
+            }
+
+            #log {
+                height: 120px;
+            }
+        }
     </style>
 </head>
 
 <body>
-    <div id="sidebar">
-        <div>
+
+    <!-- menu drivers: pure CSS toggles -->
+    <input type="checkbox" id="navToggle" class="vh" aria-label="panels">
+    <input type="checkbox" id="kbdToggle" class="vh" aria-label="on-screen keys">
+
+    <div id="app">
+
+        <div id="topbar">
+            <label class="icon-btn" id="navLabel" for="navToggle" title="panels">☰</label>
             <h1>XplatUISocketWasm</h1>
-            <div class="sub">AF_UNIX over JS · NDJSON · base64 frames</div>
-            <div class="row" style="margin-top:8px">
-                <span class="tag edition">ASYNC / MT EDITION</span>
-                <span id="status" class="tag wait">booting…</span>
-            </div>
-            <div class="row" style="margin-top:6px"><span class="sub" id="uiroot"></span></div>
+            <span class="tag edition edition-tag">ASYNC / MT · TOUCH</span>
+            <span class="sub" id="uiroot"></span>
+            <div class="spacer"></div>
+            <span id="status" class="tag wait">booting…</span>
+            <label class="icon-btn" id="kbdLabel" for="kbdToggle" title="on-screen keys">⌨</label>
         </div>
 
-        <div class="panel">
-            <h2>runtime</h2>
-            <div class="kv"><b>viewer edition</b><span id="info-edition">async/mt v9 · viewer+echo</span></div>
-            <div class="kv"><b>main assembly</b><span id="info-main">—</span></div>
-            <div class="kv"><b>WetJs source</b><span id="info-wet">resolving…</span></div>
-            <div class="kv"><b>echo service</b><span id="info-echo">resolving…</span></div>
-            <div class="kv"><b>message pump</b><span id="info-pump">checking…</span></div>
-            <div class="kv"><b>frames</b><span id="info-frames">0</span></div>
-            <div class="kv"><b>throughput</b><span id="info-fps">0 fps</span></div>
+        <div id="main">
+
+            <div id="sidebar">
+
+                <details class="panel" open>
+                    <summary>runtime</summary>
+                    <div class="kv"><b>viewer edition</b><span id="info-edition">async/mt v11 · touch</span></div>
+                    <div class="kv"><b>main assembly</b><span id="info-main">—</span></div>
+                    <div class="kv"><b>WetJs source</b><span id="info-wet">resolving…</span></div>
+                    <div class="kv"><b>echo service</b><span id="info-echo">resolving…</span></div>
+                    <div class="kv"><b>message pump</b><span id="info-pump">checking…</span></div>
+                    <div class="kv"><b>frames</b><span id="info-frames">0</span></div>
+                    <div class="kv"><b>throughput</b><span id="info-fps">0 fps</span></div>
+                </details>
+
+                <details class="panel" open>
+                    <summary>touch</summary>
+                    <div class="sub" style="margin-bottom:6px">
+                        tap = click · <b>double-tap</b> = right click · <b>long-press</b> = right click<br>
+                        drag = move · 2-finger drag = scroll · pinch = zoom · 2-finger tap = middle
+                    </div>
+                    <div class="row">
+                        <label style="margin:0;flex:1">tap delay <input id="tapdelay" type="number" value="220" min="0" max="600" step="20" style="width:76px"></label>
+                        <label style="margin:0;flex:1">hold <input id="holddelay" type="number" value="450" min="150" max="1500" step="50" style="width:76px"></label>
+                    </div>
+                    <label><input type="checkbox" id="instanttap"> instant tap (disables double-tap right-click)</label>
+                    <label><input type="checkbox" id="vibrate" checked> vibrate on long-press / right-click</label>
+                </details>
+
+                <details class="panel" open>
+                    <summary>transport test (echo)</summary>
+                    <div class="row">
+                        <button class="primary" id="e-start">start /echo</button>
+                        <button id="e-stats">stats</button>
+                        <button id="e-reset">reset</button>
+                        <button id="e-stop">stop</button>
+                    </div>
+                    <div class="row" style="margin-top:8px">
+                        <button id="e-connect">connect</button>
+                        <button id="e-write">write</button>
+                        <button id="e-tick">echo tick</button>
+                        <button id="e-read">read all</button>
+                        <button id="e-close">close</button>
+                    </div>
+                    <div class="row" style="margin-top:8px">
+                        <label style="margin:0">size <input id="e-size" type="number" value="256" style="width:76px"></label>
+                        <label style="margin:0">count <input id="e-count" type="number" value="100" style="width:76px"></label>
+                    </div>
+                    <div class="row" style="margin-top:8px">
+                        <button class="primary" id="e-echo">echo &amp; show bytes</button>
+                        <button id="e-rt">round-trip</button>
+                        <button id="e-flood">speed</button>
+                    </div>
+                    <div class="row" style="margin-top:8px">
+                        <label style="margin:0;flex:1">text <input id="e-text" type="text" value="hello, wet-afunix" style="width:100%"></label>
+                        <button id="e-sendtext">echo text</button>
+                    </div>
+                    <div class="verdict dim" id="e-verdict">no echo round-trip yet</div>
+                    <pre class="hex" id="e-hex">— echoed bytes appear here —</pre>
+                </details>
+
+                <details class="panel" open>
+                    <summary>windows <span class="dim" id="wincount"></span></summary>
+                    <div id="winlist"><span class="dim">connecting to window-list…</span></div>
+                </details>
+
+                <details class="panel">
+                    <summary>stream</summary>
+                    <label>
+                        format
+                        <select id="fmt">
+                            <option>jpeg</option>
+                            <option>png</option>
+                            <option>svg</option>
+                            <option value="rawbgra">raw BGRA8</option>
+                            <option value="rawg8">raw Gray8</option>
+                            <option value="rawbgra332">raw 332</option>
+                            <option value="rawbgra1">raw 1bpp</option>
+                            <option value="rawycbcr322">raw YCbCr 4:2:2</option>
+                        </select>
+                    </label>
+                    <label>quality <input type="range" id="q" min="1" max="100" value="75"></label>
+                    <label>fps cap <input type="number" id="fps" min="0" max="60" value="0" style="width:72px"> <span class="dim">0 = uncapped</span></label>
+                    <label><input type="checkbox" id="gray"> grayscale</label>
+                    <label><input type="checkbox" id="live" checked> live (subscribe)</label>
+                    <div class="row">
+                        <button class="primary" id="refresh">refresh</button>
+                        <button id="save">save frame</button>
+                    </div>
+                </details>
+
+                <details class="panel">
+                    <summary>connection</summary>
+                    <div class="kv"><b>window-list</b><span id="info-list">idle</span></div>
+                    <div class="kv"><b>window</b><span id="info-win">not connected</span></div>
+                    <div class="row" style="margin-top:6px">
+                        <button class="mini" id="btn-reconnect">reconnect</button>
+                        <button class="mini" id="btn-disconnect">disconnect</button>
+                        <button class="mini" id="btn-ping">ping</button>
+                        <button class="mini" id="btn-listeners">listeners()</button>
+                        <button class="mini" id="btn-env">env</button>
+                    </div>
+                </details>
+
+                <details class="panel">
+                    <summary>log</summary>
+                    <div class="row">
+                        <button class="mini" id="b-pause">pause</button>
+                        <button class="mini" id="clearlog">clear</button>
+                        <button class="mini" id="copylog">copy</button>
+                        <label style="margin:0"><input type="checkbox" id="autoscroll" checked> autoscroll</label>
+                    </div>
+                </details>
+            </div>
+
+            <div id="stage">
+                <div id="bar">not connected</div>
+                <img id="frame" style="display:none" alt="">
+                <div id="svgwrap" style="display:none"></div>
+                <div id="log"></div>
+            </div>
         </div>
 
-        <div class="panel">
-            <h2>transport test (echo)</h2>
-            <div class="row">
-                <button class="primary" id="e-start">start /echo</button>
-                <button id="e-stats">stats</button>
-                <button id="e-reset">reset</button>
-                <button id="e-stop">stop</button>
+        <div id="kbd">
+            <div class="row" style="width:100%">
+                <button class="mini" data-key="Escape">Esc</button>
+                <button class="mini" data-key="Tab">Tab</button>
+                <button class="mini" data-mod="LControlKey">Ctrl</button>
+                <button class="mini" data-mod="LMenu">Alt</button>
+                <button class="mini" data-mod="LShiftKey">Shift</button>
+                <button class="mini" data-key="Left">←</button>
+                <button class="mini" data-key="Up">↑</button>
+                <button class="mini" data-key="Down">↓</button>
+                <button class="mini" data-key="Right">→</button>
+                <button class="mini" data-key="Return">⏎</button>
+                <button class="mini" data-key="Back">⌫</button>
+                <button class="mini" data-key="Space">␣</button>
+                <button class="mini" data-key="F1">F1</button>
+                <button class="mini" data-key="Delete">Del</button>
             </div>
-            <div class="row" style="margin-top:8px">
-                <button id="e-connect">connect</button>
-                <button id="e-write">write</button>
-                <button id="e-tick">echo tick</button>
-                <button id="e-read">read all</button>
-                <button id="e-close">close</button>
-            </div>
-            <div class="row" style="margin-top:8px">
-                <label style="margin:0">size <input id="e-size" type="number" value="256" style="width:74px"></label>
-                <label style="margin:0">count <input id="e-count" type="number" value="100" style="width:74px"></label>
-                <button class="primary" id="e-echo">echo &amp; show bytes</button>
-                <button id="e-rt">round-trip</button>
-                <button id="e-flood">speed</button>
-            </div>
-            <div class="row" style="margin-top:8px">
-                <label style="margin:0;flex:1">text <input id="e-text" type="text" value="hello, wet-afunix" style="width:100%"></label>
-                <button id="e-sendtext">echo text</button>
-            </div>
-            <div class="verdict dim" id="e-verdict">no echo round-trip yet</div>
-            <pre class="hex" id="e-hex">— echoed bytes appear here —</pre>
-        </div>
-
-        <div class="panel">
-            <h2>windows <span class="dim" id="wincount"></span></h2>
-            <div id="winlist"><span class="dim">connecting to window-list…</span></div>
-        </div>
-
-        <div class="panel">
-            <h2>stream</h2>
-            <label>
-                format
-                <select id="fmt">
-                    <option>jpeg</option>
-                    <option>png</option>
-                    <option>svg</option>
-                    <option value="rawbgra">raw BGRA8</option>
-                    <option value="rawg8">raw Gray8</option>
-                    <option value="rawbgra332">raw 332</option>
-                    <option value="rawbgra1">raw 1bpp</option>
-                    <option value="rawycbcr322">raw YCbCr 4:2:2</option>
-                </select>
-            </label>
-            <label>quality <input type="range" id="q" min="1" max="100" value="75"></label>
-            <label>fps cap <input type="number" id="fps" min="0" max="60" value="0" style="width:70px"> <span class="dim">0 = uncapped</span></label>
-            <label><input type="checkbox" id="gray"> grayscale</label>
-            <label><input type="checkbox" id="live" checked> live (subscribe)</label>
-            <div class="row">
-                <button class="primary" id="refresh">refresh</button>
-                <button id="save">save frame</button>
+            <div class="row" style="width:100%">
+                <input id="kbdText" placeholder="type here — Enter sends, Esc closes" style="flex:1;min-width:0">
+                <button class="mini" id="kbdSend">send</button>
+                <button class="mini" id="kbdHide">hide</button>
             </div>
         </div>
-
-        <div class="panel">
-            <h2>connection</h2>
-            <div class="kv"><b>window-list</b><span id="info-list">idle</span></div>
-            <div class="kv"><b>window</b><span id="info-win">not connected</span></div>
-            <div class="row" style="margin-top:6px">
-                <button class="mini" id="btn-reconnect">reconnect</button>
-                <button class="mini" id="btn-disconnect">disconnect</button>
-                <button class="mini" id="btn-ping">ping</button>
-                <button class="mini" id="btn-listeners">listeners()</button>
-                <button class="mini" id="btn-env">env</button>
-            </div>
-        </div>
-
-        <div class="panel">
-            <h2>log</h2>
-            <div class="row">
-                <button class="mini" id="b-pause">pause output</button>
-                <button class="mini" id="clearlog">clear</button>
-                <button class="mini" id="copylog">copy</button>
-                <label style="margin:0"><input type="checkbox" id="autoscroll" checked> autoscroll</label>
-            </div>
-        </div>
-    </div>
-
-    <div id="stage">
-        <div id="bar">not connected</div>
-        <img id="frame" style="display:none" alt="">
-        <div id="svgwrap" style="display:none"></div>
-        <div id="log"></div>
     </div>
 
     <script type="module">
         // ══════════════════════════════════════════════════════════════════
-        //  XplatUISocketWasm viewer — ASYNC / MT EDITION (v9)
-        //  = v8 + echo round-trip that SHOWS the echoed bytes (hex + ascii),
-        //    listeners() diagnostic, plain (non-async) wet imports.
-        //
-        //  Rules for this runtime:
-        //   * JS→.NET: `async Task*` exports, args only — results arrive pushed
-        //     through the deliver() import (rpc() below).
-        //   * .NET→JS: fire-and-forget imports; handlers MUST be plain functions.
-        //   * no .stack/.message access off managed exception proxies.
+        //  XplatUISocketWasm viewer — ASYNC / MT · TOUCH (v11)
+        //  = v10 + TDZ fix (all `const` helpers declared before any use) and
+        //    CSS-driven menus (checkbox hack + <details>).
         // ══════════════════════════════════════════════════════════════════
-        const EDITION = 'async/mt v9 · viewer+echo';
+        const EDITION = 'async/mt v11 · touch';
         import { dotnet } from './_framework/dotnet.js'
 
+        // ─────────────── core helpers (declared FIRST — no TDZ) ───────────────
         const $ = (s) => document.querySelector(s);
         const enc = new TextEncoder();
         const dec = new TextDecoder();
         const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
         const num = (v) => Number(v);
+        const clamp255 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v | 0);
+        const isMobile = () => matchMedia('(max-width: 900px)').matches;
 
         function fmtErr(e) {
             try {
@@ -487,7 +720,11 @@
             return lines.join('\n');
         }
 
-        // ── log with pause ──────────────────────────────────────────────
+        function buzz(ms) {
+            try { if ($('#vibrate')?.checked && navigator.vibrate) navigator.vibrate(ms); } catch { }
+        }
+
+        // ─────────────── log / status (declared before any use) ───────────────
         const logBox = $('#log');
         let paused = false, held = [];
 
@@ -497,7 +734,7 @@
             const line = `<span class="t">${t}</span> <span class="${cls}">${esc(msg)}</span>\n`;
             if (paused) {
                 held.push(line);
-                $('#b-pause').textContent = `pause output (${held.length})`;
+                $('#b-pause').textContent = `resume (${held.length})`;
                 return;
             }
             logBox.innerHTML += line;
@@ -508,6 +745,23 @@
         function setTag(kind, text) { const s = $('#status'); s.className = 'tag ' + kind; s.textContent = text; }
         function setBar(t) { $('#bar').textContent = t; }
         function info(id, text) { const el = $(id); if (el) el.textContent = text; }
+
+        // DOM wiring helper — MUST be declared before the first on(...) call.
+        const on = (sel, ev, fn) => {
+            const el = $(sel);
+            if (el) el.addEventListener(ev, fn);
+            else log('warn', `no element for ${sel}`);
+        };
+
+        // The pump hook. Function declaration → hoisted, so the wire handler
+        // (installed below, before any pump runs) can call it safely.
+        function pumpOnce() {
+            if (runtimeDead) return;
+            const fn = globalThis.boot?.BootUpJs?.Pump;
+            if (!fn) return;
+            try { Promise.resolve(fn()).catch(() => { }); } catch (e) { }
+        }
+        globalThis.pumpOnce = pumpOnce;
 
         const UI_ROOT = new URLSearchParams(location.search).get('ui') || '/ui';
         const LIST_PATH = UI_ROOT + '/window-list';
@@ -524,21 +778,25 @@
         function rpc(fn) {
             return new Promise((resolve, reject) => {
                 const req = ++rpcSeq;
-                rpcPending.set(req, { resolve, reject });
+                rpcPending.set(req, { resolve, reject, t: performance.now() });
                 try { fn(req); }
                 catch (e) { rpcPending.delete(req); reject(e); }
-                setTimeout(() => {
-                    if (rpcPending.delete(req)) reject(new Error('rpc timeout'));
-                }, 8000);
             });
         }
+
+        // ONE sweeper instead of one setTimeout per call.
+        setInterval(() => {
+            const now = performance.now();
+            for (const [k, p] of rpcPending)
+                if (now - p.t > 8000) { rpcPending.delete(k); p.reject(new Error('rpc timeout')); }
+        }, 1000);
 
         const { setModuleImports, getAssemblyExports, getConfig } = await dotnet.create();
         info('#info-main', getConfig().mainAssemblyName);
         log('info', `dotnet runtime created · main assembly "${getConfig().mainAssemblyName}"`);
         log('info', `[env] crossOriginIsolated=${crossOriginIsolated} SharedArrayBuffer=${typeof SharedArrayBuffer} devicePixelRatio=${devicePixelRatio}`);
 
-        // NOTE: handlers are PLAIN functions. An async handler returns a Promise,
+        // Handlers MUST be plain functions — an async handler returns a Promise,
         // and on this runtime an unfinished promise blocks every later import.
         setModuleImports('wet', {
             connect(path, handle) {
@@ -554,12 +812,9 @@
             },
 
             notify(handle, kind) {
-                // .NET says "there is something" → pump again NOW instead of waiting
-                // for the next rAF. Terminates: a pump with no work sends no notify.
                 setTimeout(() => { onNotify(num(handle), kind); pumpOnce(); }, 0);
             },
 
-            // results are PUSHED here — returned Task<string> values never arrive
             deliver(req, payload) {
                 const key = num(req);
                 const p = rpcPending.get(key);
@@ -585,10 +840,10 @@
                 return;
             }
             if (kind === 'drained') { c.onwritable?.(c); return; }
+
             // Only auto-drain for PUSH consumers (ondata set). A PULL consumer
-            // (conn.read()) must see the bytes itself — draining here parks them in
-            // _pending and its read() then returns "" forever. That is why the echo
-            // tests "send but never receive".
+            // (conn.read()) must see the bytes itself — draining parks them in
+            // _pending and its read() then returns "" forever.
             if (!c.ondata) return;
 
             if (c._draining) return;
@@ -702,8 +957,6 @@
 
                 async read(max = 65536) {
                     // Anything the notify drain already pulled lives in _pending.
-                    // Serve it first, otherwise ReadRpcAsync returns "" and the
-                    // caller thinks the stream is dry.
                     if (this._pending.length) {
                         const first = this._pending[0];
                         if (first.length <= max) { this._pending.shift(); return first; }
@@ -800,7 +1053,11 @@
                 d.className = 'win' + (curWin && w.handle === curWin.handle ? ' active' : '');
                 d.innerHTML = `${esc(w.title || '(untitled)')}${w.compositor ? ' ★ compositor' : ''}` +
                     `<small>${esc(w.handle)} · ${w.width}x${w.height} · ${esc(w.state || 'Normal')} · ${esc(w.socket || '')}</small>`;
-                d.addEventListener('click', () => connectWin(w));
+                d.addEventListener('click', () => {
+                    connectWin(w);
+                    const nav = document.getElementById('navToggle');   // CSS menu: just uncheck
+                    if (nav) nav.checked = false;
+                });
                 c.appendChild(d);
             });
         }
@@ -875,6 +1132,8 @@
             img.style.display = 'none';
             $('#svgwrap').style.display = 'none';
             $('#svgwrap').innerHTML = '';
+            const cv = document.getElementById('rawcanvas');
+            if (cv) cv.style.display = 'none';
         }
 
         function closeWin(reason) {
@@ -948,16 +1207,11 @@
         // ───────────────────────── frames ─────────────────────────
         let frameCount = 0, lastFrame = null, fpsCount = 0, fpsMark = performance.now(), fpsShown = 0;
 
-        const clamp255 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v | 0);
-
         function renderRawFrame(m) {
             let cv = document.getElementById('rawcanvas');
             if (!cv) {
                 cv = document.createElement('canvas');
                 cv.id = 'rawcanvas';
-                cv.style.maxWidth = '100%';
-                cv.style.maxHeight = '100%';
-                cv.style.imageRendering = 'pixelated';
                 $('#stage').insertBefore(cv, $('#bar').nextSibling);
             }
             cv.width = m.width;
@@ -1060,7 +1314,7 @@
             }
         }
 
-        // ───────────────────────── input (HTML → .NET) ─────────────────────────
+        // ────────────────── coordinates (frame ⇄ screen) ──────────────────
         function imgPos(e) {
             const cv = document.getElementById('rawcanvas');
             const target = (cv && cv.style.display !== 'none') ? cv : $('#frame');
@@ -1097,25 +1351,204 @@
 
         const pos = (e) => imgPos(e) || svgPos(e);
         const btnName = (b) => b === 2 ? 'right' : b === 1 ? 'middle' : 'left';
+
         const sendWin = (o) => {
             if (!winConn || runtimeDead) return;
-            // bytes land in .NET when writeAll resolves → pump immediately so the
-            // paint and the outgoing frame happen NOW, not on the next rAF.
             Promise.resolve(winConn.send(o)).then(pumpOnce).catch(() => { });
         };
 
+        // ══════════════════════════════════════════════════════════════════
+        //  POINTER / TOUCH GESTURES
+        //
+        //   tap (no move) ............ left click         [deferred TAP_MS]
+        //   double-tap ............... right click
+        //   long-press (HOLD_MS) ..... right click         [immediate]
+        //   drag (move > DRAG_SLOP) .. down @start → move → up
+        //   two-finger drag .......... wheel (scroll)
+        //   pinch .................... wheel (zoom)
+        //   two-finger tap ........... middle click
+        //
+        //  Mouse is passed straight through (immediate down/up).
+        // ══════════════════════════════════════════════════════════════════
+        const TAP_SLOP = 24, DRAG_SLOP = 8;
+        const tapMs = () => Math.max(0, +$('#tapdelay').value || 0);
+        const holdMs = () => Math.max(150, +$('#holddelay').value || 450);
+        const dist2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+        const pointers = new Map();
+        let pendingTap = null;
+        let pinch = null;
+
+        function clearPendingTap(fire) {
+            if (!pendingTap) return;
+            clearTimeout(pendingTap.timer);
+            const t = pendingTap;
+            pendingTap = null;
+            if (fire) sendWin({ type: 'click', x: t.x, y: t.y, button: 'left', t: Date.now() });
+        }
+
+        function onPointerDown(e) {
+            if (e.target.closest('input,select,textarea,button,label')) return;
+            const p = pos(e);
+            if (!p) return;
+            e.preventDefault();
+
+            try { stage.setPointerCapture(e.pointerId); } catch { }
+
+            if (e.pointerType === 'mouse') {
+                sendWin({ type: 'mousedown', x: p.x, y: p.y, button: btnName(e.button), t: Date.now() });
+                pointers.set(e.pointerId, { kind: 'mouse', button: btnName(e.button), x: p.x, y: p.y });
+                return;
+            }
+
+            const g = {
+                kind: 'touch', x0: p.x, y0: p.y, x: p.x, y: p.y,
+                t0: performance.now(), dragging: false, consumed: false, holdTimer: 0,
+            };
+            pointers.set(e.pointerId, g);
+            sendWin({ type: 'mousemove', x: p.x, y: p.y, button: 'left', t: Date.now() });
+
+            if (pointers.size === 1) {
+                g.holdTimer = setTimeout(() => {
+                    if (g.dragging || g.consumed) return;
+                    g.consumed = true;
+                    buzz(25);
+                    sendWin({ type: 'click', x: g.x, y: g.y, button: 'right', t: Date.now() });
+                    log('info', 'touch: long-press → right click');
+                }, holdMs());
+            } else if (pointers.size === 2) {
+                for (const s of pointers.values()) {
+                    clearTimeout(s.holdTimer);
+                    s.consumed = true;
+                    if (s.dragging) {
+                        s.dragging = false;
+                        sendWin({ type: 'mouseup', x: s.x, y: s.y, button: 'left', t: Date.now() });
+                    }
+                }
+                const [a, b] = [...pointers.values()];
+                pinch = { dist: dist2(a, b), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, t0: performance.now(), moved: false };
+            }
+        }
+
+        function onPointerMove(e) {
+            const g = pointers.get(e.pointerId);
+            if (!g) return;
+            const p = pos(e);
+            if (!p) return;
+            g.x = p.x; g.y = p.y;
+
+            if (g.kind === 'mouse') {
+                sendWin({ type: 'mousemove', x: p.x, y: p.y, button: 'left', t: Date.now() });
+                return;
+            }
+
+            if (pinch && pointers.size >= 2) {
+                const [a, b] = [...pointers.values()];
+                const d = dist2(a, b), cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+                const dd = d - pinch.dist, dcy = cy - pinch.cy;
+                if (Math.abs(dd) > 1.5 || Math.abs(dcy) > 1.5) {
+                    pinch.moved = true;
+                    const delta = Math.abs(dd) >= Math.abs(dcy) ? -dd * 4 : -dcy * 4;
+                    if (Math.abs(delta) >= 1) sendWin({ type: 'wheel', x: cx, y: cy, delta: Math.round(delta) });
+                    pinch.dist = d; pinch.cx = cx; pinch.cy = cy;
+                }
+                return;
+            }
+
+            if (!g.dragging && !g.consumed && dist2({ x: g.x0, y: g.y0 }, p) > DRAG_SLOP) {
+                g.dragging = true;
+                clearTimeout(g.holdTimer);
+                sendWin({ type: 'mousedown', x: g.x0, y: g.y0, button: 'left', t: Date.now() });
+            }
+            if (g.dragging) sendWin({ type: 'mousemove', x: p.x, y: p.y, button: 'left', t: Date.now() });
+        }
+
+        function onPointerUp(e) {
+            const g = pointers.get(e.pointerId);
+            pointers.delete(e.pointerId);
+            if (!g) return;
+            clearTimeout(g.holdTimer);
+            const p = pos(e) || { x: g.x, y: g.y };
+
+            if (g.kind === 'mouse') {
+                sendWin({ type: 'mouseup', x: p.x, y: p.y, button: g.button, t: Date.now() });
+                return;
+            }
+
+            if (pinch) {
+                if (pointers.size < 2) {
+                    const quick = !pinch.moved && (performance.now() - pinch.t0) < 250;
+                    pinch = null;
+                    if (quick) {
+                        sendWin({ type: 'click', x: p.x, y: p.y, button: 'middle', t: Date.now() });
+                        log('info', 'touch: 2-finger tap → middle click');
+                    }
+                }
+                return;
+            }
+
+            if (g.dragging) {
+                sendWin({ type: 'mouseup', x: p.x, y: p.y, button: 'left', t: Date.now() });
+                return;
+            }
+            if (g.consumed) return;
+
+            if (!$('#instanttap').checked && pendingTap &&
+                (performance.now() - pendingTap.t) <= tapMs() &&
+                Math.abs(p.x - pendingTap.x) <= TAP_SLOP && Math.abs(p.y - pendingTap.y) <= TAP_SLOP) {
+                clearTimeout(pendingTap.timer);
+                pendingTap = null;
+                buzz(15);
+                sendWin({ type: 'click', x: p.x, y: p.y, button: 'right', t: Date.now() });
+                log('info', 'touch: double-tap → right click');
+                return;
+            }
+
+            clearPendingTap(true);
+
+            if ($('#instanttap').checked) {
+                sendWin({ type: 'click', x: p.x, y: p.y, button: 'left', t: Date.now() });
+                return;
+            }
+
+            const x = p.x, y = p.y;
+            pendingTap = {
+                x, y, t: performance.now(),
+                timer: setTimeout(() => {
+                    pendingTap = null;
+                    sendWin({ type: 'click', x, y, button: 'left', t: Date.now() });
+                }, tapMs()),
+            };
+        }
+
+        function onPointerCancel(e) {
+            const g = pointers.get(e.pointerId);
+            pointers.delete(e.pointerId);
+            if (!g) return;
+            clearTimeout(g.holdTimer);
+            if (g.dragging) sendWin({ type: 'mouseup', x: g.x, y: g.y, button: 'left', t: Date.now() });
+            if (pointers.size < 2) pinch = null;
+        }
+
         const stage = $('#stage');
-        stage.addEventListener('mousedown', (e) => { const p = pos(e); if (p) sendWin({ type: 'mousedown', x: p.x, y: p.y, button: btnName(e.button), t: Date.now() }); });
-        stage.addEventListener('mouseup', (e) => { const p = pos(e); if (p) sendWin({ type: 'mouseup', x: p.x, y: p.y, button: btnName(e.button), t: Date.now() }); });
-        stage.addEventListener('mousemove', (e) => { const p = pos(e); if (p) sendWin({ type: 'mousemove', x: p.x, y: p.y, button: 'left', t: Date.now() }); });
+        stage.addEventListener('pointerdown', onPointerDown);
+        stage.addEventListener('pointermove', onPointerMove);
+        stage.addEventListener('pointerup', onPointerUp);
+        stage.addEventListener('pointercancel', onPointerCancel);
+        stage.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') onPointerUp(e); });
+        stage.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+        stage.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+
         stage.addEventListener('wheel', (e) => {
             const p = pos(e);
             if (p) { sendWin({ type: 'wheel', x: p.x, y: p.y, delta: e.deltaY }); e.preventDefault(); }
         }, { passive: false });
+
         stage.addEventListener('contextmenu', (e) => e.preventDefault());
         stage.addEventListener('dragstart', (e) => e.preventDefault());
         document.addEventListener('dragstart', (e) => e.preventDefault());
 
+        // ───────────────────────── hardware keyboard ─────────────────────────
         const codeToKey = {
             Enter: 'Return', Backspace: 'Back', Tab: 'Tab', Escape: 'Escape', Space: 'Space',
             ShiftLeft: 'LShiftKey', ShiftRight: 'RShiftKey', ControlLeft: 'LControlKey', ControlRight: 'RControlKey',
@@ -1150,25 +1583,52 @@
             sendWin({ type: 'keyup', key: keyName(e) });
         });
 
-        // ───────────────── sidebar wiring (addEventListener only) ─────────────────
-        const on = (sel, ev, fn) => {
-            const el = $(sel);
-            if (el) el.addEventListener(ev, fn);
-            else log('warn', `no element for ${sel}`);
-        };
+        // ───────────────────────── on-screen keys ─────────────────────────
+        const modsDown = new Set();
+        for (const b of document.querySelectorAll('#kbd [data-key]')) {
+            b.addEventListener('click', () => {
+                const k = b.dataset.key;
+                if (k === 'Space') sendWin({ type: 'text', text: ' ' });
+                else sendWin({ type: 'key', key: k });
+                pumpOnce();
+            });
+        }
+        for (const b of document.querySelectorAll('#kbd [data-mod]')) {
+            b.addEventListener('click', () => {
+                const k = b.dataset.mod;
+                if (modsDown.has(k)) { modsDown.delete(k); b.style.borderColor = ''; sendWin({ type: 'keyup', key: k }); }
+                else { modsDown.add(k); b.style.borderColor = 'var(--acc)'; sendWin({ type: 'keydown', key: k }); }
+                pumpOnce();
+            });
+        }
 
-        // log controls
+        function sendKbdText() {
+            const v = $('#kbdText').value;
+            if (!v) return;
+            sendWin({ type: 'text', text: v });
+            $('#kbdText').value = '';
+            pumpOnce();
+        }
+
+        // ───────────────── sidebar wiring (AFTER `on` is declared) ─────────────────
+        on('#kbdSend', 'click', sendKbdText);
+        on('#kbdText', 'keydown', (e) => {
+            if (e.key === 'Enter') { sendKbdText(); e.preventDefault(); }
+            if (e.key === 'Escape') { document.getElementById('kbdToggle').checked = false; e.preventDefault(); }
+        });
+        on('#kbdHide', 'click', () => { document.getElementById('kbdToggle').checked = false; });
+
         on('#b-pause', 'click', () => {
             paused = !paused;
             if (!paused) {
                 logBox.innerHTML += held.join('');
                 held = [];
-                $('#b-pause').textContent = 'pause output';
+                $('#b-pause').textContent = 'pause';
                 logBox.scrollTop = logBox.scrollHeight;
                 log('ok', 'output resumed');
             } else {
                 log('warn', 'output paused (lines are held back)');
-                $('#b-pause').textContent = 'resume output (0)';
+                $('#b-pause').textContent = 'resume (0)';
             }
         });
         on('#clearlog', 'click', () => { logBox.textContent = ''; });
@@ -1178,7 +1638,6 @@
             catch (e) { log('warn', 'copy failed: ' + fmtErr(e)); }
         });
 
-        // window list / connection
         on('#btn-reconnect', 'click', () => {
             log('info', '↩ reconnect pressed');
             if (curWin) connectWin(curWin);
@@ -1189,9 +1648,8 @@
         on('#btn-listeners', 'click', () => dumpListeners('manual'));
         on('#btn-env', 'click', () => log('info',
             `[env] crossOriginIsolated=${crossOriginIsolated} SharedArrayBuffer=${typeof SharedArrayBuffer} ` +
-            `devicePixelRatio=${devicePixelRatio} edition=${EDITION}`));
+            `devicePixelRatio=${devicePixelRatio} touch=${matchMedia('(pointer: coarse)').matches} edition=${EDITION}`));
 
-        // stream
         on('#refresh', 'click', () => { log('info', '↻ refresh pressed'); resub(); });
         on('#save', 'click', () => {
             log('info', '💾 save pressed');
@@ -1212,14 +1670,16 @@
         on('#gray', 'change', () => { log('info', 'gray → ' + $('#gray').checked); resub(); });
         on('#fps', 'change', () => { log('info', 'fps → ' + $('#fps').value); resub(); });
         on('#live', 'change', () => { log('info', 'live → ' + $('#live').checked); resub(); });
+        on('#tapdelay', 'change', () => log('info', 'tap delay → ' + $('#tapdelay').value + 'ms'));
+        on('#holddelay', 'change', () => log('info', 'hold → ' + $('#holddelay').value + 'ms'));
+        on('#instanttap', 'change', () => log('info', 'instant tap → ' + $('#instanttap').checked));
+        on('#vibrate', 'change', () => log('info', 'vibrate → ' + $('#vibrate').checked));
 
-        // ───────────────── transport test (echo) ─────────────────
+        // ───────────────────────── transport test (echo) ─────────────────────────
         let echoConn = null;
 
         const echoTick = () => rpc((req) => echoJs.EchoTickAsync(req));
 
-        // write everything, ticking the (poll-driven) echo service when the
-        // send window is full — no blocking, no continuations required.
         async function writeFully(conn, data, tick, maxSpins = 20000) {
             let off = 0, spins = 0;
             while (off < data.length) {
@@ -1231,7 +1691,6 @@
             return off;
         }
 
-        // read exactly `need` bytes (or until the stream goes idle).
         async function readFully(conn, need, tick, maxIdle = 64) {
             const parts = [];
             let got = 0, idle = 0;
@@ -1251,7 +1710,6 @@
             el.textContent = text;
         }
 
-        // ── the echo round-trip that SHOWS the bytes that came back ──
         async function echoRoundTrip() {
             const size = Math.max(1, Math.min(1 << 20, +$('#e-size').value || 256));
             log('info', `echo & show bytes: ${size}B pattern`);
@@ -1259,7 +1717,6 @@
                 await rpc((req) => echoJs.StartEchoAsync(req));
                 const c = await AF_UNIX.connect('/echo');
 
-                // deterministic pattern (NOT all 'A') so a byte-level check is meaningful
                 const sent = new Uint8Array(size);
                 for (let i = 0; i < size; i++) sent[i] = (i * 31 + 7) & 0xff;
 
@@ -1294,7 +1751,6 @@
             }
         }
 
-        // ── text echo: show the decoded bytes that came back ──
         async function echoText() {
             const text = $('#e-text').value ?? '';
             const sent = enc.encode(text);
@@ -1402,8 +1858,7 @@
                 const ms = performance.now() - t0;
                 await c.close();
                 verdict(true, `✔ round-trip ${got}B in ${ms.toFixed(0)}ms`);
-                $('#e-hex').textContent = `round-trip ${count} × ${size}B · ${got}B total\n` +
-                    hexdump(payload);
+                $('#e-hex').textContent = `round-trip ${count} × ${size}B · ${got}B total\n` + hexdump(payload);
                 log('ok', `round-trip: ${got}B in ${ms.toFixed(0)}ms → ${(got / 1024 / (ms / 1000)).toFixed(1)} KiB/s · ${(count / (ms / 1000)).toFixed(1)} ops/s`);
             } catch (e) {
                 verdict(false, '✘ ' + fmtErr(e));
@@ -1464,7 +1919,7 @@
             get winConn() { return winConn; }, get echoConn() { return echoConn; },
             log, fmtErr, getWet, toU8, b64ToU8, hexdump, firstDiff, echoRoundTrip, echoText,
             connectList, connectWin, closeWin, redrawList, upsertWin, handleListMessage,
-            resub, handleFrame, clearWinUI, edition: EDITION,
+            resub, handleFrame, clearWinUI, pos, sendWin, pointers, edition: EDITION,
         };
         globalThis.rpc = rpc;
         globalThis.getWet = getWet;
@@ -1488,38 +1943,17 @@
         setInterval(connectList, 1500);
         setInterval(() => dumpListeners('auto'), 10000);
 
-        // One non-blocking pump. BootUpJs.Pump() runs PumpMessages() synchronously
-        // and returns a completed Task — call-and-forget is safe and cheap.
-        function pumpOnce() {
-            if (runtimeDead) return;
-            const fn = globalThis.boot?.BootUpJs?.Pump;
-            if (!fn) return;
-            try { Promise.resolve(fn()).catch(() => { }); } catch (e) { }
-        }
-
-        // message pump (harmless on MT where Main drives it; required on ST)
         if (pump) {
             info('#info-pump', 'exported');
             log('ok', 'message pump export found');
             const rafLoop = () => { pumpOnce(); requestAnimationFrame(rafLoop); };
             requestAnimationFrame(rafLoop);
-
-            setInterval(async () => {
-                if (runtimeDead) return;
-                try { await pump(); }
-                catch (e) {
-                    const m = fmtErr(e);
-                    if (/already exited|Cannot call synchronous/.test(m)) return;
-                    log('warn', 'pump: ' + m);
-                }
-            }, 16);
+            setInterval(pumpOnce, 4);
         } else {
             info('#info-pump', 'NOT EXPORTED');
             log('warn', 'no Pump export — required unless Main drives the loop');
         }
 
-        // event pull (socket notifications queued by the driver) — this is also
-        // the tick that should be driving the poll-based I/O of the driver.
         setInterval(async () => {
             if (runtimeDead || !wet?.TakeEventsAsync) return;
             try {
