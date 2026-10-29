@@ -32,6 +32,11 @@ AppDomain.CurrentDomain.FirstChanceException += (s, e) =>
         Console.WriteLine($"[first-chance] {x.GetType().FullName}: {x.Message}");
 };
 
+// ── FIRST statements of Main, before anything WinForms ──────────────────
+Environment.SetEnvironmentVariable("XPLAT_UI_SOCKET_SCREEN", "1280x720");   // virtual desktop
+Environment.SetEnvironmentVariable("XPLAT_UI_SOCKET_DIR", "/ui");
+Environment.SetEnvironmentVariable("XPLAT_UI_SOCKET_LOG", "0");             // no log broadcast
+
 
 // ==========================================
 // 1. System.Drawing Test: Output drawing.png
@@ -1404,8 +1409,8 @@ var form = new Form
 {
     Text = "Wasm Paint — latency bench",
     AutoScaleMode = AutoScaleMode.None,        // ← MWF autoscaling collapses the window without this
-    ClientSize = new Size(1200, 860),
-    MinimumSize = new Size(1200, 860),         // ← the driver honours Min/Max; nothing may shrink us
+    ClientSize = new Size(1200, 700),
+    MinimumSize = new Size(1200, 700),         // ← the driver honours Min/Max; nothing may shrink us
     FormBorderStyle = FormBorderStyle.Sizable,
     StartPosition = FormStartPosition.Manual,
     WindowState = FormWindowState.Maximized,   // ← same trick as the original program

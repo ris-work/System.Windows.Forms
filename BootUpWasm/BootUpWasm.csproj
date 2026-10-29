@@ -16,6 +16,12 @@
 
 		<!--<WasmEnableThreads>true</WasmEnableThreads>-->
 		<!--<RunAOTCompilation>true</RunAOTCompilation>-->
+		<MonoRuntimeDebuggerEnabled>false</MonoRuntimeDebuggerEnabled>
+		<InvariantGlobalization>true</InvariantGlobalization>
+		<DebuggerSupport>false</DebuggerSupport>
+		<WasmBuildNative>true</WasmBuildNative>
+		<WasmNativeStrip>true</WasmNativeStrip>
+		<DebugSymbols>false</DebugSymbols>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
