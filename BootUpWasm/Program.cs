@@ -1610,17 +1610,58 @@ Console.WriteLine("[paint] probe queued");
 
 void OpenCalc()
 {
+    // 0 = probe: ONE button        ← run this FIRST
+    // 1 = probe: N buttons         (set probeButtons; find the threshold)
+    // 2 = probe: ONE TextBox       (the calculator-only control)
+    // 3 = the real calculator
+    const int probe = 0;
+    const int probeButtons = 20;
+
+    // Set false if the console chatter itself seems to wedge the runtime.
+    CalcProbe.Verbose = true;
+
+    Console.WriteLine("[calc] OpenCalc: probe=" + probe + "  thread=" + Environment.CurrentManagedThreadId);
     try
     {
-        Console.WriteLine("[calc] OpenCalc: about to new CalcForm()");
-        if (calcForm == null || calcForm.IsDisposed) calcForm = new CalcForm();
-        Console.WriteLine("[calc] OpenCalc: about to Show()  hwnd-path=" + calcForm.IsHandleCreated);
-        calcForm.Show();
-        Console.WriteLine("[calc] OpenCalc: Show() returned");
-        calcForm.Activate();
-        Console.WriteLine("[calc] OpenCalc: Activate() returned");
+        Form f;
+        switch (probe)
+        {
+            case 0:
+                Console.WriteLine("[calc] building OneButton()");
+                f = CalcProbe.OneButton();
+                break;
+            case 1:
+                Console.WriteLine("[calc] building NButtons(" + probeButtons + ")");
+                f = CalcProbe.NButtons(probeButtons);
+                break;
+            case 2:
+                Console.WriteLine("[calc] building OneTextBox()");
+                f = CalcProbe.OneTextBox();
+                break;
+            default:
+                Console.WriteLine("[calc] about to new CalcForm()");
+                if (calcForm == null || calcForm.IsDisposed) calcForm = new CalcForm();
+                f = calcForm;
+                break;
+        }
+
+        Console.WriteLine("[calc] built. step A: CreateControl()  IsHandleCreated=" + f.IsHandleCreated);
+        f.CreateControl();
+        Console.WriteLine("[calc] step B: CreateControl returned  IsHandleCreated=" + f.IsHandleCreated);
+
+        Console.WriteLine("[calc] step C: Visible = true");
+        f.Visible = true;
+        Console.WriteLine("[calc] step D: Visible returned  Visible=" + f.Visible);
+
+        Console.WriteLine("[calc] step E: Activate()");
+        f.Activate();
+        Console.WriteLine("[calc] step F: ALL DONE");
     }
-    catch (Exception ex) { Console.WriteLine("[calc] OpenCalc EXCEPTION: " + ex); Dump(ex); }
+    catch (Exception ex)
+    {
+        Console.WriteLine("[calc] OpenCalc EXCEPTION: " + ex);
+        Dump(ex);
+    }
 }
 
 // ---- wiring ----
@@ -2114,8 +2155,8 @@ public enum CalcMode { Decimal, Scientific }
 ///   SCIENTIFIC System.Double arithmetic: sin cos tan asin acos atan sinh cosh
 ///              tanh ln log 10^x e^x x² x³ x^y √ ∛ 1/x n! mod π e EXP
 ///
-/// Tracing: every step writes "[calc] …" to the console so a hang or a throw
-/// during construction shows which control caused it.
+/// Tracing: every step writes "[calc] …" to the console. Per-control Paint hooks
+/// name exactly which control is painting when the log stops.
 /// Nothing throws out of a button handler (SafeDispatch).
 /// </summary>
 public class CalcForm : Form
@@ -2153,9 +2194,9 @@ public class CalcForm : Form
     static readonly Color ExprFg = Color.FromArgb(150, 160, 175);
     static readonly Color StatFg = Color.FromArgb(255, 196, 96);
 
-    // ── fonts (created once, with fallbacks — a throw in a static field
-    //    initializer becomes TypeInitializationException on `new CalcForm()`
-    //    and looks exactly like "the button does nothing") ───────────────
+    // ── fonts (fallback chain — a throw in a static initializer becomes
+    //    TypeInitializationException on `new CalcForm()` and looks like a
+    //    button that "does nothing") ─────────────────────────────────────
     static readonly Font FNum = SafeFont("Segoe UI", 12f, FontStyle.Bold);
     static readonly Font FSci = SafeFont("Segoe UI", 10f, FontStyle.Bold);
     static readonly Font FEq = SafeFont("Segoe UI", 14f, FontStyle.Bold);
@@ -2213,19 +2254,19 @@ public class CalcForm : Form
 
     // ── controls ────────────────────────────────────────────────────────
     readonly TextBox _display;
-    readonly Label _expr, _modeLabel, _status;   // ← _modeLabel, NOT _mode
+    readonly Label _expr, _modeLabel, _status;
     readonly Button _modeBtn;
     readonly List<Button> _sci = new List<Button>();
 
-    // ── state ("" means "none" — no nullable annotations needed) ────────
-    CalcMode _mode = CalcMode.Decimal;           // ← the only _mode
+    // ── state ("" means "none") ─────────────────────────────────────────
+    CalcMode _mode = CalcMode.Decimal;
     string _entry = "0";
-    bool _fresh = true;          // next digit starts a brand-new number
-    bool _errored;               // an invalid op happened — C/CE/DC restart
-    string _op = "";             // pending binary operator
+    bool _fresh = true;
+    bool _errored;
+    string _op = "";
     decimal _decAcc; double _dblAcc;
     decimal _decAns; double _dblAns; bool _hasAns;
-    string _lastOp = "";         // for repeated "="
+    string _lastOp = "";
     string _lastArg = "";
     string _statusText = "";
 
@@ -2235,29 +2276,29 @@ public class CalcForm : Form
         try
         {
             Text = "Calculator — basic (decimal) · scientific (double)";
-            T("ctor: Text ok");
-
             AutoScaleMode = AutoScaleMode.None;
-            T("ctor: AutoScaleMode ok");
 
+            // ── NOTE: Manual, NOT CenterScreen ──────────────────────────
+            // CenterScreen routes through Hwnd.GetNextStackedFormLocation(),
+            // which the paint form (StartPosition=Manual) has never exercised.
             FormBorderStyle = FormBorderStyle.Sizable;
-            StartPosition = FormStartPosition.CenterScreen;
-            T("ctor: border/startposition ok");
+            StartPosition = FormStartPosition.Manual;
+            Location = new Point(40, 40);
+            T("ctor: border/startposition/Location ok");
 
             BackColor = BackC;
             KeyPreview = true;
-            T("ctor: BackColor/KeyPreview ok");
-
             MinimumSize = new Size(564, 620);
-            T("ctor: MinimumSize ok");
-
             ClientSize = new Size(564, 578);
-            T("ctor: ClientSize ok (" + ClientSize.Width + "x" + ClientSize.Height + ")");
+            T("ctor: size ok (" + ClientSize.Width + "x" + ClientSize.Height + ")");
+
+            HookLife(this, "form");
 
             // ── display ─────────────────────────────────────────────────
             T("ctor: creating display…");
             _display = new TextBox
             {
+                Name = "display",
                 Multiline = false,
                 ReadOnly = true,
                 TextAlign = HorizontalAlignment.Right,
@@ -2267,14 +2308,14 @@ public class CalcForm : Form
                 Font = FDisp,
                 Text = "0",
             };
-            T("ctor: display created");
             _display.SetBounds(12, 10, 540, 46);
+            HookLife(_display, "display");
             Controls.Add(_display);
             T("ctor: display added");
 
-            T("ctor: creating labels…");
             _expr = new Label
             {
+                Name = "expr",
                 AutoSize = false,
                 TextAlign = System.Drawing.ContentAlignment.MiddleRight,
                 ForeColor = ExprFg,
@@ -2282,11 +2323,12 @@ public class CalcForm : Form
                 Text = "",
             };
             _expr.SetBounds(12, 58, 540, 18);
+            HookLife(_expr, "expr");
             Controls.Add(_expr);
-            T("ctor: _expr added");
 
             _status = new Label
             {
+                Name = "status",
                 AutoSize = false,
                 TextAlign = System.Drawing.ContentAlignment.MiddleLeft,
                 ForeColor = StatFg,
@@ -2294,11 +2336,12 @@ public class CalcForm : Form
                 Text = "",
             };
             _status.SetBounds(12, 80, 350, 32);
+            HookLife(_status, "status");
             Controls.Add(_status);
-            T("ctor: _status added");
 
             _modeLabel = new Label
             {
+                Name = "modelabel",
                 AutoSize = false,
                 TextAlign = System.Drawing.ContentAlignment.MiddleLeft,
                 ForeColor = ExprFg,
@@ -2306,12 +2349,13 @@ public class CalcForm : Form
                 Text = "",
             };
             _modeLabel.SetBounds(370, 80, 182, 16);
+            HookLife(_modeLabel, "modelabel");
             Controls.Add(_modeLabel);
-            T("ctor: _modeLabel added");
+            T("ctor: labels added");
 
-            T("ctor: creating mode button…");
             _modeBtn = new Button
             {
+                Name = "modebtn",
                 Text = "⇄  switch to SCIENTIFIC",
                 FlatStyle = FlatStyle.Flat,
                 BackColor = Color.FromArgb(38, 44, 56),
@@ -2323,14 +2367,14 @@ public class CalcForm : Form
             _modeBtn.FlatAppearance.BorderSize = 0;
             _modeBtn.SetBounds(370, 96, 182, 22);
             _modeBtn.Click += (s, e) => SafeDispatch("mode");
+            HookLife(_modeBtn, "modebtn");
             Controls.Add(_modeBtn);
-            T("ctor: _modeBtn added");
+            T("ctor: mode button added");
 
-            // ── numeric keypad (FLAT) — 4 cols × 5 rows ─────────────────
+            // ── numeric keypad (FLAT) ───────────────────────────────────
             T("ctor: numeric keypad (" + NumKeys.Length + " keys)…");
             for (int i = 0; i < NumKeys.Length; i++)
             {
-                if (i % 4 == 0) T("ctor: num row " + (i / 4));
                 var parts = NumKeys[i].Split('|');
                 var b = MakeBtn(parts[0], parts[1], false);
                 b.SetBounds(LX + (i % 4) * (BW + GAP), LY + (i / 4) * (BH + GAP), BW, BH);
@@ -2338,7 +2382,6 @@ public class CalcForm : Form
             }
             T("ctor: numeric keypad done");
 
-            T("ctor: equals/Ans…");
             var eq = MakeBtn("=", "=", false);
             eq.Font = FEq;
             eq.SetBounds(LX, LY + 5 * (BH + GAP), 3 * BW + 2 * GAP, BH);
@@ -2349,11 +2392,10 @@ public class CalcForm : Form
             Controls.Add(ans);
             T("ctor: equals/Ans done");
 
-            // ── scientific keypad (3-D) — 3 cols × 8 rows ───────────────
+            // ── scientific keypad (3-D) ─────────────────────────────────
             T("ctor: scientific keypad (" + SciKeys.Length + " keys)…");
             for (int i = 0; i < SciKeys.Length; i++)
             {
-                if (i % 3 == 0) T("ctor: sci row " + (i / 3));
                 var parts = SciKeys[i].Split('|');
                 var b = MakeBtn(parts[0], parts[1], true);
                 b.SetBounds(RX + (i % 3) * (BW + GAP), LY + (i / 3) * (BH + GAP), BW, BH);
@@ -2361,26 +2403,38 @@ public class CalcForm : Form
             }
             T("ctor: scientific keypad done");
 
-            T("ctor: ApplyMode…");
             ApplyMode();
-            T("ctor: ApplyMode done");
-
-            T("ctor: Render…");
             Render();
-            T("ctor: Render done");
 
-            T("ctor: KeyDown hook…");
             KeyDown += OnFormKeyDown;
-            T("ctor: KeyDown hooked");
-
-            T("ctor: COMPLETE — " + Controls.Count + " controls");
+            T("ctor: COMPLETE — " + Controls.Count + " controls, handle=" + IsHandleCreated);
         }
         catch (Exception ex)
         {
             T("ctor: EXCEPTION " + ex.GetType().FullName + ": " + ex.Message);
             T("ctor: " + (ex.StackTrace ?? "(no stack)"));
-            throw;      // let OpenCalc's try/catch see it; do not show a broken form
+            throw;
         }
+    }
+
+    // ── lifecycle tracing ───────────────────────────────────────────────
+    // The LAST line before silence names the guilty control.
+    void HookLife(Control c, string name)
+    {
+        try
+        {
+            c.HandleCreated += (s, e) => T("event '" + name + "' HandleCreated");
+            c.Invalidated += (s, e) => T("event '" + name + "' Invalidated " + e.InvalidRect);
+            c.Paint += (s, e) => T("paint  '" + name + "' " + e.ClipRectangle.X + "," + e.ClipRectangle.Y +
+                                   " " + e.ClipRectangle.Width + "x" + e.ClipRectangle.Height);
+            if (c is Form)
+            {
+                c.VisibleChanged += (s, e) => T("event '" + name + "' VisibleChanged → " + c.Visible);
+                c.Layout += (s, e) => T("event '" + name + "' Layout");
+                c.Resize += (s, e) => T("event '" + name + "' Resize " + c.ClientSize.Width + "x" + c.ClientSize.Height);
+            }
+        }
+        catch (Exception ex) { T("HookLife '" + name + "' failed: " + ex.Message); }
     }
 
     void OnFormKeyDown(object s, KeyEventArgs e)
@@ -2414,9 +2468,10 @@ public class CalcForm : Form
     {
         var b = new Button
         {
+            Name = (sci ? "sci_" : "num_") + code,
             Text = label,
             Font = (sci ? FSci : FNum) ?? Font,
-            FlatStyle = sci ? FlatStyle.Standard : FlatStyle.Flat,   // 3-D vs flat
+            FlatStyle = sci ? FlatStyle.Standard : FlatStyle.Flat,
             BackColor = sci ? SciBg : NumColor(code),
             ForeColor = sci ? SciFg : NumFg,
             UseVisualStyleBackColor = false,
@@ -2432,6 +2487,7 @@ public class CalcForm : Form
         }
 
         b.Click += (s, e) => SafeDispatch(code);
+        HookLife(b, b.Name);
         if (sci) _sci.Add(b);
         return b;
     }
@@ -2448,8 +2504,6 @@ public class CalcForm : Form
         }
     }
 
-    /// <summary>Every button funnels through here: a thrown exception becomes a
-    /// status message and a console line, never a dead form.</summary>
     void SafeDispatch(string code)
     {
         T("click '" + code + "'");
@@ -2536,7 +2590,7 @@ public class CalcForm : Form
         T("ApplyMode done");
     }
 
-    // ── parsing / formatting (invariant culture, NaN-safe) ──────────────
+    // ── parsing / formatting ────────────────────────────────────────────
     static readonly System.Globalization.CultureInfo Inv =
         System.Globalization.CultureInfo.InvariantCulture;
 
@@ -2600,7 +2654,6 @@ public class CalcForm : Form
 
     void SetStatus(string s) { _statusText = s; T("status: " + s); }
 
-    /// <summary>Invalid operation: report it, park the machine in a safe state.</summary>
     void Fail(string msg)
     {
         T("FAIL: " + msg);
@@ -2849,7 +2902,7 @@ public class CalcForm : Form
 
         _dblAns = r; _hasAns = true;
         _dblAcc = r;
-        _entry = FormatDbl(r);            // NaN / ∞ are displayed, never thrown
+        _entry = FormatDbl(r);
         _fresh = true;
         T("ComputeDbl: " + a + " '" + o + "' " + b + " = " + _entry);
     }
@@ -2859,7 +2912,7 @@ public class CalcForm : Form
     {
         T("Fn('" + f + "') x='" + _entry + "' mode=" + _mode);
         if (_errored) return;
-        if (_mode != CalcMode.Scientific) return;      // buttons are disabled anyway
+        if (_mode != CalcMode.Scientific) return;
 
         double x = ParseDbl(_entry);
         double r;
@@ -2930,7 +2983,6 @@ public class CalcForm : Form
                 break;
 
             case "cbrt":
-                // Math.Cbrt may be missing on a trimmed fork — fall back to Pow.
                 try { r = Math.Cbrt(x); }
                 catch { r = x < 0d ? -Math.Pow(-x, 1d / 3d) : Math.Pow(x, 1d / 3d); }
                 break;
@@ -2972,5 +3024,175 @@ public class CalcForm : Form
         _fresh = true;
         T("Fn('" + f + "') → " + _entry);
         Render();
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  PROBE FORMS — call these from OpenCalc() to bisect in seconds.
+    // ════════════════════════════════════════════════════════════════════
+
+    /// <summary>Form + one button. If THIS hangs, the problem is "a second
+    /// top-level form at all", not the calculator.</summary>
+    public static Form MinimalProbe()
+    {
+        T("MinimalProbe: building");
+        var f = new Form
+        {
+            Text = "probe: one button",
+            AutoScaleMode = AutoScaleMode.None,
+            FormBorderStyle = FormBorderStyle.Sizable,
+            StartPosition = FormStartPosition.Manual,
+            Location = new Point(20, 20),
+            ClientSize = new Size(240, 120),
+            BackColor = Color.White,
+        };
+        var b = new Button { Text = "hi", Location = new Point(20, 20), Size = new Size(100, 30) };
+        f.Controls.Add(b);
+        T("MinimalProbe: built (1 control)");
+        return f;
+    }
+
+    /// <summary>Form + one TextBox. If THIS hangs and MinimalProbe does not,
+    /// the TextBox paint path is the culprit.</summary>
+    public static Form TextBoxProbe()
+    {
+        T("TextBoxProbe: building");
+        var f = new Form
+        {
+            Text = "probe: one textbox",
+            AutoScaleMode = AutoScaleMode.None,
+            FormBorderStyle = FormBorderStyle.Sizable,
+            StartPosition = FormStartPosition.Manual,
+            Location = new Point(280, 20),
+            ClientSize = new Size(320, 120),
+            BackColor = Color.White,
+        };
+        var t = new TextBox
+        {
+            Multiline = false,
+            ReadOnly = true,
+            TextAlign = HorizontalAlignment.Right,
+            BorderStyle = BorderStyle.FixedSingle,
+            Font = new Font("Consolas", 22f, FontStyle.Bold),
+            Text = "0",
+            Location = new Point(12, 12),
+            Size = new Size(296, 46),
+        };
+        f.Controls.Add(t);
+        T("TextBoxProbe: built (1 control)");
+        return f;
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Ad-hoc probe forms. Tiny, self-contained, minimal logging.
+//   OneButton()  → is it "a second top-level form" at all?
+//   NButtons(n)  → is there a control-count / layout threshold?
+//   OneTextBox() → is the TextBox (the one thing only the calculator has)?
+// ═══════════════════════════════════════════════════════════════════════════
+public static class CalcProbe
+{
+    /// <summary>Set false to silence tracing entirely (see the note about
+    /// Console.WriteLine blocking on mt-wasm).</summary>
+    public static bool Verbose = true;
+
+    static int _n;
+
+    public static void T(string s)
+    {
+        if (!Verbose) return;
+        try { Console.WriteLine("[probe " + (++_n).ToString("D3") + "] " + s); } catch { }
+    }
+
+    /// <summary>Form + ONE button — the true "does a second form work" test.</summary>
+    public static Form OneButton()
+    {
+        T("OneButton: new Form");
+        var f = new Form();
+        T("OneButton: Form created");
+
+        f.Text = "probe: 1 button";
+        T("OneButton: Text set");
+
+        f.AutoScaleMode = AutoScaleMode.None;
+        f.FormBorderStyle = FormBorderStyle.Sizable;
+        f.StartPosition = FormStartPosition.Manual;
+        T("OneButton: style set");
+
+        f.Location = new Point(20, 20);
+        T("OneButton: Location set");
+
+        f.ClientSize = new Size(240, 120);
+        T("OneButton: ClientSize set");
+
+        var b = new Button();
+        T("OneButton: Button created");
+        b.Text = "hi";
+        b.Location = new Point(20, 20);
+        b.Size = new Size(100, 30);
+        T("OneButton: Button configured");
+
+        f.Controls.Add(b);
+        T("OneButton: Button added — controls=" + f.Controls.Count);
+        return f;
+    }
+
+    /// <summary>Form + N buttons, one log line per add. Finds a count threshold.</summary>
+    public static Form NButtons(int n)
+    {
+        T("NButtons(" + n + "): new Form");
+        var f = new Form();
+        T("NButtons: Form created");
+
+        f.Text = "probe: " + n + " buttons";
+        f.AutoScaleMode = AutoScaleMode.None;
+        f.FormBorderStyle = FormBorderStyle.Sizable;
+        f.StartPosition = FormStartPosition.Manual;
+        f.Location = new Point(280, 20);
+        f.ClientSize = new Size(420, 320);
+        T("NButtons: Form configured");
+
+        for (int i = 0; i < n; i++)
+        {
+            var b = new Button();
+            b.Text = "b" + i;
+            b.SetBounds(10 + (i % 5) * 80, 10 + (i / 5) * 46, 74, 40);
+            f.Controls.Add(b);
+            T("NButtons: added " + i + " (controls=" + f.Controls.Count + ")");
+        }
+        T("NButtons: done — " + f.Controls.Count + " controls");
+        return f;
+    }
+
+    /// <summary>Form + ONE TextBox with the calculator's display font.</summary>
+    public static Form OneTextBox()
+    {
+        T("OneTextBox: new Form");
+        var f = new Form();
+        T("OneTextBox: Form created");
+
+        f.Text = "probe: 1 textbox";
+        f.AutoScaleMode = AutoScaleMode.None;
+        f.FormBorderStyle = FormBorderStyle.Sizable;
+        f.StartPosition = FormStartPosition.Manual;
+        f.Location = new Point(20, 170);
+        f.ClientSize = new Size(340, 120);
+        T("OneTextBox: Form configured");
+
+        var t = new TextBox();
+        T("OneTextBox: TextBox created");
+        t.Multiline = false;
+        t.ReadOnly = true;
+        t.TextAlign = HorizontalAlignment.Right;
+        t.BorderStyle = BorderStyle.FixedSingle;
+        t.Font = new Font("Consolas", 22f, FontStyle.Bold);
+        t.Text = "0";
+        t.Location = new Point(12, 12);
+        t.Size = new Size(316, 46);
+        T("OneTextBox: TextBox configured");
+
+        f.Controls.Add(t);
+        T("OneTextBox: TextBox added — controls=" + f.Controls.Count);
+        return f;
     }
 }
