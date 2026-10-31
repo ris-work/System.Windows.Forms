@@ -114,6 +114,22 @@
 	</ItemGroup>
 
 	<ItemGroup>
+	  <None Remove="fonts\DroidSans.ttf" />
+	  <None Remove="fonts\DroidSansMono.ttf" />
+	  <None Remove="fonts\DroidSerif-Regular.ttf" />
+	  <None Remove="fonts\NotoSansTamil-Regular.ttf" />
+	  <None Remove="fonts\NotoSerif-Regular.ttf" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <EmbeddedResource Include="fonts\DroidSans.ttf" />
+	  <EmbeddedResource Include="fonts\DroidSansMono.ttf" />
+	  <EmbeddedResource Include="fonts\DroidSerif-Regular.ttf" />
+	  <EmbeddedResource Include="fonts\NotoSansTamil-Regular.ttf" />
+	  <EmbeddedResource Include="fonts\NotoSerif-Regular.ttf" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<PackageReference Include="Microsoft.Extensions.FileProviders.Embedded" Version="11.0.0-rc.2.*" />
 		<!-- only if your System.Drawing project does not bring Skia's wasm assets transitively -->
 		<!-- <PackageReference Include="SkiaSharp.NativeAssets.WebAssembly" Version="…" /> -->

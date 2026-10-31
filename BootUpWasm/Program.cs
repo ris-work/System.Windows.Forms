@@ -12,6 +12,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Loader;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -45,6 +46,14 @@ AppDomain.CurrentDomain.FirstChanceException += (s, e) =>
 Environment.SetEnvironmentVariable("XPLAT_UI_SOCKET_SCREEN", "1280x720");
 Environment.SetEnvironmentVariable("XPLAT_UI_SOCKET_DIR", "/ui");
 Environment.SetEnvironmentVariable("XPLAT_UI_SOCKET_LOG", "0");
+
+Console.WriteLine("[fonts] loading…");
+SkiaFontBook.LoadAll(typeof(Program).Assembly);   // or: Assembly.GetExecutingAssembly()
+Console.WriteLine("[fonts] " + SkiaFontBook.FaceCount + " faces / " +
+                  SkiaFontBook.FamilyCount + " families");
+
+Console.WriteLine(SkiaFontBook.Dump());
+
 
 
 // ==========================================
@@ -1614,7 +1623,7 @@ void OpenCalc()
     // 1 = probe: N buttons         (set probeButtons; find the threshold)
     // 2 = probe: ONE TextBox       (the calculator-only control)
     // 3 = the real calculator
-    const int probe = 0;
+    const int probe = 2;
     const int probeButtons = 20;
 
     // Set false if the console chatter itself seems to wedge the runtime.
@@ -2155,17 +2164,27 @@ public enum CalcMode { Decimal, Scientific }
 ///   SCIENTIFIC System.Double arithmetic: sin cos tan asin acos atan sinh cosh
 ///              tanh ln log 10^x e^x x² x³ x^y √ ∛ 1/x n! mod π e EXP
 ///
-/// Tracing: every step writes "[calc] …" to the console. Per-control Paint hooks
-/// name exactly which control is painting when the log stops.
-/// Nothing throws out of a button handler (SafeDispatch).
+/// Tracing knobs (both static, set from OpenCalc):
+///   Verbose      milestone/click/engine lines (~60 total). Default TRUE.
+///   TracePaint   per-control HandleCreated/Invalidated/Paint/Layout/Resize.
+///                Default FALSE — those are ~150 Console.WriteLine calls during
+///                Show(), and Console.WriteLine is a blocking .NET→JS call that
+///                marshals to the main thread on mt-wasm. That is what made the
+///                form look like it "hung at Show()".
+///   MaxButtons   cap the keypad build so you can bisect 1 / 5 / 10 / 20 / 44.
 /// </summary>
 public class CalcForm : Form
 {
-    // ── tracing ─────────────────────────────────────────────────────────
+    // ── tracing knobs ───────────────────────────────────────────────────
+    public static bool Verbose = true;
+    public static bool TracePaint = false;
+    public static int MaxButtons = 999;
+
     static int _seq;
 
     static void T(string s)
     {
+        if (!Verbose) return;
         try { Console.WriteLine("[calc " + (++_seq).ToString("D3") + "] " + s); }
         catch { }
     }
@@ -2173,7 +2192,7 @@ public class CalcForm : Form
     // ── layout ──────────────────────────────────────────────────────────
     const int BW = 70, BH = 50, GAP = 6;
     const int LX = 12, LY = 122;
-    const int RX = 330;                 // right (scientific) grid origin
+    const int RX = 330;
 
     // ── palette ─────────────────────────────────────────────────────────
     static readonly Color BackC = Color.FromArgb(24, 26, 32);
@@ -2194,9 +2213,7 @@ public class CalcForm : Form
     static readonly Color ExprFg = Color.FromArgb(150, 160, 175);
     static readonly Color StatFg = Color.FromArgb(255, 196, 96);
 
-    // ── fonts (fallback chain — a throw in a static initializer becomes
-    //    TypeInitializationException on `new CalcForm()` and looks like a
-    //    button that "does nothing") ─────────────────────────────────────
+    // ── fonts (fallback chain) ──────────────────────────────────────────
     static readonly Font FNum = SafeFont("Segoe UI", 12f, FontStyle.Bold);
     static readonly Font FSci = SafeFont("Segoe UI", 10f, FontStyle.Bold);
     static readonly Font FEq = SafeFont("Segoe UI", 14f, FontStyle.Bold);
@@ -2258,7 +2275,7 @@ public class CalcForm : Form
     readonly Button _modeBtn;
     readonly List<Button> _sci = new List<Button>();
 
-    // ── state ("" means "none") ─────────────────────────────────────────
+    // ── state ───────────────────────────────────────────────────────────
     CalcMode _mode = CalcMode.Decimal;
     string _entry = "0";
     bool _fresh = true;
@@ -2272,15 +2289,12 @@ public class CalcForm : Form
 
     public CalcForm()
     {
-        T("ctor: START");
+        T("ctor: START  MaxButtons=" + MaxButtons + " TracePaint=" + TracePaint);
         try
         {
             Text = "Calculator — basic (decimal) · scientific (double)";
             AutoScaleMode = AutoScaleMode.None;
 
-            // ── NOTE: Manual, NOT CenterScreen ──────────────────────────
-            // CenterScreen routes through Hwnd.GetNextStackedFormLocation(),
-            // which the paint form (StartPosition=Manual) has never exercised.
             FormBorderStyle = FormBorderStyle.Sizable;
             StartPosition = FormStartPosition.Manual;
             Location = new Point(40, 40);
@@ -2288,7 +2302,10 @@ public class CalcForm : Form
 
             BackColor = BackC;
             KeyPreview = true;
-            MinimumSize = new Size(564, 620);
+
+            // NOTE: no MinimumSize. A MinimumSize larger than ClientSize makes MWF
+            // fight itself during layout — and it is the only geometric difference
+            // between this form and the probe forms that DO show.
             ClientSize = new Size(564, 578);
             T("ctor: size ok (" + ClientSize.Width + "x" + ClientSize.Height + ")");
 
@@ -2372,15 +2389,26 @@ public class CalcForm : Form
             T("ctor: mode button added");
 
             // ── numeric keypad (FLAT) ───────────────────────────────────
-            T("ctor: numeric keypad (" + NumKeys.Length + " keys)…");
+            int made = 0;
+            T("ctor: numeric keypad (" + NumKeys.Length + " keys, MaxButtons=" + MaxButtons + ")…");
             for (int i = 0; i < NumKeys.Length; i++)
             {
+                if (made >= MaxButtons) { T("ctor: numeric keypad STOPPED at " + made); break; }
                 var parts = NumKeys[i].Split('|');
                 var b = MakeBtn(parts[0], parts[1], false);
                 b.SetBounds(LX + (i % 4) * (BW + GAP), LY + (i / 4) * (BH + GAP), BW, BH);
                 Controls.Add(b);
+                made++;
+                T("ctor: num '" + parts[0] + "' added (total " + made + ")");
             }
-            T("ctor: numeric keypad done");
+            T("ctor: numeric keypad done — " + made + " keys");
+
+            if (made >= MaxButtons)
+            {
+                T("ctor: MaxButtons reached — skipping equals/Ans/sci");
+                Finish();
+                return;
+            }
 
             var eq = MakeBtn("=", "=", false);
             eq.Font = FEq;
@@ -2396,18 +2424,16 @@ public class CalcForm : Form
             T("ctor: scientific keypad (" + SciKeys.Length + " keys)…");
             for (int i = 0; i < SciKeys.Length; i++)
             {
+                if (made >= MaxButtons) { T("ctor: scientific keypad STOPPED at " + made); break; }
                 var parts = SciKeys[i].Split('|');
                 var b = MakeBtn(parts[0], parts[1], true);
                 b.SetBounds(RX + (i % 3) * (BW + GAP), LY + (i / 3) * (BH + GAP), BW, BH);
                 Controls.Add(b);
+                made++;
             }
-            T("ctor: scientific keypad done");
+            T("ctor: scientific keypad done — " + made + " keys total");
 
-            ApplyMode();
-            Render();
-
-            KeyDown += OnFormKeyDown;
-            T("ctor: COMPLETE — " + Controls.Count + " controls, handle=" + IsHandleCreated);
+            Finish();
         }
         catch (Exception ex)
         {
@@ -2417,10 +2443,26 @@ public class CalcForm : Form
         }
     }
 
-    // ── lifecycle tracing ───────────────────────────────────────────────
-    // The LAST line before silence names the guilty control.
+    void Finish()
+    {
+        T("ctor: ApplyMode…");
+        ApplyMode();
+        T("ctor: ApplyMode done");
+
+        T("ctor: Render…");
+        Render();
+        T("ctor: Render done");
+
+        KeyDown += OnFormKeyDown;
+        T("ctor: COMPLETE — " + Controls.Count + " controls, handle=" + IsHandleCreated);
+    }
+
+    // ── optional deep tracing (OFF by default) ──────────────────────────
+    // Each of these is a Console.WriteLine, which on mt-wasm marshals to the
+    // main thread and BLOCKS. 150 of them during Show() is what wedged us.
     void HookLife(Control c, string name)
     {
+        if (!TracePaint) return;
         try
         {
             c.HandleCreated += (s, e) => T("event '" + name + "' HandleCreated");
@@ -2705,7 +2747,7 @@ public class CalcForm : Form
 
     void Digit(string d)
     {
-        T("Digit(" + d + ") entry='" + _entry + "' fresh=" + _fresh + " errored=" + _errored);
+        T("Digit(" + d + ") entry='" + _entry + "'");
         if (_errored) ResetAll();
 
         if (_fresh)
@@ -2793,7 +2835,7 @@ public class CalcForm : Form
     // ── binary operators ────────────────────────────────────────────────
     void Op(string o)
     {
-        T("Op('" + o + "') mode=" + _mode + " pending='" + _op + "' fresh=" + _fresh);
+        T("Op('" + o + "') mode=" + _mode + " pending='" + _op + "'");
         if (_errored) return;
         if (_mode == CalcMode.Decimal) OpDec(o); else OpDbl(o);
     }
@@ -3025,64 +3067,7 @@ public class CalcForm : Form
         T("Fn('" + f + "') → " + _entry);
         Render();
     }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  PROBE FORMS — call these from OpenCalc() to bisect in seconds.
-    // ════════════════════════════════════════════════════════════════════
-
-    /// <summary>Form + one button. If THIS hangs, the problem is "a second
-    /// top-level form at all", not the calculator.</summary>
-    public static Form MinimalProbe()
-    {
-        T("MinimalProbe: building");
-        var f = new Form
-        {
-            Text = "probe: one button",
-            AutoScaleMode = AutoScaleMode.None,
-            FormBorderStyle = FormBorderStyle.Sizable,
-            StartPosition = FormStartPosition.Manual,
-            Location = new Point(20, 20),
-            ClientSize = new Size(240, 120),
-            BackColor = Color.White,
-        };
-        var b = new Button { Text = "hi", Location = new Point(20, 20), Size = new Size(100, 30) };
-        f.Controls.Add(b);
-        T("MinimalProbe: built (1 control)");
-        return f;
-    }
-
-    /// <summary>Form + one TextBox. If THIS hangs and MinimalProbe does not,
-    /// the TextBox paint path is the culprit.</summary>
-    public static Form TextBoxProbe()
-    {
-        T("TextBoxProbe: building");
-        var f = new Form
-        {
-            Text = "probe: one textbox",
-            AutoScaleMode = AutoScaleMode.None,
-            FormBorderStyle = FormBorderStyle.Sizable,
-            StartPosition = FormStartPosition.Manual,
-            Location = new Point(280, 20),
-            ClientSize = new Size(320, 120),
-            BackColor = Color.White,
-        };
-        var t = new TextBox
-        {
-            Multiline = false,
-            ReadOnly = true,
-            TextAlign = HorizontalAlignment.Right,
-            BorderStyle = BorderStyle.FixedSingle,
-            Font = new Font("Consolas", 22f, FontStyle.Bold),
-            Text = "0",
-            Location = new Point(12, 12),
-            Size = new Size(296, 46),
-        };
-        f.Controls.Add(t);
-        T("TextBoxProbe: built (1 control)");
-        return f;
-    }
 }
-
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Ad-hoc probe forms. Tiny, self-contained, minimal logging.
@@ -3194,5 +3179,475 @@ public static class CalcProbe
         f.Controls.Add(t);
         T("OneTextBox: TextBox added — controls=" + f.Controls.Count);
         return f;
+    }
+}
+
+/// <summary>
+/// Loads every TTF/OTF from the assembly's embedded resources AND from the
+/// emscripten MEMFS, parses the sfnt `name` table for the real family name, and
+/// hands back SKTypeface instances.
+///
+/// SkiaSharp-wasm has no fontconfig, so SKFontManager.Default.MatchFamily() does
+/// not know about any font you add — family lookup has to go through Resolve().
+///
+/// Usage:
+///     SkiaFontBook.LoadAll();                       // before ANY Font/Graphics
+///     var tf = SkiaFontBook.Resolve("Segoe UI", bold: true);
+///     paint.Typeface = tf;
+///
+/// The sfnt `name` table is parsed here rather than through Skia, so this works
+/// with any SkiaSharp version and never depends on SKTypeface.Bold/Italic.
+/// </summary>
+public static class SkiaFontBook
+{
+    sealed class Face
+    {
+        public SKTypeface Tf;
+        public string Family = "";
+        public string Sub = "";
+        public string Full = "";
+        public string File = "";
+        public bool Bold;
+        public bool Italic;
+    }
+
+    static readonly object G = new object();
+    static readonly List<Face> Faces = new List<Face>();
+    // The SKData backing each typeface must outlive the call — MakeFromData may
+    // reference the buffer directly. Keep them for the lifetime of the app.
+    static readonly List<SKData> KeepAlive = new List<SKData>();
+    static readonly Dictionary<string, List<Face>> ByFamily =
+        new Dictionary<string, List<Face>>(StringComparer.OrdinalIgnoreCase);
+    static readonly Dictionary<string, string> Alias =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    public static bool Verbose = true;
+    static int _seq;
+
+    static void T(string s)
+    {
+        if (!Verbose) return;
+        try { Console.WriteLine("[fonts " + (++_seq).ToString("D3") + "] " + s); }
+        catch { }
+    }
+
+    public static int FaceCount { get { lock (G) return Faces.Count; } }
+    public static int FamilyCount { get { lock (G) return ByFamily.Count; } }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  Loading
+    // ════════════════════════════════════════════════════════════════════
+
+    /// <summary>Load everything: all loaded assemblies' embedded resources and
+    /// every .ttf/.otf under the usual roots. Call once, before any Font.</summary>
+    public static void LoadAll(Assembly extra = null)
+    {
+        T("LoadAll: start");
+
+        var assemblies = new List<Assembly>(AppDomain.CurrentDomain.GetAssemblies());
+        if (extra != null && !assemblies.Contains(extra)) assemblies.Add(extra);
+
+        int n = 0;
+        foreach (var a in assemblies)
+        {
+            try { n += LoadAssembly(a); }
+            catch (Exception e) { T("  asm '" + SafeName(a) + "': " + e.Message); }
+        }
+        T("LoadAll: " + n + " file(s) from embedded resources");
+
+        int m = 0;
+        foreach (var root in Roots())
+        {
+            try { m += LoadFolder(root, true); }
+            catch (Exception e) { T("  dir '" + root + "': " + e.Message); }
+        }
+        T("LoadAll: " + m + " file(s) from the filesystem");
+
+        Dump();
+    }
+
+    static string SafeName(Assembly a)
+    {
+        try { return a.GetName().Name; } catch { return "?"; }
+    }
+
+    static IEnumerable<string> Roots()
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        string[] cand =
+        {
+            TryBaseDir(),
+            TryCwd(),
+            "/",
+            "./",
+            "./assets",
+            "assets",
+            "./fonts",
+            "fonts",
+            "./data",
+            "data",
+        };
+        foreach (var p in cand)
+            if (!string.IsNullOrEmpty(p) && seen.Add(p)) yield return p;
+    }
+
+    static string TryBaseDir()
+    {
+        try { return AppContext.BaseDirectory; } catch { return null; }
+    }
+
+    static string TryCwd()
+    {
+        try { return Environment.CurrentDirectory; } catch { return null; }
+    }
+
+    /// <summary>Scan one assembly's manifest resources for font files.</summary>
+    public static int LoadAssembly(Assembly a)
+    {
+        if (a == null) return 0;
+        string[] names;
+        try { names = a.GetManifestResourceNames(); }
+        catch (Exception e) { T("  asm '" + SafeName(a) + "' names: " + e.Message); return 0; }
+
+        int n = 0;
+        foreach (var res in names)
+        {
+            if (!IsFontName(res)) continue;
+            try
+            {
+                using var s = a.GetManifestResourceStream(res);
+                if (s == null) { T("  resource '" + res + "' — null stream"); continue; }
+                var data = ReadAll(s);
+                var shortName = ShortResourceName(res);
+                T("  resource '" + res + "' (" + data.Length + " bytes)");
+                if (LoadBytes(data, shortName) != null) n++;
+            }
+            catch (Exception e)
+            {
+                T("  resource '" + res + "': " + e.GetType().Name + " " + e.Message);
+            }
+        }
+        return n;
+    }
+
+    /// <summary>Recursively scan a directory for font files.</summary>
+    public static int LoadFolder(string dir, bool recursive)
+    {
+        if (string.IsNullOrEmpty(dir)) return 0;
+        bool exists;
+        try { exists = Directory.Exists(dir); } catch { return 0; }
+        if (!exists) return 0;
+
+        string[] files;
+        try
+        {
+            files = Directory.GetFiles(dir, "*",
+                recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly);
+        }
+        catch (Exception e) { T("  dir '" + dir + "' list: " + e.Message); return 0; }
+
+        int n = 0;
+        foreach (var f in files)
+        {
+            if (!IsFontName(f)) continue;
+            try
+            {
+                var data = File.ReadAllBytes(f);
+                T("  file '" + f + "' (" + data.Length + " bytes)");
+                if (LoadBytes(data, Path.GetFileNameWithoutExtension(f)) != null) n++;
+            }
+            catch (Exception e)
+            {
+                T("  file '" + f + "': " + e.GetType().Name + " " + e.Message);
+            }
+        }
+        return n;
+    }
+
+    static bool IsFontName(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return false;
+        return EndsWith(s, ".ttf") || EndsWith(s, ".otf") || EndsWith(s, ".ttc");
+    }
+
+    static bool EndsWith(string s, string tail)
+        => s.Length >= tail.Length &&
+           string.Compare(s, s.Length - tail.Length, tail, 0, tail.Length, StringComparison.OrdinalIgnoreCase) == 0;
+
+    static byte[] ReadAll(Stream s)
+    {
+        using var ms = new MemoryStream();
+        s.CopyTo(ms);
+        return ms.ToArray();
+    }
+
+    static string ShortResourceName(string res)
+    {
+        // "BootUpWasm.assets.SegoeUI.ttf" → "SegoeUI"
+        int dot = res.LastIndexOf('.');
+        if (dot > 0) res = res.Substring(0, dot);
+        int slash = res.LastIndexOfAny(new[] { '.', '/' });
+        return slash >= 0 ? res.Substring(slash + 1) : res;
+    }
+
+    /// <summary>Register one font buffer. Returns the typeface or null.</summary>
+    public static SKTypeface LoadBytes(byte[] data, string fallbackName)
+    {
+        if (data == null || data.Length < 12) { T("  '" + fallbackName + "': too small"); return null; }
+
+        SKTypeface tf;
+        SKData sk;
+        try
+        {
+            sk = SKData.CreateCopy(data);          // byte[] → SKData
+            tf = SKTypeface.FromData(sk);          // FromData takes SKData in this build
+        }
+        catch (Exception e)
+        {
+            T("  '" + fallbackName + "': FromData " + e.GetType().Name + " " + e.Message);
+            return null;
+        }
+        if (tf == null) { T("  '" + fallbackName + "': FromData returned null"); return null; }
+
+        lock (G) KeepAlive.Add(sk);                // pin the bytes with the typeface
+
+        ReadNameTable(data, out var family, out var sub, out var full);
+
+        if (string.IsNullOrEmpty(family))
+        {
+            try { family = tf.FamilyName ?? ""; } catch { family = ""; }
+        }
+        if (string.IsNullOrEmpty(family)) family = string.IsNullOrEmpty(fallbackName) ? "unknown" : fallbackName;
+
+        bool bold = Has(sub, "bold") || Has(full, "bold") || Has(fallbackName, "bold");
+        bool italic = Has(sub, "italic") || Has(sub, "oblique") ||
+                      Has(full, "italic") || Has(full, "oblique") ||
+                      Has(fallbackName, "italic");
+
+        var face = new Face
+        {
+            Tf = tf,
+            Family = family.Trim(),
+            Sub = (sub ?? "").Trim(),
+            Full = (full ?? "").Trim(),
+            File = fallbackName ?? "",
+            Bold = bold,
+            Italic = italic,
+        };
+
+        lock (G)
+        {
+            Faces.Add(face);
+            if (!ByFamily.TryGetValue(face.Family, out var list))
+            {
+                list = new List<Face>();
+                ByFamily[face.Family] = list;
+            }
+            list.Add(face);
+        }
+
+        T("  registered '" + face.File + "' family='" + face.Family +
+          "' sub='" + face.Sub + "' bold=" + bold + " italic=" + italic);
+        return tf;
+    }
+
+    static bool Has(string s, string w)
+        => !string.IsNullOrEmpty(s) && s.IndexOf(w, StringComparison.OrdinalIgnoreCase) >= 0;
+
+    // ════════════════════════════════════════════════════════════════════
+    //  Lookup
+    // ════════════════════════════════════════════════════════════════════
+
+    /// <summary>Explicit alias: Resolve("Segoe UI") can be told to fall back to
+    /// whatever actually loaded, e.g. Alias("Segoe UI", "DejaVu Sans").</summary>
+    public static void AddAlias(string from, string to)
+    {
+        if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to)) return;
+        lock (G) Alias[from] = to;
+        T("alias '" + from + "' → '" + to + "'");
+    }
+
+    /// <summary>Best matching face. Never throws; null when nothing matches.</summary>
+    public static SKTypeface Resolve(string family, bool bold = false, bool italic = false)
+    {
+        try
+        {
+            lock (G)
+            {
+                if (TryResolve(family, bold, italic, out var t)) return t;
+
+                if (!string.IsNullOrEmpty(family) && Alias.TryGetValue(family, out var target))
+                    if (TryResolve(target, bold, italic, out t)) return t;
+
+                return null;
+            }
+        }
+        catch (Exception e)
+        {
+            T("Resolve('" + family + "'): " + e.Message);
+            return null;
+        }
+    }
+
+    static bool TryResolve(string family, bool bold, bool italic, out SKTypeface tf)
+    {
+        tf = null;
+        if (string.IsNullOrEmpty(family)) return false;
+
+        if (ByFamily.TryGetValue(family, out var list))
+            return Pick(list, bold, italic, out tf);
+
+        // prefix / contains match — "Segoe UI" also finds "Segoe UI Semibold"
+        foreach (var kv in ByFamily)
+        {
+            if (kv.Key.IndexOf(family, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                family.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0)
+                if (Pick(kv.Value, bold, italic, out tf)) return true;
+        }
+        return false;
+    }
+
+    static bool Pick(List<Face> list, bool bold, bool italic, out SKTypeface tf)
+    {
+        tf = null;
+        if (list == null || list.Count == 0) return false;
+
+        foreach (var f in list) if (f.Bold == bold && f.Italic == italic) { tf = f.Tf; return true; }
+        foreach (var f in list) if (f.Bold == bold) { tf = f.Tf; return true; }
+        foreach (var f in list) if (f.Italic == italic) { tf = f.Tf; return true; }
+
+        tf = list[0].Tf;
+        return true;
+    }
+
+    public static bool TryGet(string family, out SKTypeface tf)
+    {
+        tf = Resolve(family, false, false);
+        return tf != null;
+    }
+
+    /// <summary>What Skia itself thinks is installed (usually just the default).</summary>
+    public static string SkiaSelfCheck(string family)
+    {
+        try
+        {
+            var t = SKFontManager.Default.MatchFamily(family ?? "");
+            return t == null ? "(null)" : ("family='" + t.FamilyName + "'");
+        }
+        catch (Exception e) { return "ERR " + e.Message; }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  sfnt `name` table parser (no Skia dependency)
+    // ════════════════════════════════════════════════════════════════════
+
+    static int U16(ReadOnlySpan<byte> d, int o) => (d[o] << 8) | d[o + 1];
+
+    static long U32(ReadOnlySpan<byte> d, int o)
+        => ((long)d[o] << 24) | ((long)d[o + 1] << 16) | ((long)d[o + 2] << 8) | d[o + 3];
+
+    static void ReadNameTable(byte[] data, out string family, out string sub, out string full)
+    {
+        family = sub = full = "";
+        try
+        {
+            ReadOnlySpan<byte> d = data;
+            if (d.Length < 12) return;
+
+            long tag = U32(d, 0);
+            if (tag == 0x74746366L) return;                 // 'ttcf' — collection, no single name table
+
+            int numTables = U16(d, 4);
+            if (numTables <= 0 || numTables > 512) return;
+
+            int nameOff = -1;
+            for (int i = 0; i < numTables; i++)
+            {
+                int rec = 12 + i * 16;
+                if (rec + 16 > d.Length) break;
+                if (d[rec] == (byte)'n' && d[rec + 1] == (byte)'a' &&
+                    d[rec + 2] == (byte)'m' && d[rec + 3] == (byte)'e')
+                {
+                    nameOff = (int)U32(d, rec + 8);
+                    break;
+                }
+            }
+            if (nameOff < 0 || nameOff + 6 > d.Length) return;
+
+            int count = U16(d, nameOff + 2);
+            int storage = U16(d, nameOff + 4);
+            if (count <= 0 || count > 4096) return;
+
+            string f1 = "", f16 = "", s2 = "", s17 = "", f4 = "";
+
+            for (int i = 0; i < count; i++)
+            {
+                int rec = nameOff + 6 + i * 12;
+                if (rec + 12 > d.Length) break;
+
+                int platform = U16(d, rec);
+                int nameId = U16(d, rec + 6);
+                if (nameId != 1 && nameId != 2 && nameId != 4 && nameId != 16 && nameId != 17) continue;
+
+                int len = U16(d, rec + 8);
+                int off = U16(d, rec + 10);
+                int start = nameOff + storage + off;
+                if (len <= 0 || start < 0 || start + len > d.Length) continue;
+
+                bool wide = platform == 0 || platform == 3;   // Unicode / Windows → UTF-16BE
+                var sb = new StringBuilder(len / 2 + 1);
+                if (wide)
+                {
+                    for (int k = 0; k + 1 < len; k += 2)
+                        sb.Append((char)((d[start + k] << 8) | d[start + k + 1]));
+                }
+                else
+                {
+                    for (int k = 0; k < len; k++) sb.Append((char)d[start + k]);
+                }
+
+                string v = sb.ToString();
+                if (v.Length == 0) continue;
+                switch (nameId)
+                {
+                    case 1: if (f1.Length == 0) f1 = v; break;
+                    case 2: if (s2.Length == 0) s2 = v; break;
+                    case 4: if (f4.Length == 0) f4 = v; break;
+                    case 16: if (f16.Length == 0) f16 = v; break;
+                    case 17: if (s17.Length == 0) s17 = v; break;
+                }
+            }
+
+            family = f16.Length > 0 ? f16 : f1;
+            sub = s17.Length > 0 ? s17 : s2;
+            full = f4.Length > 0 ? f4 : (family + " " + sub).Trim();
+        }
+        catch (Exception e)
+        {
+            T("  name table parse: " + e.Message);
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  Diagnostics
+    // ════════════════════════════════════════════════════════════════════
+
+    public static string Dump()
+    {
+        var sb = new StringBuilder();
+        lock (G)
+        {
+            sb.AppendLine("SkiaFontBook: " + Faces.Count + " face(s), " + ByFamily.Count + " famil(ies)");
+            foreach (var f in Faces)
+                sb.AppendLine("  " + (f.File ?? "?").PadRight(24) +
+                              " family='" + f.Family + "' sub='" + f.Sub + "'" +
+                              (f.Bold ? " bold" : "") + (f.Italic ? " italic" : ""));
+            foreach (var kv in ByFamily)
+                sb.AppendLine("  family '" + kv.Key + "' → " + kv.Value.Count + " face(s)");
+            sb.AppendLine("  skia says 'Segoe UI' is: " + SkiaSelfCheck("Segoe UI"));
+        }
+        string s = sb.ToString();
+        T("Dump:\n" + s);
+        return s;
     }
 }
